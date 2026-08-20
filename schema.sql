@@ -155,13 +155,15 @@ CREATE TABLE IF NOT EXISTS broadcasts (
   expires_at INTEGER DEFAULT 0
 );
 
--- User multi-profiles
+-- User multi-profiles (Netflix-style who's watching + kid PIN)
 CREATE TABLE IF NOT EXISTS user_profiles (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id INTEGER NOT NULL,
   name TEXT NOT NULL,
   avatar_url TEXT DEFAULT '',
   is_child INTEGER DEFAULT 0,
+  pin_hash TEXT DEFAULT '',
+  active INTEGER DEFAULT 0,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );

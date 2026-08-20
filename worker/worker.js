@@ -394,10 +394,10 @@ async function handleUser(path, request, env) {
   const user = await getUser(request, env);
   if (!user) return json({ error: "Chưa đăng nhập" }, 401);
 
-  // Get profile
+  // Get profile + profiles + settings
   if (path === "/user/profile" && request.method === "GET") {
     const { results: settings } = await env.DB.prepare("SELECT * FROM user_settings WHERE user_id = ?").bind(user.id).all();
-    const { results: profiles } = await env.DB.prepare("SELECT * FROM user_profiles WHERE user_id = ?").bind(user.id).all();
+    const { results: profiles } = await env.DB.prepare("SELECT * FROM user_profiles WHERE user_id = ? ORDER BY id ASC").bind(user.id).all();
     return json({ success: true, user, settings: settings[0] || {}, profiles });
   }
 
@@ -437,18 +437,66 @@ async function handleUser(path, request, env) {
     return json({ success: true });
   }
 
-  // Create sub-profile
+  // ========== SUB-PROFILES (Netflix-style who's watching) ==========
+  if (path === "/user/profiles" && request.method === "GET") {
+    const { results } = await env.DB.prepare("SELECT * FROM user_profiles WHERE user_id = ? ORDER BY id ASC").bind(user.id).all();
+    return json({ success: true, profiles: results });
+  }
+
   if (path === "/user/profiles" && request.method === "POST") {
-    const { name, avatar_url, is_child } = await request.json().catch(() => ({}));
-    if (!name) return json({ error: "Thiếu tên" }, 400);
-    await env.DB.prepare("INSERT INTO user_profiles (user_id, name, avatar_url, is_child) VALUES (?, ?, ?, ?)").bind(user.id, name, avatar_url || "", is_child ? 1 : 0).run();
+    const body = await request.json().catch(() => ({}));
+    const { name, avatar_url, is_child, pin } = body;
+    if (!name) return json({ error: "Thiếu tên profile" }, 400);
+    if (name.length > 20) return json({ error: "Tên profile quá dài (max 20)" }, 400);
+
+    // Limit to 5 profiles per account
+    const { results: count } = await env.DB.prepare("SELECT COUNT(*) as c FROM user_profiles WHERE user_id = ?").bind(user.id).all();
+    if (count[0]?.c >= 5) return json({ error: "Tối đa 5 profile cho mỗi tài khoản" }, 400);
+
+    try {
+      const pinHash = pin ? hashPassword(pin) : "";
+      const r = await env.DB.prepare("INSERT INTO user_profiles (user_id, name, avatar_url, is_child, pin_hash) VALUES (?, ?, ?, ?, ?)").bind(user.id, name, avatar_url || "", is_child ? 1 : 0, pinHash).run();
+      return json({ success: true, id: r.meta?.last_row_id || r.lastInsertRowid });
+    } catch (e) {
+      return json({ error: "Lỗi tạo profile" }, 500);
+    }
+  }
+
+  if (path === "/user/profiles/update" && request.method === "PUT") {
+    const body = await request.json().catch(() => ({}));
+    const { id, name, avatar_url, is_child, pin } = body;
+    if (!id) return json({ error: "Thiếu id" }, 400);
+
+    // Verify profile belongs to user
+    const { results: owned } = await env.DB.prepare("SELECT id FROM user_profiles WHERE id = ? AND user_id = ?").bind(id, user.id).all();
+    if (owned.length === 0) return json({ error: "Profile không tồn tại" }, 403);
+
+    if (name !== undefined) await env.DB.prepare("UPDATE user_profiles SET name = ? WHERE id = ?").bind(name, id).run();
+    if (avatar_url !== undefined) await env.DB.prepare("UPDATE user_profiles SET avatar_url = ? WHERE id = ?").bind(avatar_url, id).run();
+    if (is_child !== undefined) await env.DB.prepare("UPDATE user_profiles SET is_child = ? WHERE id = ?").bind(is_child ? 1 : 0, id).run();
+    if (pin !== undefined) await env.DB.prepare("UPDATE user_profiles SET pin_hash = ? WHERE id = ?").bind(pin ? hashPassword(pin) : "", id).run();
+
     return json({ success: true });
   }
 
-  // Get sub-profiles
-  if (path === "/user/profiles" && request.method === "GET") {
-    const { results } = await env.DB.prepare("SELECT * FROM user_profiles WHERE user_id = ?").bind(user.id).all();
-    return json({ success: true, profiles: results });
+  if (path === "/user/profiles/delete" && request.method === "DELETE") {
+    const body = await request.json().catch(() => ({}));
+    const { id } = body;
+    if (!id) return json({ error: "Thiếu id" }, 400);
+    await env.DB.prepare("DELETE FROM user_profiles WHERE id = ? AND user_id = ?").bind(id, user.id).run();
+    return json({ success: true });
+  }
+
+  // PIN verification for kid profiles
+  if (path === "/user/profiles/verify-pin" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const { id, pin } = body;
+    if (!id || !pin) return json({ error: "Thiếu thông tin" }, 400);
+    const { results } = await env.DB.prepare("SELECT pin_hash FROM user_profiles WHERE id = ? AND user_id = ?").bind(id, user.id).all();
+    if (results.length === 0) return json({ error: "Profile không tồn tại" }, 404);
+    if (!results[0].pin_hash) return json({ success: true });
+    if (results[0].pin_hash === hashPassword(pin)) return json({ success: true });
+    return json({ error: "PIN sai" }, 401);
   }
 
   return json({ error: "Not found" }, 404);

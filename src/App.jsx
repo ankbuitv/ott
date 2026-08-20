@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { initNavigation } from '@noriginmedia/react-spatial-navigation';
-import { AlertCircle, RefreshCw, Radio, Filter, ArrowUpDown, Plus } from 'lucide-react';
+import {
+  AlertCircle, RefreshCw, Radio, Search, Plus, X
+} from 'lucide-react';
 
 import Sidebar from './components/Sidebar';
 import VideoPlayer, { generateCatchupUrl } from './components/VideoPlayer';
@@ -9,31 +11,42 @@ import SettingsPage from './components/SettingsPage';
 import OnboardingTour from './components/OnboardingTour';
 import KeyboardShortcuts from './components/KeyboardShortcuts';
 import ChannelInfoModal from './components/ChannelInfoModal';
-import AuthModal from './components/AuthModal';
+import AuthScreen from './components/AuthScreen';
+import ProfileGate from './components/ProfileGate';
 import AdminPanel from './components/AdminPanel';
 import HomePage from './components/HomePage';
 import BroadcastBanner from './components/BroadcastBanner';
 import M3UImporter from './components/M3UImporter';
 import FocusableWrapper from './components/FocusableWrapper';
+import Logo from './components/Logo';
+import MoviesScreen from './components/MoviesScreen';
 import { SkeletonGrid } from './components/SkeletonLoader';
 
 import { DeviceProvider, useDevice } from './contexts/DeviceContext';
 import { SettingsProvider, useSettings } from './contexts/SettingsContext';
 import { ToastProvider, useToast } from './contexts/ToastContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ProfileProvider, useProfile } from './contexts/ProfileContext';
+import { useNavigate } from './hooks/useNavigate';
 
 import { fetchChannels, fetchEPGData, fetchFavorites, toggleFavoriteApi, recordWatchHistory, DEFAULT_FALLBACK_STREAM } from './services/api';
 import { getFavorites, setFavorites as saveFavs, getHistory, setHistory as saveHistory } from './hooks/useStorage';
 
 initNavigation({ debug: false, visualDebug: false });
 
+// Two Tabs nav inside app: TV (channels + EPG), Movies
 function AppContent() {
   const device = useDevice();
   const { settings } = useSettings();
   const { addToast } = useToast();
   const { user, isAuthenticated, token } = useAuth();
+  const { currentProfile } = useProfile();
+  const [route, navigate] = useNavigate();
 
-  const [activeTab, setActiveTab] = useState('channels');
+  const [activeTab, setActiveTab] = useState(() => {
+    const saved = localStorage.getItem('chrtv_tab');
+    return saved || 'channels';
+  });
   const [channels, setChannels] = useState([]);
   const [epgData, setEpgData] = useState(null);
   const [favorites, setFavoritesState] = useState([]);
@@ -52,11 +65,13 @@ function AppContent() {
   const [showSettings, setShowSettings] = useState(false);
   const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
   const [showM3UImporter, setShowM3UImporter] = useState(false);
-  const [showAuth, setShowAuth] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
   const [channelInfoModal, setChannelInfoModal] = useState(null);
 
-  // Apply theme
+  // Persist tab
+  useEffect(() => { localStorage.setItem('chrtv_tab', activeTab); }, [activeTab]);
+
+  // Theme
   useEffect(() => {
     const root = document.documentElement;
     if (settings.theme === 'light') {
@@ -65,7 +80,7 @@ function AppContent() {
       document.body.style.color = '#0f172a';
     } else {
       root.classList.add('dark');
-      document.body.style.backgroundColor = '#0a0b0f';
+      document.body.style.backgroundColor = '#000';
       document.body.style.color = '#f1f5f9';
     }
   }, [settings.theme]);
@@ -74,26 +89,29 @@ function AppContent() {
   useEffect(() => {
     async function init() {
       setIsLoading(true);
-      const [chanData, epgRes, favData] = await Promise.all([
-        fetchChannels(), fetchEPGData(), fetchFavorites()
-      ]);
-      setChannels(chanData);
-      setEpgData(epgRes);
-      setFavoritesState(favData);
-      setWatchHistory(getHistory());
-      setIsLoading(false);
+      try {
+        const [chanData, epgRes, favData] = await Promise.all([
+          fetchChannels(), fetchEPGData(), fetchFavorites()
+        ]);
+        setChannels(chanData);
+        setEpgData(epgRes);
+        setFavoritesState(favData);
+        setWatchHistory(getHistory());
+        setIsLoading(false);
+      } catch (e) {
+        console.error(e);
+        setIsLoading(false);
+      }
     }
     init();
   }, []);
 
-  // Categories
   const categories = useMemo(() => {
     const groups = new Set(['Tất Cả']);
     channels.forEach(ch => { if (ch.group_title) groups.add(ch.group_title); });
     return Array.from(groups);
   }, [channels]);
 
-  // Filtered channels for EPG etc
   const filteredChannels = useMemo(() => {
     return channels.filter(ch => {
       const matchCat = selectedCategory === 'Tất Cả' || ch.group_title === selectedCategory;
@@ -162,13 +180,11 @@ function AppContent() {
     return { now: epgNow, next: epgNext };
   }, [epgData]);
 
-  // Player channel select callback
   useEffect(() => {
     window.__chrtv_select_channel = (ch) => handleSelectChannel(ch);
     return () => { delete window.__chrtv_select_channel; };
   }, [handleSelectChannel]);
 
-  // Keyboard shortcuts
   useEffect(() => {
     const h = (e) => {
       if (e.key === '?' && e.shiftKey && !isPlayerOpen) setShowKeyboardShortcuts(prev => !prev);
@@ -177,6 +193,39 @@ function AppContent() {
     return () => window.removeEventListener('keydown', h);
   }, [isPlayerOpen]);
 
+  // === GATING ===
+  // 1. Not logged in -> AuthScreen
+  if (!isAuthenticated || !user) {
+    return (
+      <>
+        <AuthScreen />
+        <KeyboardShortcuts open={showKeyboardShortcuts} onClose={() => setShowKeyboardShortcuts(false)} />
+      </>
+    );
+  }
+
+  // 2. Logged in but no profile selected -> ProfileGate ("Who's watching")
+  if (!currentProfile) {
+    return <ProfileGate />;
+  }
+
+  // 3. Movies route -> Movies screen
+  if (activeTab === 'movies') {
+    return (
+      <div className="flex h-screen w-screen bg-black text-slate-100 overflow-hidden font-sans select-none">
+        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onShowSettings={() => setShowSettings(true)} onShowAdmin={() => setShowAdmin(true)} />
+        <main className="flex-1 flex flex-col h-full overflow-y-auto pb-16 md:pb-0">
+          {showSettings ? (
+            <SettingsPage onClose={() => setShowSettings(false)} />
+          ) : (
+            <MoviesScreen />
+          )}
+        </main>
+      </div>
+    );
+  }
+
+  // 4. Main app: TV channels + EPG
   return (
     <div className="flex h-screen w-screen bg-[#0a0b0f] text-slate-100 overflow-hidden font-sans select-none">
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onShowSettings={() => setShowSettings(true)} onShowAdmin={() => setShowAdmin(true)} />
@@ -188,7 +237,6 @@ function AppContent() {
           <SettingsPage onClose={() => setShowSettings(false)} />
         ) : (
           <div className="p-4 md:p-5 space-y-4">
-            {/* Broadcast Banner */}
             <BroadcastBanner />
 
             {activeTab === 'channels' ? (
@@ -209,11 +257,10 @@ function AppContent() {
               />
             ) : (
               <>
-                {/* Header for favorites/history */}
                 <div className="flex items-center justify-between">
-                  <div>
-                    <h1 className="text-lg font-extrabold text-white">{activeTab === 'favorites' ? 'Kênh yêu thích' : 'Lịch sử xem'}</h1>
-                  </div>
+                  <h1 className="text-lg font-extrabold text-white">
+                    {(activeTab === 'channels' | 'history' ? '' : (activeTab === 'favorites' ? 'Kênh yêu thích' : '')) || (activeTab === 'history' ? 'Lịch sử xem' : '')}
+                  </h1>
                 </div>
                 {isLoading ? <SkeletonGrid count={6} /> : filteredChannels.length === 0 ? (
                   <div className="text-center py-12 bg-white/[0.02] rounded-2xl border border-white/[0.04]">
@@ -224,7 +271,6 @@ function AppContent() {
                   <div className={`grid gap-3 ${device.isMobile ? 'grid-cols-1' : device.isTablet ? 'grid-cols-2' : 'grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'}`}>
                     {filteredChannels.map(ch => {
                       const { now } = getEpgForChannel(ch.channel_id);
-                      const isFav = favorites.includes(ch.channel_id);
                       return (
                         <FocusableWrapper key={ch.channel_id} onClick={() => handleSelectChannel(ch)} className="group relative rounded-xl bg-white/[0.03] border border-white/[0.05] p-3 hover:bg-white/[0.06] transition-all">
                           <div className="flex items-center gap-2.5 mb-2">
@@ -240,15 +286,13 @@ function AppContent() {
               </>
             )}
 
-            {/* Footer */}
             <div className="text-center py-4 text-[10px] text-slate-700">
-              CHRTV IPTV Player · {channels.length} kênh
+              CHRTV IPTV Player · {channels.length} kênh · {currentProfile?.name}
             </div>
           </div>
         )}
       </main>
 
-      {/* Player */}
       {isPlayerOpen && currentChannel && (
         <div className="fixed inset-0 z-50 bg-black">
           <VideoPlayer
@@ -266,12 +310,10 @@ function AppContent() {
         </div>
       )}
 
-      {/* Modals */}
       {channelInfoModal && (
         <ChannelInfoModal channel={channelInfoModal.channel} epgNow={channelInfoModal.epgNow} epgNext={channelInfoModal.epgNext} isFavorite={channelInfoModal.isFav} onPlay={handleSelectChannel} onToggleFavorite={handleToggleFavorite} onClose={() => setChannelInfoModal(null)} />
       )}
       <KeyboardShortcuts open={showKeyboardShortcuts} onClose={() => setShowKeyboardShortcuts(false)} />
-      <AuthModal open={showAuth} onClose={() => setShowAuth(false)} />
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
       <OnboardingTour />
     </div>
@@ -284,7 +326,9 @@ export default function App() {
       <SettingsProvider>
         <ToastProvider>
           <AuthProvider>
-            <AppContent />
+            <ProfileProvider>
+              <AppContent />
+            </ProfileProvider>
           </AuthProvider>
         </ToastProvider>
       </SettingsProvider>

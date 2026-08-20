@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { getStorage, setStorage } from '../hooks/useStorage';
 
 const ProfileContext = createContext(null);
-const BASE = window.location.origin;
+const BASE = "https://chrtv-ott.htxuan-business.workers.dev";
 
 export function ProfileProvider({ children }) {
   const [currentProfile, setCurrentProfile] = useState(() => getStorage('chrtv_profile', null));

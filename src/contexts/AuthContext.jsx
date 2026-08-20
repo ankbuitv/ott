@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { getStorage, setStorage, removeStorage } from '../hooks/useStorage';
 
 const AuthContext = createContext(null);
-const BASE = window.location.origin;
+const BASE = "https://chrtv-ott.htxuan-business.workers.dev";
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => getStorage('chrtv_user', null));

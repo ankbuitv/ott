@@ -1,4 +1,4 @@
-const BASE_WORKER_URL = window.location.origin;
+const BASE_WORKER_URL = "https://chrtv-ott.htxuan-business.workers.dev";
 
 export const DEFAULT_FALLBACK_STREAM = "http://bore.pub:30113/hls/index.m3u8";
 export const CHRTV_LOGO_URL = "https://i.ibb.co/HDmcxzMK/Gemini-Generated-Image-v7i9yav7i9yav7i9-removebg-preview.png";

@@ -19,9 +19,9 @@ export default {
     const p = url.pathname;
     if (request.method === "OPTIONS") return new Response(null, { headers: CORS });
     try {
-      // v1 API
-      if (p.startsWith("/api/v1/") || p === "/api/playlist" || p === "/api/epg" || p === "/api/proxy") {
-        return await handleAPI(p.replace("/api/v1", "/api"), request, env, ctx);
+      // API routes
+      if (p.startsWith("/api/v1/") || p.startsWith("/api/")) {
+        return await handleAPI(p.startsWith("/api/v1/") ? p.replace("/api/v1", "/api") : p, request, env, ctx);
       }
       // Auth API
       if (p.startsWith("/auth/")) return await handleAuth(p, request, env);
@@ -29,8 +29,6 @@ export default {
       if (p.startsWith("/user/")) return await handleUser(p, request, env);
       // Admin API
       if (p.startsWith("/admin/")) return await handleAdmin(p, request, env);
-      // Analytics
-      if (p === "/api/analytics") return await handleAnalytics(request, env);
       // WebSocket upgrade
       if (p === "/ws" && request.headers.get("Upgrade") === "websocket") {
         return handleWebSocket(request, env, ctx);
@@ -147,6 +145,7 @@ async function handleAPI(path, request, env, ctx) {
   if (path === "/api/broadcasts") return await handleBroadcasts(env);
   if (path === "/api/channels") return await handleChannels(env);
   if (path === "/api/search") return await handleSearch(request, env);
+  if (path === "/api/analytics") return await handleAnalytics(request, env);
   return json({ error: "Not found" }, 404);
 }
 

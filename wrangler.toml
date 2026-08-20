@@ -27,10 +27,10 @@ command = "npm run build"
 #   npx wrangler d1 create chrtv-db
 #   npx wrangler d1 execute chrtv-db --remote --file=./schema.sql
 #
-# [[d1_databases]]
-# binding = "DB"
-# database_name = "chrtv-db"
-# database_id = "REPLACE_WITH_REAL_D1_ID"
+[[d1_databases]]
+binding = "DB"
+database_name = "chrtv-db"
+database_id = "6beab015-333c-45a2-8062-41d1fd3f066f"
 
 # ---------------------------------------------------------------------------
 # Cloudflare KV Namespace (EPG XML/JSON cache, TTL 3600s)
@@ -41,9 +41,9 @@ command = "npm run build"
 #
 #   npx wrangler kv namespace create EPG_KV
 #
-# [[kv_namespaces]]
-# binding = "EPG_KV"
-# id = "REPLACE_WITH_REAL_KV_ID"
+[[kv_namespaces]]
+binding = "EPG_KV"
+id = "4b308f6f354b4be993cdb2c3f4c075f3"
 
 # Note: worker/worker.js degrades gracefully when DB / EPG_KV are not bound
 # (M3U/default channel list, per-request EPG fetch, localStorage fallbacks),

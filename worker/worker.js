@@ -390,9 +390,16 @@ async function handleAuth(path, request, env) {
 }
 
 // ========== USER ==========
+async function ensureTables(env) {
+  try {
+    await env.DB.prepare("CREATE TABLE IF NOT EXISTS user_profiles (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, name TEXT NOT NULL, avatar_url TEXT DEFAULT '', is_child INTEGER DEFAULT 0, pin_hash TEXT DEFAULT '', active INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)").run();
+  } catch {}
+}
+
 async function handleUser(path, request, env) {
   const user = await getUser(request, env);
   if (!user) return json({ error: "Chưa đăng nhập" }, 401);
+  await ensureTables(env);
 
   // Get profile + profiles + settings
   if (path === "/user/profile" && request.method === "GET") {

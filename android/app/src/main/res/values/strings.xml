@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">CHRTV</string>
+    <string name="title_activity_main">CHRTV</string>
+    <string name="package_name">com.chrtv.app</string>
+    <string name="custom_url_scheme">com.chrtv.app</string>
+</resources>

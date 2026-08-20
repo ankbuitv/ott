@@ -1,11 +1,10 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { initNavigation } from '@noriginmedia/react-spatial-navigation';
-import {
-  AlertCircle, RefreshCw, Radio, Search, Plus, X
-} from 'lucide-react';
 
 import Sidebar from './components/Sidebar';
-import VideoPlayer, { generateCatchupUrl } from './components/VideoPlayer';
+import TopNav from './components/TopNav';
+import LiveStrip from './components/LiveStrip';
+import VideoPlayer from './components/VideoPlayer';
 import EpgGridTimeline from './components/EpgGridTimeline';
 import SettingsPage from './components/SettingsPage';
 import OnboardingTour from './components/OnboardingTour';
@@ -16,9 +15,7 @@ import ProfileGate from './components/ProfileGate';
 import AdminPanel from './components/AdminPanel';
 import HomePage from './components/HomePage';
 import BroadcastBanner from './components/BroadcastBanner';
-import M3UImporter from './components/M3UImporter';
 import FocusableWrapper from './components/FocusableWrapper';
-import Logo from './components/Logo';
 import MoviesScreen from './components/MoviesScreen';
 import { SkeletonGrid } from './components/SkeletonLoader';
 
@@ -27,25 +24,22 @@ import { SettingsProvider, useSettings } from './contexts/SettingsContext';
 import { ToastProvider, useToast } from './contexts/ToastContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ProfileProvider, useProfile } from './contexts/ProfileContext';
-import { useNavigate } from './hooks/useNavigate';
 
 import { fetchChannels, fetchEPGData, fetchFavorites, toggleFavoriteApi, recordWatchHistory, DEFAULT_FALLBACK_STREAM } from './services/api';
 import { getFavorites, setFavorites as saveFavs, getHistory, setHistory as saveHistory } from './hooks/useStorage';
 
 initNavigation({ debug: false, visualDebug: false });
 
-// Two Tabs nav inside app: TV (channels + EPG), Movies
 function AppContent() {
   const device = useDevice();
   const { settings } = useSettings();
   const { addToast } = useToast();
   const { user, isAuthenticated, token } = useAuth();
   const { currentProfile } = useProfile();
-  const [route, navigate] = useNavigate();
+  const [showAuth, setShowAuth] = useState(false);
 
   const [activeTab, setActiveTab] = useState(() => {
-    const saved = localStorage.getItem('chrtv_tab');
-    return saved || 'channels';
+    return localStorage.getItem('chrtv_tab') || 'channels';
   });
   const [channels, setChannels] = useState([]);
   const [epgData, setEpgData] = useState(null);
@@ -64,14 +58,11 @@ function AppContent() {
 
   const [showSettings, setShowSettings] = useState(false);
   const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
-  const [showM3UImporter, setShowM3UImporter] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
   const [channelInfoModal, setChannelInfoModal] = useState(null);
 
-  // Persist tab
   useEffect(() => { localStorage.setItem('chrtv_tab', activeTab); }, [activeTab]);
 
-  // Theme
   useEffect(() => {
     const root = document.documentElement;
     if (settings.theme === 'light') {
@@ -85,7 +76,6 @@ function AppContent() {
     }
   }, [settings.theme]);
 
-  // Load data
   useEffect(() => {
     async function init() {
       setIsLoading(true);
@@ -97,11 +87,10 @@ function AppContent() {
         setEpgData(epgRes);
         setFavoritesState(favData);
         setWatchHistory(getHistory());
-        setIsLoading(false);
       } catch (e) {
         console.error(e);
-        setIsLoading(false);
       }
+      setIsLoading(false);
     }
     init();
   }, []);
@@ -193,8 +182,7 @@ function AppContent() {
     return () => window.removeEventListener('keydown', h);
   }, [isPlayerOpen]);
 
-  // === GATING ===
-  // 1. Not logged in -> AuthScreen
+  // GATING
   if (!isAuthenticated || !user) {
     return (
       <>
@@ -204,94 +192,107 @@ function AppContent() {
     );
   }
 
-  // 2. Logged in but no profile selected -> ProfileGate ("Who's watching")
   if (!currentProfile) {
     return <ProfileGate />;
   }
 
-  // 3. Movies route -> Movies screen
+  // Movies mode
   if (activeTab === 'movies') {
     return (
-      <div className="flex h-screen w-screen bg-black text-slate-100 overflow-hidden font-sans select-none">
-        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onShowSettings={() => setShowSettings(true)} onShowAdmin={() => setShowAdmin(true)} />
-        <main className="flex-1 flex flex-col h-full overflow-y-auto pb-16 md:pb-0">
-          {showSettings ? (
-            <SettingsPage onClose={() => setShowSettings(false)} />
-          ) : (
-            <MoviesScreen />
-          )}
-        </main>
+      <div className="flex h-screen w-screen bg-black text-slate-100 overflow-hidden font-sans select-none flex-col">
+        <TopNav
+          channels={channels}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          user={user}
+          currentProfile={currentProfile}
+          setActiveTab={setActiveTab}
+          activeTab={activeTab}
+          onShowAuth={() => setShowAuth(true)}
+        />
+        <LiveStrip />
+        <div className="flex flex-1 overflow-hidden">
+          <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onShowSettings={() => setShowSettings(true)} onShowAdmin={() => setShowAdmin(true)} />
+          <main className="flex-1 flex flex-col h-full overflow-y-auto pb-16 md:pb-0">
+            {showSettings ? <SettingsPage onClose={() => setShowSettings(false)} /> : <MoviesScreen />}
+          </main>
+        </div>
       </div>
     );
   }
 
-  // 4. Main app: TV channels + EPG
   return (
-    <div className="flex h-screen w-screen bg-[#0a0b0f] text-slate-100 overflow-hidden font-sans select-none">
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onShowSettings={() => setShowSettings(true)} onShowAdmin={() => setShowAdmin(true)} />
+    <div className="flex h-screen w-screen bg-black text-slate-100 overflow-hidden font-sans select-none flex-col">
+      <TopNav
+        channels={channels}
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        user={user}
+        currentProfile={currentProfile}
+        setActiveTab={setActiveTab}
+        activeTab={activeTab}
+        onShowAuth={() => setShowAuth(true)}
+      />
+      <LiveStrip />
 
-      <main className="flex-1 flex flex-col h-full overflow-y-auto pb-16 md:pb-0">
-        {activeTab === 'epg' ? (
-          <EpgGridTimeline channels={channels} epgData={epgData} onPlayCatchup={handlePlayCatchup} onSelectChannel={handleSelectChannel} />
-        ) : showSettings ? (
-          <SettingsPage onClose={() => setShowSettings(false)} />
-        ) : (
-          <div className="p-4 md:p-5 space-y-4">
-            <BroadcastBanner />
+      <div className="flex flex-1 overflow-hidden">
+        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onShowSettings={() => setShowSettings(true)} onShowAdmin={() => setShowAdmin(true)} />
 
-            {activeTab === 'channels' ? (
-              <HomePage
-                channels={channels}
-                epgData={epgData}
-                favorites={favorites}
-                watchHistory={watchHistory}
-                onSelectChannel={handleSelectChannel}
-                onPlayCatchup={handlePlayCatchup}
-                onToggleFavorite={handleToggleFavorite}
-                selectedCategory={selectedCategory}
-                setSelectedCategory={setSelectedCategory}
-                categories={categories}
-                searchQuery={searchQuery}
-                setSearchQuery={setSearchQuery}
-                isLoading={isLoading}
-              />
-            ) : (
-              <>
-                <div className="flex items-center justify-between">
-                  <h1 className="text-lg font-extrabold text-white">
-                    {(activeTab === 'channels' | 'history' ? '' : (activeTab === 'favorites' ? 'Kênh yêu thích' : '')) || (activeTab === 'history' ? 'Lịch sử xem' : '')}
+        <main className="flex-1 flex flex-col h-full overflow-y-auto pb-16 md:pb-0">
+          {activeTab === 'epg' ? (
+            <EpgGridTimeline channels={channels} epgData={epgData} onPlayCatchup={handlePlayCatchup} onSelectChannel={handleSelectChannel} />
+          ) : showSettings ? (
+            <SettingsPage onClose={() => setShowSettings(false)} />
+          ) : (
+            <>
+              {activeTab === 'channels' ? (
+                <HomePage
+                  channels={channels}
+                  epgData={epgData}
+                  favorites={favorites}
+                  watchHistory={watchHistory}
+                  onSelectChannel={handleSelectChannel}
+                  onPlayCatchup={handlePlayCatchup}
+                  onToggleFavorite={handleToggleFavorite}
+                  selectedCategory={selectedCategory}
+                  setSelectedCategory={setSelectedCategory}
+                  categories={categories}
+                  searchQuery={searchQuery}
+                  setSearchQuery={setSearchQuery}
+                  isLoading={isLoading}
+                />
+              ) : (
+                <div className="max-w-[1400px] mx-auto px-8 py-8">
+                  <h1 className="text-2xl font-black mb-6">
+                    {activeTab === 'favorites' ? 'Kênh yêu thích' : 'Lịch sử xem'}
                   </h1>
-                </div>
-                {isLoading ? <SkeletonGrid count={6} /> : filteredChannels.length === 0 ? (
-                  <div className="text-center py-12 bg-white/[0.02] rounded-2xl border border-white/[0.04]">
-                    <AlertCircle className="w-10 h-10 text-slate-600 mx-auto mb-2" />
-                    <p className="text-sm text-slate-400">{activeTab === 'favorites' ? 'Chưa có kênh yêu thích' : 'Chưa có lịch sử xem'}</p>
-                  </div>
-                ) : (
-                  <div className={`grid gap-3 ${device.isMobile ? 'grid-cols-1' : device.isTablet ? 'grid-cols-2' : 'grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'}`}>
-                    {filteredChannels.map(ch => {
-                      const { now } = getEpgForChannel(ch.channel_id);
-                      return (
-                        <FocusableWrapper key={ch.channel_id} onClick={() => handleSelectChannel(ch)} className="group relative rounded-xl bg-white/[0.03] border border-white/[0.05] p-3 hover:bg-white/[0.06] transition-all">
-                          <div className="flex items-center gap-2.5 mb-2">
-                            <img src={ch.logo || 'https://i.ibb.co/HDmcxzMK/Gemini-Generated-Image-v7i9yav7i9yav7i9-removebg-preview.png'} alt="" className="w-10 h-10 object-contain rounded-lg bg-black/20 p-1 shrink-0" onError={e => e.target.style.display = 'none'} />
-                            <div className="min-w-0"><h4 className="text-[13px] font-bold text-white truncate">{ch.name}</h4><span className="text-[9px] text-slate-500">{ch.group_title}</span></div>
+                  {isLoading ? <SkeletonGrid count={6} /> : filteredChannels.length === 0 ? (
+                    <div className="text-center py-12 bg-white/[0.02] rounded-2xl border border-white/[0.04]">
+                      <p className="text-sm text-slate-400">{activeTab === 'favorites' ? 'Chưa có kênh yêu thích' : 'Chưa có lịch sử xem'}</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                      {filteredChannels.map(ch => (
+                        <FocusableWrapper key={ch.channel_id} onClick={() => handleSelectChannel(ch)} className="card rounded-2xl bg-stone-900/40 border border-stone-800 hover:border-red-500/40 overflow-hidden cursor-pointer">
+                          <div className="relative aspect-[4/3] bg-gradient-to-br from-stone-700 to-stone-900 flex items-center justify-center">
+                            <img src={ch.logo} alt="" className="w-16 h-16 object-contain" onError={e => { e.target.style.display = 'none'; }} />
+                            <div className="absolute top-3 left-3 px-2 py-0.5 bg-red-600 text-[10px] font-bold rounded">LIVE</div>
                           </div>
-                          <div className="bg-black/20 rounded-lg p-2"><p className="text-[10px] text-slate-400 truncate">{now?.title || 'Đang phát'}</p></div>
+                          <div className="p-4">
+                            <p className="font-bold text-base">{ch.name}</p>
+                            <p className="text-[11px] text-stone-500">{ch.group_title}</p>
+                            <button className="mt-3 w-full py-1.5 bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold rounded-lg transition">Xem</button>
+                          </div>
                         </FocusableWrapper>
-                      );
-                    })}
-                  </div>
-                )}
-              </>
-            )}
-
-            <div className="text-center py-4 text-[10px] text-slate-700">
-              CHRTV IPTV Player · {channels.length} kênh · {currentProfile?.name}
-            </div>
-          </div>
-        )}
-      </main>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </main>
+      </div>
 
       {isPlayerOpen && currentChannel && (
         <div className="fixed inset-0 z-50 bg-black">

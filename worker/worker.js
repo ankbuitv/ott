@@ -482,7 +482,7 @@ async function handleUser(path, request, env) {
       const r = await env.DB.prepare("INSERT INTO user_profiles (user_id, name, avatar_url, is_child, pin_hash) VALUES (?, ?, ?, ?, ?)").bind(user.id, name, avatar_url || "", is_child ? 1 : 0, pinHash).run();
       return json({ success: true, id: r.meta?.last_row_id || r.lastInsertRowid });
     } catch (e) {
-      return json({ error: "Lỗi tạo profile" }, 500);
+      return json({ error: "Lỗi tạo profile: " + (e.message || e) }, 500);
     }
   }
 

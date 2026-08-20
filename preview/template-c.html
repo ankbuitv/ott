@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Template C — Apple TV+</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+body { background: #000; font-family: -apple-system, 'SF Pro Display', 'Inter', sans-serif; -webkit-font-smoothing: antialiased; }
+.row::-webkit-scrollbar { height: 0; }
+.card { transition: all .3s; }
+.card:hover { transform: scale(1.04); z-index: 10; }
+.poster-bg { background-position: center; background-size: cover; }
+.blur-bg::before { content:''; position:absolute; inset:0; backdrop-filter: blur(40px); background: rgba(0,0,0,0.4); z-index: -1; }
+</style>
+</head>
+<body class="text-white overflow-x-hidden">
+
+<!-- Top Nav (Apple TV+) -->
+<nav class="fixed top-0 inset-x-0 z-50 px-12 py-5 flex items-center justify-between bg-gradient-to-b from-black/80 via-black/40 to-transparent">
+  <div class="flex items-center gap-12">
+    <div class="flex items-center gap-2">
+      <div class="w-7 h-7 bg-white rounded-md flex items-center justify-center">
+        <svg class="w-4 h-4 text-black" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+      </div>
+      <span class="font-bold text-base">CHRTV</span>
+    </div>
+    <div class="flex items-center gap-7 text-sm font-medium">
+      <a href="#" class="text-white">Trang chủ</a>
+      <a href="#" class="text-gray-400 hover:text-white transition">Trực tiếp</a>
+      <a href="#" class="text-gray-400 hover:text-white transition">Phim ảnh</a>
+      <a href="#" class="text-gray-400 hover:text-white transition">TV Shows</a>
+      <a href="#" class="text-gray-400 hover:text-white transition">Thể thao</a>
+      <a href="#" class="text-gray-400 hover:text-white transition">Yêu thích</a>
+    </div>
+  </div>
+  <div class="flex items-center gap-4">
+    <button class="p-2 hover:bg-white/10 rounded-lg">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+    </button>
+    <button class="p-2 hover:bg-white/10 rounded-lg">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </div>
+</nav>
+
+<!-- Hero Big Banner -->
+<section class="relative h-screen -mt-px">
+  <div class="absolute inset-0 bg-gradient-to-r from-black via-black/30 to-transparent z-10"></div>
+  <div class="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent z-10"></div>
+  <div class="absolute inset-0 poster-bg" style="background-image:url('https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=2000');"></div>
+
+  <div class="relative z-20 h-full flex items-end pb-32 px-12">
+    <div class="max-w-xl">
+      <!-- Channel logo/name -->
+      <div class="flex items-center gap-3 mb-3">
+        <div class="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-2xl">📺</div>
+        <div>
+          <p class="text-xs text-gray-300 uppercase tracking-widest font-bold">VTV1 HD</p>
+          <p class="text-[10px] text-red-400 font-bold">● LIVE NOW · 12K đang xem</p>
+        </div>
+      </div>
+      <h1 class="text-7xl font-black tracking-tight mb-4 leading-none">Thời sự 19h</h1>
+      <div class="flex items-center gap-3 text-sm text-gray-300 mb-4">
+        <span class="text-yellow-400 font-bold">★★★★★ 4.8</span>
+        <span>·</span>
+        <span>Bản tin thời sự</span>
+        <span>·</span>
+        <span>19:00 - 19:30</span>
+      </div>
+      <p class="text-base text-gray-300 mb-6 leading-relaxed max-w-lg">Bản tin thời sự trong ngày cập nhật những sự kiện nóng nhất về chính trị, kinh tế, xã hội và quốc tế. Phát sóng trực tiếp từ Đài Truyền hình Việt Nam.</p>
+      <div class="flex items-center gap-3">
+        <button class="flex items-center gap-2.5 bg-white text-black px-8 py-3 rounded-full font-bold hover:bg-white/90 transition">
+          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          Xem ngay
+        </button>
+        <button class="flex items-center gap-2.5 bg-white/15 backdrop-blur text-white px-8 py-3 rounded-full font-medium hover:bg-white/25 transition">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Thêm vào DS
+        </button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Categories Tab Bar -->
+<div class="sticky top-0 z-40 bg-black/80 backdrop-blur-xl border-b border-white/5 px-12">
+  <div class="flex items-center gap-7 py-3 text-sm font-medium">
+    <button class="text-white border-b-2 border-red-500 pb-3 -mb-3">Trực tiếp ngay bây giờ</button>
+    <button class="text-gray-400 hover:text-white pb-3 -mb-3 transition">Tin tức</button>
+    <button class="text-gray-400 hover:text-white pb-3 -mb-3 transition">Thể thao</button>
+    <button class="text-gray-400 hover:text-white pb-3 -mb-3 transition">Phim ảnh</button>
+    <button class="text-gray-400 hover:text-white pb-3 -mb-3 transition">Giải trí</button>
+    <button class="text-gray-400 hover:text-white pb-3 -mb-3 transition">Thiếu nhi</button>
+    <button class="text-gray-400 hover:text-white pb-3 -mb-3 transition">Quốc tế</button>
+    <button class="text-gray-400 hover:text-white pb-3 -mb-3 transition transition">Tài chính</button>
+    <button class="ml-auto px-4 py-1.5 bg-red-600 text-white rounded-full text-xs font-bold">⚡ LIVE</button>
+  </div>
+</div>
+
+<div class="px-12 pb-12 space-y-10">
+
+<!-- Row 1 — Horizontal (Apple TV+) -->
+<section>
+  <h2 class="text-2xl font-bold mb-4">Đang phát sóng</h2>
+  <div class="row flex gap-4 overflow-x-auto pb-4 -mx-2 px-2">
+    <div class="card shrink-0 w-72 cursor-pointer">
+      <div class="relative aspect-video rounded-2xl overflow-hidden bg-gradient-to-br from-red-900 via-red-800 to-orange-900 mb-2">
+        <div class="absolute inset-0 flex items-center justify-center text-5xl">📺</div>
+        <div class="absolute top-3 left-3 px-2 py-0.5 bg-red-600 text-[10px] font-bold rounded-md">● LIVE</div>
+        <div class="absolute bottom-3 right-3 px-2 py-0.5 bg-black/60 backdrop-blur text-[10px] font-medium rounded-md">HD</div>
+      </div>
+      <p class="text-sm font-medium leading-tight">VTV1 HD</p>
+      <p class="text-xs text-gray-500 mt-0.5">Thời sự 19h</p>
+    </div>
+    <div class="card shrink-0 w-72 cursor-pointer">
+      <div class="relative aspect-video rounded-2xl overflow-hidden bg-gradient-to-br from-purple-900 via-purple-800 to-pink-900 mb-2">
+        <div class="absolute inset-0 flex items-center justify-center text-5xl">📺</div>
+        <div class="absolute top-3 left-3 px-2 py-0.5 bg-red-600 text-[10px] font-bold rounded-md">● LIVE</div>
+      </div>
+      <p class="text-sm font-medium leading-tight">VTV3 HD</p>
+      <p class="text-xs text-gray-500 mt-0.5">Gặp nhau cuối tuần</p>
+    </div>
+    <div class="card shrink-0 w-72 cursor-pointer">
+      <div class="relative aspect-video rounded-2xl overflow-hidden bg-gradient-to-br from-emerald-900 via-emerald-800 to-teal-900 mb-2">
+        <div class="absolute inset-0 flex items-center justify-center text-5xl">📺</div>
+        <div class="absolute top-3 left-3 px-2 py-0.5 bg-red-600 text-[10px] font-bold rounded-md">● LIVE</div>
+      </div>
+      <p class="text-sm font-medium leading-tight">HTV7 HD</p>
+      <p class="text-xs text-gray-500 mt-0.5">Đường lên đỉnh Olympia</p>
+    </div>
+    <div class="card shrink-0 w-72 cursor-pointer">
+      <div class="relative aspect-video rounded-2xl overflow-hidden bg-gradient-to-br from-orange-900 via-red-800 to-red-900 mb-2">
+        <div class="absolute inset-0 flex items-center justify-center text-5xl">📺</div>
+        <div class="absolute top-3 left-3 px-2 py-0.5 bg-red-600 text-[10px] font-bold rounded-md">● LIVE</div>
+      </div>
+      <p class="text-sm font-medium leading-tight">ON Sports</p>
+      <p class="text-xs text-gray-500 mt-0.5">V-League · 12K đang xem</p>
+    </div>
+    <div class="card shrink-0 w-72 cursor-pointer">
+      <div class="relative aspect-video rounded-2xl overflow-hidden bg-gradient-to-br from-blue-900 via-blue-800 to-indigo-900 mb-2">
+        <div class="absolute inset-0 flex items-center justify-center text-5xl">📺</div>
+        <div class="absolute top-3 left-3 px-2 py-0.5 bg-red-600 text-[10px] font-bold rounded-md">● LIVE</div>
+      </div>
+      <p class="text-sm font-medium leading-tight">VTV5</p>
+      <p class="text-xs text-gray-500 mt-0.5">Thế giới 24h</p>
+    </div>
+  </div>
+</section>
+
+<!-- Row 2 — Sport Large -->
+<section>
+  <div class="flex items-baseline justify-between mb-4">
+    <h2 class="text-2xl font-bold">Thể thao trực tiếp</h2>
+    <a href="#" class="text-xs text-gray-400 hover:text-white">Xem tất cả →</a>
+  </div>
+  <div class="row flex gap-4 overflow-x-auto pb-4 -mx-2 px-2">
+    <div class="card shrink-0 w-96 cursor-pointer">
+      <div class="relative aspect-[16/9] rounded-2xl overflow-hidden bg-gradient-to-br from-red-700 via-orange-700 to-red-900">
+        <div class="absolute inset-0 flex items-center justify-center text-6xl">⚽</div>
+        <div class="absolute top-3 left-3 px-2 py-1 bg-red-600 text-[10px] font-bold rounded-md flex items-center gap-1">
+          <span class="w-1.5 h-1.5 rounded-full bg-white"></span> LIVE
+        </div>
+        <div class="absolute bottom-3 left-3 right-3 flex items-end justify-between">
+          <div class="px-2 py-1 bg-black/60 backdrop-blur rounded text-[10px] font-bold">V-LEAGUE 2026</div>
+          <div class="px-2 py-1 bg-black/60 backdrop-blur rounded text-[10px]">12K xem</div>
+        </div>
+      </div>
+      <p class="text-sm font-medium leading-tight mt-2">Hà Nội FC vs SLNA · Tỷ số 2-1</p>
+      <p class="text-xs text-gray-500">Hiệp 2 · 78'</p>
+    </div>
+    <div class="card shrink-0 w-96 cursor-pointer">
+      <div class="relative aspect-[16/9] rounded-2xl overflow-hidden bg-gradient-to-br from-orange-700 via-amber-700 to-orange-900">
+        <div class="absolute inset-0 flex items-center justify-center text-6xl">🏀</div>
+        <div class="absolute top-3 left-3 px-2 py-1 bg-red-600 text-[10px] font-bold rounded-md flex items-center gap-1">
+          <span class="w-1.5 h-1.5 rounded-full bg-white"></span> LIVE
+        </div>
+      </div>
+      <p class="text-sm font-medium leading-tight mt-2">NBA · Lakers vs Warriors</p>
+      <p class="text-xs text-gray-500">Quý 3 · 8K xem</p>
+    </div>
+    <div class="card shrink-0 w-96 cursor-pointer">
+      <div class="relative aspect-[16/9] rounded-2xl overflow-hidden bg-gradient-to-br from-green-700 via-emerald-700 to-teal-900">
+        <div class="absolute inset-0 flex items-center justify-center text-6xl">🎾</div>
+        <div class="absolute top-3 left-3 px-2 py-1 bg-red-600 text-[10px] font-bold rounded-md flex items-center gap-1">
+          <span class="w-1.5 h-1.5 rounded-full bg-white"></span> LIVE
+        </div>
+      </div>
+      <p class="text-sm font-medium leading-tight mt-2">Tennis Grand Slam Final</p>
+      <p class="text-xs text-gray-500">Set 3 · 4K xem</p>
+    </div>
+  </div>
+</section>
+
+<!-- Row 3 - YouTube-style with thumbnails -->
+<section>
+  <h2 class="text-2xl font-bold mb-4">Có thể bạn thích</h2>
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-6">
+    <div class="cursor-pointer">
+      <div class="aspect-video rounded-2xl bg-gradient-to-br from-blue-700 to-blue-900 mb-3 flex items-center justify-center text-4xl">📺</div>
+      <div class="flex items-start gap-3">
+        <div class="w-9 h-9 rounded-full bg-blue-600 shrink-0 flex items-center justify-center text-[10px] font-bold">V1</div>
+        <div class="min-w-0">
+          <p class="text-sm font-bold leading-tight">Phim tài liệu: Việt Nam 70 năm</p>
+          <p class="text-xs text-gray-500 mt-1">VTV1 · Tổng hợp · 4 lượt xem</p>
+        </div>
+      </div>
+    </div>
+    <div class="cursor-pointer">
+      <div class="aspect-video rounded-2xl bg-gradient-to-br from-purple-700 to-pink-900 mb-3 flex items-center justify-center text-4xl">📺</div>
+      <div class="flex items-start gap-3">
+        <div class="w-9 h-9 rounded-full bg-purple-600 shrink-0 flex items-center justify-center text-[10px] font-bold">V3</div>
+        <div class="min-w-0">
+          <p class="text-sm font-bold leading-tight">Show âm nhạc Việt Nam 2026</p>
+          <p class="text-xs text-gray-500 mt-1">VTV3 · Mới · 12 lượt xem</p>
+        </div>
+      </div>
+    </div>
+    <div class="cursor-pointer">
+      <div class="aspect-video rounded-2xl bg-gradient-to-br from-emerald-700 to-teal-900 mb-3 flex items-center justify-center text-4xl">📺</div>
+      <div class="flex items-start gap-3">
+        <div class="w-9 h-9 rounded-full bg-emerald-600 shrink-0 flex items-center justify-center text-[10px] font-bold">H7</div>
+        <div class="min-w-0">
+          <p class="text-sm font-bold leading-tight">Khám phá thế giới hoang dã</p>
+          <p class="text-xs text-gray-500 mt-1">HTV7 · 4 tập · 5.2K lượt xem</p>
+        </div>
+      </div>
+    </div>
+    <div class="cursor-pointer">
+      <div class="aspect-video rounded-2xl bg-gradient-to-br from-red-700 to-orange-900 mb-3 flex items-center justify-center text-4xl">📺</div>
+      <div class="flex items-start gap-3">
+        <div class="w-9 h-9 rounded-full bg-red-600 shrink-0 flex items-center justify-center text-[10px] font-bold">OS</div>
+        <div class="min-w-0">
+          <p class="text-sm font-bold leading-tight">V-League Highlights Tuần 4</p>
+          <p class="text-xs text-gray-500 mt-1">ON Sports · 90 phút · 8K lượt xem</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</div>
+
+<!-- Bottom Tab Bar for Mobile -->
+<div class="fixed bottom-0 inset-x-0 bg-black/90 backdrop-blur-xl border-t border-white/5 px-6 py-3 md:hidden">
+  <div class="flex items-center justify-around">
+    <button class="flex flex-col items-center text-white"><svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3"/></svg><span class="text-[9px] mt-0.5">Home</span></button>
+    <button class="flex flex-col items-center text-gray-500"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg><span class="text-[9px] mt-0.5">Tìm</span></button>
+    <button class="flex flex-col items-center text-gray-500"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg><span class="text-[9px] mt-0.5">EPG</span></button>
+    <button class="flex flex-col items-center text-gray-500"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg><span class="text-[9px] mt-0.5">Yêu thích</span></button>
+    <button class="flex flex-col items-center text-gray-500"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/></svg><span class="text-[9px] mt-0.5">Profile</span></button>
+  </div>
+</div>
+
+</body>
+</html>

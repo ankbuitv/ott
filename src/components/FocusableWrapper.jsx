@@ -1,56 +1,78 @@
-import React, { useEffect } from 'react';
-import { useFocusable } from '@noriginmedia/react-spatial-navigation';
+import React, { Component } from 'react';
+import { withFocusable } from '@noriginmedia/react-spatial-navigation';
+
+const DEFAULT_ACTIVE_CLASS =
+  'tv-focused border-2 border-red-600 bg-red-600/30 shadow-lg shadow-red-600/50 scale-105';
 
 /**
- * FocusableWrapper - Thành phần bọc hỗ trợ Spatial Navigation cho D-pad Remote
- * Tác giả: CHRTV OTT Full-stack Architect
+ * FocusableElement - Component nội bộ nhận các props do withFocusable HOC inject vào
+ * (focused, setFocus, stealFocus, ...) và render ra DOM node focusable.
+ * Lưu ý: @noriginmedia/react-spatial-navigation@2.12.9 KHÔNG có hook `useFocusable`
+ * (hook chỉ tồn tại từ v3 / gói khác). Import `useFocusable` sẽ trả về `undefined`
+ * và gọi nó khi render làm toàn bộ React tree crash -> màn hình đen trống trơn.
+ * Vì vậy phiên bản 2.x phải dùng HOC `withFocusable`.
  */
-export default function FocusableWrapper({
-  children,
-  onEnterPress,
-  onFocus,
-  onBlur,
-  focusKey: customFocusKey,
-  className = '',
-  activeClassName = 'tv-focused border-2 border-red-600 bg-red-600/30 shadow-lg shadow-red-600/50 scale-105',
-  inactiveClassName = '',
-  onClick,
-  autoFocus = false,
-  extraProps = {},
-}) {
-  const { ref, focused, focusSelf, setFocus } = useFocusable({
-    focusKey: customFocusKey,
-    onEnterPress: (details) => {
-      if (onEnterPress) onEnterPress(details);
-      if (onClick) onClick(details);
-    },
-    onFocus: (details) => {
-      if (onFocus) onFocus(details);
-    },
-    onBlur: (details) => {
-      if (onBlur) onBlur(details);
-    },
-    extraProps,
-  });
-
-  useEffect(() => {
-    if (autoFocus && focusSelf) {
-      focusSelf();
+class FocusableElement extends Component {
+  componentDidMount() {
+    const { autoFocus, setFocus } = this.props;
+    if (autoFocus && setFocus) {
+      setFocus();
     }
-  }, [autoFocus, focusSelf]);
+  }
+
+  render() {
+    const {
+      children,
+      focused,
+      setFocus,
+      onClick,
+      className = '',
+      activeClassName = DEFAULT_ACTIVE_CLASS,
+      inactiveClassName = '',
+    } = this.props;
+
+    return (
+      <div
+        onClick={(e) => {
+          if (setFocus) setFocus();
+          if (onClick) onClick(e);
+        }}
+        className={`cursor-pointer transition-all duration-200 outline-none rounded-lg ${className} ${
+          focused ? activeClassName : inactiveClassName
+        }`}
+      >
+        {typeof children === 'function' ? children({ focused }) : children}
+      </div>
+    );
+  }
+}
+
+const FocusableElementHOC = withFocusable()(FocusableElement);
+
+/**
+ * FocusableWrapper - Thành phần bọc hỗ trợ Spatial Navigation cho D-pad Remote.
+ * Giữ nguyên giao diện (props) cũ: children, onClick, onEnterPress, onFocus,
+ * onBlur, focusKey, className, activeClassName, inactiveClassName, autoFocus.
+ * Ở bản 2.x, callback focus/blur là onBecameFocused/onBecameBlurred và nhấn OK
+ * trên remote là onEnterPress, nên cần map sang đúng API của thư viện.
+ */
+export default function FocusableWrapper(props) {
+  const { onEnterPress, onFocus, onBlur, onClick, ...rest } = props;
 
   return (
-    <div
-      ref={ref}
-      onClick={(e) => {
-        if (setFocus) setFocus();
-        if (onClick) onClick(e);
+    <FocusableElementHOC
+      {...rest}
+      onClick={onClick}
+      onEnterPress={(innerRest, details) => {
+        if (onEnterPress) onEnterPress(details);
+        if (onClick) onClick(details);
       }}
-      className={`cursor-pointer transition-all duration-200 outline-none rounded-lg ${className} ${
-        focused ? activeClassName : inactiveClassName
-      }`}
-    >
-      {typeof children === 'function' ? children({ focused }) : children}
-    </div>
+      onBecameFocused={(layout, innerRest, details) => {
+        if (onFocus) onFocus(details);
+      }}
+      onBecameBlurred={(layout, innerRest, details) => {
+        if (onBlur) onBlur(details);
+      }}
+    />
   );
 }

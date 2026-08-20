@@ -45,6 +45,41 @@ npm run build
 npx cap sync android
 ```
 
+## ☁️ Deploy lên Cloudflare Workers (Web Production)
+
+Cấu hình deploy nằm ở file **`wrangler.toml` tại thư mục gốc** (CI/CD chạy
+`npx wrangler deploy` từ root nên config phải ở root):
+
+```bash
+# Build frontend (dist/) + deploy Worker kèm Static Assets lên Cloudflare
+npx wrangler deploy
+```
+
+Wrangler sẽ tự động chạy `npm run build` (khối `[build]`) trước khi deploy.
+Kết quả: Worker `chrtv-backend` phục vụ cả API (`/api/*`) lẫn giao diện web
+đã build trong `dist/`.
+
+### Bật lại Cloudflare D1 & KV (tùy chọn)
+
+Mặc định config deploy **không bật binding D1/KV** vì ID trong `worker/wrangler.toml`
+cũ chỉ là placeholder (`chrtv-d1-database-id`, `chrtv-epg-kv-id`) khiến
+`wrangler deploy` báo lỗi. Worker tự động chạy chế độ dự phòng (danh sách kênh
+M3U/default, EPG fetch trực tiếp, Favorites & Lịch sử xem lưu LocalStorage).
+Muốn bật D1/KV thật:
+
+```bash
+# 1. Tạo tài nguyên trên Cloudflare
+npx wrangler d1 create chrtv-db
+npx wrangler kv namespace create EPG_KV
+
+# 2. Tạo bảng dữ liệu (xem schema.sql)
+npx wrangler d1 execute chrtv-db --remote --file=./schema.sql
+
+# 3. Bỏ comment 2 block [[d1_databases]] & [[kv_namespaces]] trong wrangler.toml
+#    và điền database_id / id thật từ Cloudflare Dashboard, sau đó:
+npx wrangler deploy
+```
+
 ---
 
 ## 📦 Cấu Trúc Thư Mục Dự Án (Folder Tree)
@@ -76,8 +111,8 @@ ott/
 │   ├── main.jsx                    # Điểm khởi chạy React
 │   └── index.css                   # TailwindCSS & Style Focus TV đỏ #dc2626
 ├── worker/
-│   ├── worker.js                   # Cloudflare Worker API Engine
-│   └── wrangler.toml               # Cấu hình Binding D1 Database & KV Storage
+│   └── worker.js                   # Cloudflare Worker API Engine
+├── wrangler.toml                   # Cấu hình Deploy Cloudflare (Worker + Assets + D1/KV)
 ├── capacitor.config.json           # Cấu hình Capacitor App (com.chrtv.app)
 ├── index.html                      # HTML Entry
 ├── package.json                    # Khai báo trọn bộ dependencies

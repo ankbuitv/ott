@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="vi" class="dark">
+<head>
+<meta charset="UTF-8">
+<title>Template E — Fusion B+C</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+body { background: #000; font-family: -apple-system, 'SF Pro Display', 'Inter', 'Segoe UI', sans-serif; -webkit-font-smoothing: antialiased; }
+.font-display { font-family: -apple-system, 'SF Pro Display', sans-serif; letter-spacing: -0.02em; }
+
+/* Hide native scrollbar on rows */
+.row::-webkit-scrollbar { height: 0; }
+
+/* Apple scale card */
+.card { transition: transform .35s cubic-bezier(.4,0,.2,1), box-shadow .35s; will-change: transform; }
+.card:hover { transform: scale(1.045); z-index: 10; box-shadow: 0 30px 60px rgba(220,38,38,.18); }
+
+/* Live pulsing dot */
+.live-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239,68,68,.22), 0 0 8px rgba(239,68,68,.6);
+  animation: ring 1.6s infinite;
+}
+@keyframes ring {
+  0% { box-shadow: 0 0 0 0 rgba(239,68,68,.5); }
+  70% { box-shadow: 0 0 0 8px rgba(239,68,68,0); }
+  100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); }
+}
+
+/* Sidebar hover */
+.nav-btn { transition: all .2s; }
+.nav-btn:not(.active):hover { background: rgba(255,255,255,.06); }
+
+/* Sticky tab underline animation */
+.tab-btn { position: relative; }
+.tab-btn::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: -1px;
+  height: 2px; background: #ef4444; border-radius: 2px;
+  transform: scaleX(0); transition: transform .2s ease-out;
+}
+.tab-btn.active::after { transform: scaleX(1); }
+
+/* Glass effect */
+.glass { backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%); }
+
+/* Hero shimmer */
+.hero-bg {
+  background-image:
+    radial-gradient(circle at 80% 20%, rgba(239,68,68,.25), transparent 40%),
+    radial-gradient(circle at 20% 80%, rgba(168,85,247,.2), transparent 40%),
+    linear-gradient(135deg, #1a0a0a 0%, #0a0a0a 100%);
+}
+
+/* Smooth focus */
+*:focus-visible { outline: 2px solid #ef4444; outline-offset: 2px; }
+
+/* Modal backdrop */
+.modal-backdrop {
+  background: rgba(0,0,0,.7);
+  backdrop-filter: blur(20px);
+}
+</style>
+</head>
+<body class="text-white overflow-x-hidden">
+
+<!-- AUTH MODAL (overlay) -->
+<div id="authModal" class="fixed inset-0 z-[200] modal-backdrop flex items-center justify-center p-4 hidden">
+  <div class="bg-[#16181f] border border-white/10 rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden">
+    <!-- Cover photo -->
+    <div class="relative h-28 hero-bg overflow-hidden">
+      <div class="absolute inset-0 bg-gradient-to-b from-transparent to-[#16181f]/90"></div>
+      <button id="closeAuth" class="absolute top-3 right-3 w-8 h-8 rounded-full bg-black/40 hover:bg-black/60 flex items-center justify-center">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <!-- Logo + title -->
+    <div class="px-6 -mt-10 relative">
+      <div class="w-16 h-16 mx-auto bg-gradient-to-br from-red-500 to-red-700 rounded-2xl shadow-xl shadow-red-600/30 flex items-center justify-center border-4 border-[#16181f]">
+        <svg class="w-8 h-8" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="m9 9 5 12 1.774-5.226L21 14 9 3l-2 5.226z"/></svg>
+      </div>
+    </div>
+
+    <div class="px-6 pt-3 pb-5 text-center">
+      <h2 class="text-2xl font-black tracking-tight">Chào mừng đến CHRTV</h2>
+      <p class="text-xs text-stone-400 mt-1.5">Đăng nhập để đồng bộ danh sách yêu thích & lịch sử</p>
+    </div>
+
+    <!-- Tabs -->
+    <div class="px-6">
+      <div class="flex bg-black/40 rounded-xl p-0.5 border border-white/5">
+        <button class="flex-1 py-2 text-xs font-semibold rounded-lg bg-white text-black" id="tabLogin">Đăng nhập</button>
+        <button class="flex-1 py-2 text-xs font-semibold rounded-lg text-stone-400 hover:text-white" id="tabRegister">Đăng ký</button>
+      </div>
+    </div>
+
+    <!-- Form -->
+    <div class="p-6 space-y-3">
+      <div class="space-y-2">
+        <div class="relative">
+          <input type="text" placeholder="Email hoặc Username" class="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-red-500 focus:bg-black/60 transition">
+        </div>
+        <div class="relative">
+          <input type="password" placeholder="Mật khẩu" class="w-full px-4 py-3 bg-black/40 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-red-500 focus:bg-black/60 transition pr-10">
+          <button class="absolute right-2 top-3 p-1 text-stone-500 hover:text-stone-300">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
+        <div class="flex items-center justify-between text-[11px] pt-0.5">
+          <label class="flex items-center gap-1.5 text-stone-400 cursor-pointer">
+            <input type="checkbox" class="rounded bg-black/40 border-white/10">
+            Ghi nhớ
+          </label>
+          <a href="#" class="text-red-400 hover:text-red-300">Quên mật khẩu?</a>
+        </div>
+      </div>
+
+      <button class="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-bold text-sm rounded-xl shadow-lg shadow-red-600/20 transition flex items-center justify-center gap-2">
+        Đăng nhập
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M5 12h14m-7-7 7 7-7 7"/></svg>
+      </button>
+
+      <!-- Divider -->
+      <div class="flex items-center gap-3 my-4">
+        <div class="flex-1 h-px bg-white/10"></div>
+        <span class="text-[10px] text-stone-500 font-medium">HOẶC</span>
+        <div class="flex-1 h-px bg-white/10"></div>
+      </div>
+
+      <!-- Social -->
+      <div class="grid grid-cols-2 gap-2">
+        <button class="flex items-center justify-center gap-2 py-2.5 bg-white text-stone-900 rounded-xl text-xs font-semibold hover:bg-stone-200 transition">
+          <svg class="w-4 h-4" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+          Google
+        </button>
+        <button class="flex items-center justify-center gap-2 py-2.5 bg-black border border-white/10 rounded-xl text-xs font-semibold hover:bg-white/5 transition">
+          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+          GitHub
+        </button>
+      </div>
+
+      <p class="text-[10px] text-stone-500 text-center leading-relaxed pt-1">
+        Bằng việc tiếp tục, bạn đồng ý với
+        <a href="#" class="text-stone-300 underline">Điều khoản</a> và
+        <a href="#" class="text-stone-300 underline">Chính sách</a>.
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- LIVE STRIP (YouTube TV touch) -->
+<div class="bg-gradient-to-r from-red-600 via-red-700 to-rose-700 py-1.5 px-6 flex items-center gap-3 text-xs">
+  <span class="live-dot shadow-red-400/80"></span>
+  <span class="font-bold tracking-wider">4 KÊNH ĐANG TRỰC TIẾP</span>
+  <span class="opacity-90 hidden md:inline">· VTV1 · VTV3 · HTV7 · ON Sports</span>
+  <span class="ml-auto opacity-80 hidden md:inline">Cập nhật vừa xong</span>
+</div>
+
+<!-- TOP NAV (Apple glass nav) -->
+<nav class="glass bg-black/70 border-b border-white/5 px-6 py-3 flex items-center justify-between sticky top-0 z-40">
+  <div class="flex items-center gap-6">
+    <!-- Logo -->
+    <div class="flex items-center gap-2">
+      <div class="w-9 h-9 bg-gradient-to-br from-red-500 to-red-700 rounded-xl flex items-center justify-center shadow-lg shadow-red-600/30">
+        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="m9 9 5 12 1.774-5.226L21 14 9 3l-2 5.226z"/></svg>
+      </div>
+      <div>
+        <div class="font-black text-base tracking-tight leading-none">CHRTV</div>
+        <div class="text-[8px] text-red-400 font-bold tracking-widest leading-none mt-0.5">IPTV PLAYER</div>
+      </div>
+    </div>
+    <!-- Search -->
+    <div class="hidden md:flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 px-3.5 py-2 rounded-xl w-80 transition-all focus-within:border-red-500">
+      <svg class="w-4 h-4 text-stone-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input class="bg-transparent text-sm text-white placeholder:text-stone-500 focus:outline-none flex-1" placeholder="Tìm kênh, chương trình, thể loại...">
+      <kbd class="hidden lg:inline px-1.5 py-0.5 text-[10px] text-stone-500 bg-white/5 rounded border border-white/10 font-mono">⌘K</kbd>
+    </div>
+  </div>
+  <div class="flex items-center gap-2">
+    <button class="p-2 hover:bg-white/10 rounded-xl transition">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+    </button>
+    <button id="openAuth" class="px-4 py-2 bg-white text-black text-sm font-bold rounded-xl hover:bg-stone-200 transition">Đăng nhập</button>
+    <div class="hidden w-9 h-9 rounded-full bg-gradient-to-br from-amber-500 to-red-600 flex items-center justify-center font-bold text-white text-sm cursor-pointer">A</div>
+  </div>
+</nav>
+
+<div class="flex">
+
+<!-- SIDEBAR (vertical dock from B, Apple's refine) -->
+<aside class="w-20 bg-[#060608] border-r border-white/5 sticky top-[65px] h-[calc(100vh-65px)] flex flex-col items-center py-6 gap-1.5 shrink-0">
+  <button class="nav-btn active w-14 h-14 bg-white/[0.08] rounded-2xl flex flex-col items-center justify-center gap-0.5 text-white">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path d="m9 9 5 12 1.774-5.226L21 14 9 3l-2 5.226z"/></svg>
+    <span class="text-[8px] font-bold tracking-tight">TRANG CHỦ</span>
+  </button>
+  <button class="nav-btn w-14 h-14 hover:bg-white/5 rounded-2xl flex flex-col items-center justify-center gap-0.5 text-stone-500 hover:text-white">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+    <span class="text-[8px] font-bold tracking-tight">LỊCH EPG</span>
+  </button>
+  <button class="nav-btn w-14 h-14 hover:bg-white/5 rounded-2xl flex flex-col items-center justify-center gap-0.5 text-stone-500 hover:text-white">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>
+    <span class="text-[8px] font-bold tracking-tight">YÊU THÍCH</span>
+  </button>
+  <button class="nav-btn w-14 h-14 hover:bg-white/5 rounded-2xl flex flex-col items-center justify-center gap-0.5 text-stone-500 hover:text-white">
+    <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1018 0 9 9 0 00-18 0zm3 0l3 3 7-7"/></svg>
+    <span class="text-[8px] font-bold tracking-tight">LỊCH SỬ</span>
+  </button>
+
+  <div class="mt-auto flex flex-col items-center gap-3">
+    <button class="nav-btn w-10 h-10 hover:bg-white/5 rounded-full flex items-center justify-center text-stone-500 hover:text-white">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9"/></svg>
+    </button>
+  </div>
+</aside>
+
+<main class="flex-1">
+
+<!-- HERO (Apple style full-width but tall like B) -->
+<section class="relative overflow-hidden">
+  <div class="absolute inset-0 hero-bg"></div>
+  <div class="absolute inset-0">
+    <div class="absolute top-20 right-10 w-[600px] h-[400px] bg-gradient-to-bl from-red-900/30 via-purple-900/20 to-transparent rounded-full blur-3xl"></div>
+    <div class="absolute bottom-20 left-10 w-[500px] h-[300px] bg-gradient-to-tr from-rose-900/30 to-transparent rounded-full blur-3xl"></div>
+  </div>
+
+  <div class="relative max-w-[1400px] mx-auto px-8 py-10 grid md:grid-cols-12 gap-8 items-center">
+    <!-- Left: Title + CTA -->
+    <div class="md:col-span-7">
+      <!-- EYEBROW -->
+      <div class="flex items-center gap-3 mb-4">
+        <span class="flex items-center gap-1.5 bg-red-600/15 backdrop-blur border border-red-600/30 text-red-400 px-3 py-1 rounded-full">
+          <span class="live-dot shadow-red-400/60"></span>
+          <span class="text-[10px] font-bold tracking-widest">LIVE NOW</span>
+        </span>
+        <span class="text-[10px] text-stone-400 font-medium tracking-wider uppercase">VTV1 HD · ĐÀI THVN</span>
+      </div>
+
+      <!-- BIG TITLE -->
+      <h1 class="font-display text-7xl font-black tracking-tight leading-[0.95] mb-5">
+        Thời sự<br><span class="bg-gradient-to-r from-red-400 to-amber-400 bg-clip-text text-transparent">19h</span>
+      </h1>
+
+      <!-- meta -->
+      <div class="flex items-center gap-3 text-sm text-stone-400 mb-5">
+        <span class="text-amber-400 font-bold">★★★★★ 4.8</span>
+        <span>·</span>
+        <span>Tin tức</span>
+        <span>·</span>
+        <span>30 phút</span>
+        <span>·</span>
+        <span class="flex items-center gap-1">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5"/></svg>
+          12.4K đang xem
+        </span>
+      </div>
+
+      <!-- desc -->
+      <p class="text-base text-stone-300 mb-7 max-w-lg leading-relaxed">Bản tin thời sự trong ngày. Cập nhật tin nóng nhất về chính trị, kinh tế, xã hội và quốc tế từ Đài Truyền hình Việt Nam. Phát sóng trực tiếp lúc 19:00 hằng ngày.</p>
+
+      <!-- CTAs -->
+      <div class="flex items-center gap-3">
+        <button class="flex items-center gap-2.5 bg-white text-black px-7 py-3 rounded-full font-bold text-sm hover:bg-stone-200 transition shadow-lg shadow-white/10">
+          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          Xem ngay
+        </button>
+        <button class="flex items-center gap-2.5 bg-white/10 backdrop-blur border border-white/15 text-white px-6 py-3 rounded-full font-medium text-sm hover:bg-white/20 transition">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Yêu thích
+        </button>
+        <button class="flex items-center gap-2 px-4 py-3 text-stone-400 hover:text-white transition">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+          Chia sẻ
+        </button>
+      </div>
+    </div>
+
+    <!-- Right: Live widget preview -->
+    <div class="md:col-span-5">
+      <div class="rounded-3xl bg-gradient-to-br from-stone-900 to-black border border-white/10 overflow-hidden shadow-2xl">
+        <div class="aspect-video relative bg-gradient-to-br from-red-900/40 via-purple-900/30 to-blue-900/40 flex items-center justify-center">
+          <div class="text-center">
+            <div class="w-20 h-20 mx-auto bg-white/10 backdrop-blur-xl rounded-full border border-white/20 flex items-center justify-center mb-3">
+              <svg class="w-10 h-10" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            </div>
+            <p class="text-xs text-stone-400">Đang phát — từ VTV1 HD</p>
+          </div>
+          <div class="absolute top-3 left-3 flex items-center gap-1.5 bg-red-600 text-[10px] font-bold px-2.5 py-1 rounded-md">
+            <span class="w-1.5 h-1.5 rounded-full bg-white"></span> LIVE
+          </div>
+        </div>
+        <div class="p-4">
+          <p class="text-sm font-bold">VTV1 HD · Thời sự 19h</p>
+          <p class="text-xs text-stone-500">18:00 — 19:30 · Tiếp theo: Phim tài liệu Việt Nam</p>
+          <!-- Progress -->
+          <div class="mt-3 flex items-center gap-2">
+            <span class="text-[10px] text-stone-500 font-mono">14:23</span>
+            <div class="flex-1 bg-white/10 rounded-full h-1 overflow-hidden">
+              <div class="bg-gradient-to-r from-red-500 to-amber-500 h-full rounded-full" style="width:48%"></div>
+            </div>
+            <span class="text-[10px] text-stone-500 font-mono">30:00</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Sticky Tabs (Apple style) -->
+<div class="sticky top-[65px] z-30 bg-black/85 glass border-y border-white/5">
+  <div class="max-w-[1400px] mx-auto px-8">
+    <div class="flex items-center gap-7 overflow-x-auto scrollbar-none text-sm font-medium">
+      <button class="tab-btn active text-white py-3.5 px-1 whitespace-nowrap">Đang phát sóng</button>
+      <button class="tab-btn text-stone-400 hover:text-white py-3.5 px-1 whitespace-nowrap">Tin tức</button>
+      <button class="tab-btn text-stone-400 hover:text-white py-3.5 px-1 whitespace-nowrap">Thể thao</button>
+      <button class="tab-btn text-stone-400 hover:text-white py-3.5 px-1 whitespace-nowrap">Phim ảnh</button>
+      <button class="tab-btn text-stone-400 hover:text-white py-3.5 px-1 whitespace-nowrap">Giải trí</button>
+      <button class="tab-btn text-stone-400 hover:text-white py-3.5 px-1 whitespace-nowrap">Thiếu nhi</button>
+      <button class="tab-btn text-stone-400 hover:text-white py-3.5 px-1 whitespace-nowrap">Quốc tế</button>
+      <button class="tab-btn text-stone-400 hover:text-white py-3.5 px-1 whitespace-nowrap">Tài chính</button>
+      <button class="tab-btn text-stone-400 hover:text-white py-3.5 px-1 whitespace-nowrap">Phát thanh</button>
+
+      <div class="ml-auto flex items-center gap-2 py-2">
+        <button class="px-3.5 py-1.5 bg-white/[0.06] border border-white/10 rounded-full text-xs font-semibold text-stone-300 hover:bg-white/[0.1] hover:text-white transition flex items-center gap-1">
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 6h18M7 12h10M3 18h18"/></svg>
+          Lọc
+        </button>
+        <button class="px-3.5 py-1.5 bg-white/[0.06] border border-white/10 rounded-full text-xs font-semibold text-stone-300 hover:bg-white/[0.1] hover:text-white transition flex items-center gap-1">
+          Sắp xếp
+          <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="max-w-[1400px] mx-auto px-8 py-8 space-y-12 pb-32">
+
+<!-- ROW 1: Picked by You (Apple style with B's horizontal scroll) -->
+<section>
+  <div class="flex items-end justify-between mb-5">
+    <div>
+      <p class="text-[10px] text-red-400 font-bold uppercase tracking-widest mb-1">Dành cho bạn</p>
+      <h2 class="font-display text-2xl font-black tracking-tight">Picked by You</h2>
+      <p class="text-xs text-stone-500 mt-1">Dựa trên lịch sử xem của bạn</p>
+    </div>
+    <a href="#" class="text-xs text-stone-400 hover:text-white">Xem tất cả →</a>
+  </div>
+  <div class="row flex gap-4 overflow-x-auto pb-4 -mx-2 px-2">
+    <div class="card shrink-0 w-72 cursor-pointer">
+      <div class="relative aspect-video rounded-2xl overflow-hidden bg-gradient-to-br from-red-700 via-red-800 to-rose-900 mb-2">
+        <div class="absolute inset-0 flex items-center justify-center text-5xl opacity-50">📺</div>
+        <div class="absolute top-3 left-3 px-2.5 py-1 bg-red-600 text-[10px] font-bold rounded-md flex items-center gap-1">
+          <span class="w-1.5 h-1.5 rounded-full bg-white"></span> LIVE
+        </div>
+        <div class="absolute bottom-3 right-3 px-2.5 py-1 bg-black/70 backdrop-blur text-[10px] rounded-md font-medium">HD</div>
+        <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div>
+        <div class="absolute bottom-3 left-3 right-3">
+          <div class="text-[10px] text-red-300 font-bold tracking-wider uppercase mb-0.5">VTV1 · Tin tức</div>
+        </div>
+      </div>
+      <p class="text-sm font-bold leading-tight">Thời sự 19h</p>
+      <div class="flex items-center justify-between mt-1.5">
+        <p class="text-[11px] text-stone-500">18:00 - 19:30</p>
+        <span class="text-[10px] text-amber-400 font-bold">5.0 ★</span>
+      </div>
+    </div>
+
+    <div class="card shrink-0 w-72 cursor-pointer">
+      <div class="relative aspect-video rounded-2xl overflow-hidden bg-gradient-to-br from-purple-700 via-purple-800 to-pink-900 mb-2">
+        <div class="absolute inset-0 flex items-center justify-center text-5xl opacity-50">📺</div>
+        <div class="absolute top-3 left-3 px-2.5 py-1 bg-red-600 text-[10px] font-bold rounded-md flex items-center gap-1">
+          <span class="w-1.5 h-1.5 rounded-full bg-white"></span> LIVE
+        </div>
+        <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div>
+      </div>
+      <p class="text-sm font-bold leading-tight">Gặp nhau cuối tuần</p>
+      <div class="flex items-center justify-between mt-1.5">
+        <p class="text-[11px] text-stone-500">VTV3 HD · 27 phút trước</p>
+      </div>
+    </div>
+
+    <div class="card shrink-0 w-72 cursor-pointer">
+      <div class="relative aspect-video rounded-2xl overflow-hidden bg-gradient-to-br from-emerald-700 via-emerald-800 to-teal-900 mb-2">
+        <div class="absolute inset-0 flex items-center justify-center text-5xl opacity-50">📺</div>
+        <div class="absolute top-3 left-3 px-2.5 py-1 bg-red-600 text-[10px] font-bold rounded-md flex items-center gap-1">
+          <span class="w-1.5 h-1.5 rounded-full bg-white"></span> LIVE
+        </div>
+        <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div>
+      </div>
+      <p class="text-sm font-bold leading-tight">Đường lên đỉnh Olympia</p>
+      <div class="flex items-center justify-between mt-1.5">
+        <p class="text-[11px] text-stone-500">HTV7 · Mùa 22</p>
+      </div>
+    </div>
+
+    <div class="card shrink-0 w-72 cursor-pointer">
+      <div class="relative aspect-video rounded-2xl overflow-hidden bg-gradient-to-br from-orange-700 via-red-700 to-red-900 mb-2">
+        <div class="absolute inset-0 flex items-center justify-center text-5xl opacity-50">📺</div>
+        <div class="absolute top-3 left-3 px-2.5 py-1 bg-red-600 text-[10px] font-bold rounded-md flex items-center gap-1">
+          <span class="w-1.5 h-1.5 rounded-full bg-white"></span> LIVE
+        </div>
+        <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div>
+        <div class="absolute top-3 right-3 px-2 py-1 bg-orange-500 text-[10px] font-bold rounded-md flex items-center gap-1">
+          ⚽ THỂ THAO
+        </div>
+      </div>
+      <p class="text-sm font-bold leading-tight">Hà Nội FC vs SLNA</p>
+      <div class="flex items-center justify-between mt-1.5">
+        <p class="text-[11px] text-stone-500">ON Sports · Hiệp 2 · 78'</p>
+        <span class="text-[10px] text-red-400 font-bold">12K xem</span>
+      </div>
+    </div>
+
+    <div class="card shrink-0 w-72 cursor-pointer">
+      <div class="relative aspect-video rounded-2xl overflow-hidden bg-gradient-to-br from-blue-800 via-blue-900 to-indigo-900 mb-2">
+        <div class="absolute inset-0 flex items-center justify-center text-5xl opacity-50">📺</div>
+        <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div>
+      </div>
+      <p class="text-sm font-bold leading-tight">Thế giới 24h</p>
+      <div class="flex items-center justify-between mt-1.5">
+        <p class="text-[11px] text-stone-500">VTV5 · Hôm nay 21:00</p>
+      </div>
+    </div>
+
+    <div class="card shrink-0 w-72 cursor-pointer">
+      <div class="relative aspect-video rounded-2xl overflow-hidden bg-gradient-to-br from-pink-700 via-pink-800 to-rose-900 mb-2">
+        <div class="absolute inset-0 flex items-center justify-center text-5xl opacity-50">📺</div>
+        <div class="absolute top-3 left-3 px-2.5 py-1 bg-red-600 text-[10px] font-bold rounded-md flex items-center gap-1">
+          <span class="w-1.5 h-1.5 rounded-full bg-white"></span> LIVE
+        </div>
+        <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div>
+      </div>
+      <p class="text-sm font-bold leading-tight">Showbiz HTV</p>
+      <div class="flex items-center justify-between mt-1.5">
+        <p class="text-[11px] text-stone-500">HTV9 · Tối nay 20:30</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ROW 2: Bento Grid for category navigation -->
+<section>
+  <div class="flex items-end justify-between mb-5">
+    <div>
+      <p class="text-[10px] text-amber-400 font-bold uppercase tracking-widest mb-1">Khám phá</p>
+      <h2 class="font-display text-2xl font-black tracking-tight">Thể loại phổ biến</h2>
+    </div>
+  </div>
+  <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+    <a href="#" class="card relative aspect-square rounded-2xl bg-gradient-to-br from-red-600 to-red-800 p-5 cursor-pointer overflow-hidden">
+      <div class="absolute -bottom-4 -right-4 text-7xl opacity-30">📰</div>
+      <div class="relative z-10">
+        <div class="text-3xl font-black tracking-tighter">12</div>
+        <p class="text-sm font-bold leading-tight">Tin tức</p>
+        <p class="text-[10px] opacity-80 mt-0.5">VTV, HTV...</p>
+      </div>
+    </a>
+    <a href="#" class="card relative aspect-square rounded-2xl bg-gradient-to-br from-orange-600 to-red-700 p-5 cursor-pointer overflow-hidden">
+      <div class="absolute -bottom-4 -right-4 text-7xl opacity-30">⚽</div>
+      <div class="relative z-10">
+        <div class="text-3xl font-black tracking-tighter">8</div>
+        <p class="text-sm font-bold leading-tight">Thể thao</p>
+        <p class="text-[10px] opacity-80 mt-0.5">ON Sports...</p>
+      </div>
+    </a>
+    <a href="#" class="card relative aspect-square rounded-2xl bg-gradient-to-br from-purple-600 to-pink-700 p-5 cursor-pointer overflow-hidden">
+      <div class="absolute -bottom-4 -right-4 text-7xl opacity-30">🎬</div>
+      <div class="relative z-10">
+        <div class="text-3xl font-black tracking-tighter">15</div>
+        <p class="text-sm font-bold leading-tight">Phim ảnh</p>
+        <p class="text-[10px] opacity-80 mt-0.5">Phim VN, Hàn...</p>
+      </div>
+    </a>
+    <a href="#" class="card relative aspect-square rounded-2xl bg-gradient-to-br from-cyan-600 to-blue-700 p-5 cursor-pointer overflow-hidden">
+      <div class="absolute -bottom-4 -right-4 text-7xl opacity-30">👶</div>
+      <div class="relative z-10">
+        <div class="text-3xl font-black tracking-tighter">5</div>
+        <p class="text-sm font-bold leading-tight">Thiếu nhi</p>
+        <p class="text-[10px] opacity-80 mt-0.5">Hoạt hình...</p>
+      </div>
+    </a>
+    <a href="#" class="card relative aspect-square rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 p-5 cursor-pointer overflow-hidden">
+      <div class="absolute -bottom-4 -right-4 text-7xl opacity-30">🌍</div>
+      <div class="relative z-10">
+        <div class="text-3xl font-black tracking-tighter">9</div>
+        <p class="text-sm font-bold leading-tight">Quốc tế</p>
+        <p class="text-[10px] opacity-80 mt-0.5">CNN, BBC...</p>
+      </div>
+    </a>
+    <a href="#" class="card relative aspect-square rounded-2xl bg-gradient-to-br from-amber-500 to-orange-700 p-5 cursor-pointer overflow-hidden">
+      <div class="absolute -bottom-4 -right-4 text-7xl opacity-30">🎵</div>
+      <div class="relative z-10">
+        <div class="text-3xl font-black tracking-tighter">6</div>
+        <p class="text-sm font-bold leading-tight">Âm nhạc</p>
+        <p class="text-[10px] opacity-80 mt-0.5">MV, show...</p>
+      </div>
+    </a>
+  </div>
+</section>
+
+<!-- ROW 3: Live Sport list (B-style compact, Apple styling) -->
+<section>
+  <div class="flex items-end justify-between mb-5">
+    <div>
+      <p class="text-[10px] text-orange-500 font-bold uppercase tracking-widest mb-1">⚽ Thể thao</p>
+      <h2 class="font-display text-2xl font-black tracking-tight">Đang thi đấu trực tiếp</h2>
+    </div>
+  </div>
+  <div class="space-y-3">
+    <div class="flex items-center gap-4 p-4 rounded-2xl bg-gradient-to-r from-orange-900/20 via-stone-900/80 to-stone-900/80 border border-orange-800/30 cursor-pointer hover:border-orange-500/50 transition group">
+      <div class="w-16 h-16 bg-gradient-to-br from-red-700 to-orange-900 rounded-xl flex items-center justify-center text-2xl shrink-0">⚽</div>
+      <div class="flex-1">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="flex items-center gap-1.5"><span class="live-dot"></span><span class="text-[10px] font-bold text-red-400">LIVE</span></span>
+          <span class="text-[10px] text-orange-400 font-bold uppercase tracking-wider">V-LEAGUE 2026</span>
+        </div>
+        <p class="text-lg font-black">Hà Nội FC <span class="text-red-400 mx-1">2-1</span> SLNA</p>
+        <p class="text-xs text-stone-500">ON Sports · Hiệp 2 · 78'</p>
+      </div>
+      <div class="text-right">
+        <p class="text-2xl font-black text-stone-300">12.4K</p>
+        <p class="text-[10px] text-stone-500">đang xem</p>
+      </div>
+      <div class="w-8 h-8 rounded-full bg-white/0 group-hover:bg-red-600/20 flex items-center justify-center transition">
+        <svg class="w-4 h-4 text-stone-400 group-hover:text-red-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-4 p-4 rounded-2xl bg-stone-900/40 border border-stone-800/80 cursor-pointer hover:border-stone-700 transition group">
+      <div class="w-16 h-16 bg-gradient-to-br from-amber-700 to-orange-900 rounded-xl flex items-center justify-center text-2xl shrink-0">🏀</div>
+      <div class="flex-1">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="flex items-center gap-1.5"><span class="live-dot"></span><span class="text-[10px] font-bold text-red-400">LIVE</span></span>
+          <span class="text-[10px] text-orange-400 font-bold uppercase tracking-wider">NBA</span>
+        </div>
+        <p class="text-lg font-black">Lakers <span class="text-red-400 mx-1">78 - 82</span> Warriors</p>
+        <p class="text-xs text-stone-500">HTV Thể thao · Quý 3 · 8'</p>
+      </div>
+      <div class="text-right">
+        <p class="text-2xl font-black text-stone-300">8.2K</p>
+        <p class="text-[10px] text-stone-500">đang xem</p>
+      </div>
+      <div class="w-8 h-8 rounded-full group-hover:bg-red-600/20 flex items-center justify-center transition">
+        <svg class="w-4 h-4 text-stone-400 group-hover:text-red-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-4 p-4 rounded-2xl bg-stone-900/40 border border-stone-800/80 cursor-pointer hover:border-stone-700 transition group">
+      <div class="w-16 h-16 bg-gradient-to-br from-emerald-700 to-teal-900 rounded-xl flex items-center justify-center text-2xl shrink-0">🎾</div>
+      <div class="flex-1">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="flex items-center gap-1.5"><span class="live-dot"></span><span class="text-[10px] font-bold text-red-400">LIVE</span></span>
+          <span class="text-[10px] text-orange-400 font-bold uppercase tracking-wider">GRAND SLAM</span>
+        </div>
+        <p class="text-lg font-black">Djokovic <span class="text-red-400 mx-1">vs</span> Alcaraz</p>
+        <p class="text-xs text-stone-500">VTV6 · Set 4 · đang giằng co</p>
+      </div>
+      <div class="text-right">
+        <p class="text-2xl font-black text-stone-300">4.1K</p>
+        <p class="text-[10px] text-stone-500">đang xem</p>
+      </div>
+      <div class="w-8 h-8 rounded-full group-hover:bg-red-600/20 flex items-center justify-center transition">
+        <svg class="w-4 h-4 text-stone-400 group-hover:text-red-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ROW 4: Channel list with logos -->
+<section>
+  <div class="flex items-end justify-between mb-5">
+    <div>
+      <p class="text-[10px] text-blue-400 font-bold uppercase tracking-widest mb-1">📺 VTV</p>
+      <h2 class="font-display text-2xl font-black tracking-tight">Kênh VTV · Đài Truyền hình Việt Nam</h2>
+    </div>
+    <a href="#" class="text-xs text-stone-400 hover:text-white">Xem tất cả →</a>
+  </div>
+  <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+    <div class="card rounded-2xl bg-stone-900/40 border border-stone-800 hover:border-red-500/40 overflow-hidden cursor-pointer">
+      <div class="relative aspect-[4/3] bg-gradient-to-br from-blue-700 via-blue-800 to-blue-900 flex items-center justify-center overflow-hidden">
+        <div class="absolute inset-0 opacity-30" style='background: repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,.05) 10px, rgba(255,255,255,.05) 20px);'></div>
+        <span class="text-7xl font-black text-white/40 tracking-tighter relative">V1</span>
+        <div class="absolute top-3 left-3 px-2 py-0.5 bg-red-600 text-[10px] font-bold rounded inline-flex items-center gap-1">
+          <span class="w-1 h-1 rounded-full bg-white"></span> LIVE
+        </div>
+        <div class="absolute bottom-3 right-3 px-2 py-0.5 bg-black/70 backdrop-blur text-[10px] rounded font-medium">HD</div>
+      </div>
+      <div class="p-4">
+        <div class="flex items-center justify-between mb-1">
+          <p class="font-bold text-base">VTV1 HD</p>
+          <span class="text-[10px] text-amber-400 font-bold">5.0 ★</span>
+        </div>
+        <p class="text-[11px] text-stone-500 line-clamp-1">Thời sự 19h · Tin tức</p>
+        <div class="flex items-center gap-2 mt-3">
+          <button class="flex-1 py-1.5 bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold rounded-lg transition">Xem</button>
+          <button class="px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-stone-400 hover:text-white transition">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card rounded-2xl bg-stone-900/40 border border-stone-800 hover:border-red-500/40 overflow-hidden cursor-pointer">
+      <div class="relative aspect-[4/3] bg-gradient-to-br from-purple-700 via-purple-800 to-purple-900 flex items-center justify-center">
+        <span class="text-7xl font-black text-white/40 tracking-tighter">V3</span>
+        <div class="absolute top-3 left-3 px-2 py-0.5 bg-red-600 text-[10px] font-bold rounded inline-flex items-center gap-1">
+          <span class="w-1 h-1 rounded-full bg-white"></span> LIVE
+        </div>
+      </div>
+      <div class="p-4">
+        <div class="flex items-center justify-between mb-1">
+          <p class="font-bold text-base">VTV3 HD</p>
+          <span class="text-[10px] text-amber-400 font-bold">4.8 ★</span>
+        </div>
+        <p class="text-[11px] text-stone-500 line-clamp-1">Gặp nhau cuối tuần</p>
+        <div class="flex items-center gap-2 mt-3">
+          <button class="flex-1 py-1.5 bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold rounded-lg transition">Xem</button>
+          <button class="px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-stone-400 hover:text-white transition">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card rounded-2xl bg-stone-900/40 border border-stone-800 hover:border-red-500/40 overflow-hidden cursor-pointer">
+      <div class="relative aspect-[4/3] bg-gradient-to-br from-indigo-700 via-indigo-800 to-indigo-900 flex items-center justify-center">
+        <span class="text-7xl font-black text-white/40 tracking-tighter">V2</span>
+      </div>
+      <div class="p-4">
+        <div class="flex items-center justify-between mb-1">
+          <p class="font-bold text-base">VTV2</p>
+          <span class="text-[10px] text-amber-400 font-bold">4.6 ★</span>
+        </div>
+        <p class="text-[11px] text-stone-500 line-clamp-1">Khám phá thế giới · Tài chính</p>
+        <div class="flex items-center gap-2 mt-3">
+          <button class="flex-1 py-1.5 bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold rounded-lg transition">Xem</button>
+          <button class="px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-stone-400 hover:text-white transition">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card rounded-2xl bg-stone-900/40 border border-stone-800 hover:border-red-500/40 overflow-hidden cursor-pointer">
+      <div class="relative aspect-[4/3] bg-gradient-to-br from-cyan-700 via-cyan-800 to-cyan-900 flex items-center justify-center">
+        <span class="text-7xl font-black text-white/40 tracking-tighter">V4</span>
+      </div>
+      <div class="p-4">
+        <div class="flex items-center justify-between mb-1">
+          <p class="font-bold text-base">VTV4</p>
+          <span class="text-[10px] text-stone-500 font-medium">4.2 ★</span>
+        </div>
+        <p class="text-[11px] text-stone-500 line-clamp-1">Nhịp cầu nối những dòng sông</p>
+        <div class="flex items-center gap-2 mt-3">
+          <button class="flex-1 py-1.5 bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold rounded-lg transition">Xem</button>
+          <button class="px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-stone-400 hover:text-white transition">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</div>
+
+</main>
+
+<!-- Bottom Mobile Bar -->
+<div class="md:hidden fixed bottom-0 inset-x-0 z-50 bg-black/95 backdrop-blur-xl border-t border-white/10 px-6 py-3">
+  <div class="flex items-center justify-around">
+    <button class="flex flex-col items-center text-white"><svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="m9 9 5 12 1.774-5.226L21 14 9 3l-2 5.226z"/></svg><span class="text-[9px] mt-0.5 font-bold">Home</span></button>
+    <button class="flex flex-col items-center text-stone-500"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg><span class="text-[9px] mt-0.5">Tìm</span></button>
+    <button class="flex flex-col items-center text-stone-500"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg><span class="text-[9px] mt-0.5">EPG</span></button>
+    <button class="flex flex-col items-center text-stone-500"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg><span class="text-[9px] mt-0.5">Yêu thích</span></button>
+    <button id="mobileAccount" class="flex flex-col items-center text-stone-500"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="9"/></svg><span class="text-[9px] mt-0.5">Tôi</span></button>
+  </div>
+</div>
+
+<script>
+  // Auth Modal logic
+  const modal = document.getElementById('authModal');
+  document.getElementById('openAuth').onclick = () => modal.classList.remove('hidden');
+  document.getElementById('closeAuth').onclick = () => modal.classList.add('hidden');
+  document.getElementById('mobileAccount').onclick = () => modal.classList.remove('hidden');
+  modal.onclick = (e) => { if (e.target === modal) modal.classList.add('hidden'); };
+
+  // Tab toggle (visual only)
+  const loginTab = document.getElementById('tabLogin');
+  const registerTab = document.getElementById('tabRegister');
+  registerTab.onclick = () => {
+    loginTab.classList.remove('bg-white', 'text-black');
+    loginTab.classList.add('text-stone-400');
+    registerTab.classList.add('bg-white', 'text-black');
+    registerTab.classList.remove('text-stone-400');
+  };
+  loginTab.onclick = () => {
+    registerTab.classList.remove('bg-white', 'text-black');
+    registerTab.classList.add('text-stone-400');
+    loginTab.classList.add('bg-white', 'text-black');
+    loginTab.classList.remove('text-stone-400');
+  };
+
+  // Tab underline
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    };
+  });
+
+  // ESC closes modal
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') modal.classList.add('hidden');
+  });
+</script>
+
+</body>
+</html>

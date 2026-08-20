@@ -1,90 +1,112 @@
 import React from 'react';
-import { Tv, Calendar, Heart, History, Settings, Sparkles, Layers } from 'lucide-react';
-import FocusableWrapper from './FocusableWrapper';
+import { Tv, Calendar, Heart, History, Settings, Radio, Film, LogOut, ChevronLeft } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { useProfile } from '../contexts/ProfileContext';
+import Logo, { AvatarBubble } from './Logo';
 
-const CHRTV_LOGO_URL = "https://i.ibb.co/HDmcxzMK/Gemini-Generated-Image-v7i9yav7i9yav7i9-removebg-preview.png";
+export default function Sidebar({ activeTab, setActiveTab, onShowSettings, onShowAdmin }) {
+  const { user, logout } = useAuth();
+  const { currentProfile, logoutProfile } = useProfile();
 
-/**
- * Sidebar - Thanh điều hướng Sidebar Dark Mode (Phong cách FPT Play / Netflix)
- * Tác giả: CHRTV OTT Full-stack Architect
- */
-export default function Sidebar({ activeTab, setActiveTab }) {
-  const menuItems = [
-    { id: 'channels', label: 'Xem Tivi', icon: Tv },
+  const mainItems = [
+    { id: 'channels', label: 'Trang Chủ', icon: Tv },
+    { id: 'movies', label: 'Phim Ảnh', icon: Film },
     { id: 'epg', label: 'Lịch EPG', icon: Calendar },
     { id: 'favorites', label: 'Yêu Thích', icon: Heart },
-    { id: 'history', label: 'Lịch Sử Xem', icon: History },
+    { id: 'history', label: 'Lịch Sử', icon: History },
   ];
 
   return (
     <>
-      {/* Sidebar cho Desktop & Android TV */}
-      <aside className="hidden md:flex flex-col w-64 bg-[#090a0e] border-r border-slate-800/80 p-5 select-none shrink-0 z-20">
-        {/* CHRTV Logo Header */}
-        <div className="flex items-center gap-3 px-2 py-3 mb-8 border-b border-slate-800/80">
-          <img
-            src={CHRTV_LOGO_URL}
-            alt="CHRTV Logo"
-            className="h-10 object-contain drop-shadow-lg"
-          />
-          <div>
-            <h1 className="font-extrabold text-lg text-white tracking-wider">CHRTV</h1>
-            <span className="text-[10px] text-red-500 font-bold uppercase tracking-widest">
-              OTT IPTV PRO
-            </span>
-          </div>
+      {/* Desktop Sidebar (Template E: Apple glass) */}
+      <aside className="hidden md:flex flex-col w-60 bg-[#060608] border-r border-white/5 select-none shrink-0 z-20">
+        {/* Logo */}
+        <div className="px-5 py-5 border-b border-white/5">
+          <Logo size="md" />
         </div>
 
-        {/* Danh Sách Menu Điều Hướng */}
-        <nav className="flex-1 space-y-2">
-          {menuItems.map((item) => {
+        {/* Current profile banner */}
+        {currentProfile && (
+          <button
+            onClick={logoutProfile}
+            className="px-5 py-3 border-b border-white/5 flex items-center gap-3 hover:bg-white/[0.03] transition-colors group"
+            title="Đổi hồ sơ"
+          >
+            <AvatarBubble avatarId={currentProfile.avatar_url} size="sm" name={currentProfile.name} />
+            <div className="flex-1 min-w-0 text-left">
+              <p className="text-sm font-bold truncate">{currentProfile.name}</p>
+              <p className="text-[10px] text-stone-500 truncate">{currentProfile.is_child ? 'Hồ sơ trẻ em' : 'Hồ sơ thường'}</p>
+            </div>
+            <ChevronLeft className="w-4 h-4 text-stone-600 group-hover:text-white" />
+          </button>
+        )}
+
+        {/* Menu Nav */}
+        <nav className="flex-1 px-3 py-4 space-y-0.5">
+          {mainItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
-
             return (
-              <FocusableWrapper
+              <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
-                className={`flex items-center gap-3.5 px-4 py-3.5 rounded-xl font-bold text-sm transition-all ${
+                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all ${
                   isActive
-                    ? 'bg-red-600 text-white shadow-lg shadow-red-600/30'
-                    : 'text-slate-400 hover:text-slate-100 hover:bg-slate-900'
+                    ? 'bg-white/[0.08] text-white'
+                    : 'text-stone-500 hover:text-white hover:bg-white/[0.03]'
                 }`}
               >
-                <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                <Icon className={`w-[18px] h-[18px] ${isActive ? 'text-red-500' : ''}`} />
                 <span>{item.label}</span>
-              </FocusableWrapper>
+                {isActive && <div className="ml-auto w-1 h-1 rounded-full bg-red-500" />}
+              </button>
             );
           })}
         </nav>
 
-        {/* Chân Trang Sidebar */}
-        <div className="pt-4 border-t border-slate-800/80">
-          <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800/60 text-xs text-slate-400">
-            <div className="flex items-center gap-1.5 font-semibold text-slate-200 mb-1">
-              <Sparkles className="w-4 h-4 text-amber-400" /> CHRTV Full-stack
+        {/* Bottom: User + Settings */}
+        <div className="px-3 pb-4 space-y-1 border-t border-white/5 pt-3">
+          {onShowSettings && (
+            <button onClick={onShowSettings} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm text-stone-500 hover:text-white hover:bg-white/[0.03] transition-all">
+              <Settings className="w-[18px] h-[18px]" />
+              <span>Cài đặt</span>
+            </button>
+          )}
+          {onShowAdmin && user?.role === 'admin' && (
+            <button onClick={onShowAdmin} className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm text-stone-500 hover:text-white hover:bg-white/[0.03] transition-all">
+              ⚙️ <span>Admin</span>
+            </button>
+          )}
+          <div className="px-3 py-2 rounded-lg bg-white/[0.03] border border-white/5">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-6 h-6 rounded bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center text-[9px] font-bold">
+                {(user?.display_name || user?.username || 'U')[0].toUpperCase()}
+              </div>
+              <p className="text-[11px] font-semibold text-white truncate">{user?.display_name || user?.username}</p>
             </div>
-            <p className="text-[11px] text-slate-400">Hệ sinh thái IPTV siêu mượt cho Web, Mobile & Android TV D-pad.</p>
+            <p className="text-[9px] text-stone-500 truncate">{user?.email}</p>
+            <button onClick={logout} className="mt-2 w-full text-[10px] text-stone-500 hover:text-red-400 flex items-center justify-center gap-1">
+              <LogOut className="w-3 h-3" /> Đăng xuất
+            </button>
           </div>
         </div>
       </aside>
 
-      {/* Bottom Bar cho Mobile Responsive */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#090a0e]/95 backdrop-blur-lg border-t border-slate-800/80 px-4 py-2 flex items-center justify-around z-50">
-        {menuItems.map((item) => {
+      {/* Mobile Bottom Bar */}
+      <div className="md:hidden fixed bottom-0 inset-x-0 bg-[#060608]/95 backdrop-blur-xl border-t border-white/10 px-2 py-1.5 flex items-center justify-around z-50">
+        {mainItems.slice(0, 5).map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
-
           return (
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-all ${
-                isActive ? 'text-red-500 font-bold' : 'text-slate-400'
+              className={`flex flex-col items-center gap-0.5 p-1.5 rounded-lg transition-all ${
+                isActive ? 'text-red-500' : 'text-stone-500'
               }`}
             >
               <Icon className="w-5 h-5" />
-              <span className="text-[10px]">{item.label}</span>
+              <span className="text-[9px] font-medium">{item.label}</span>
             </button>
           );
         })}

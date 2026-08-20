@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { init } from '@noriginmedia/react-spatial-navigation';
+import { initNavigation } from '@noriginmedia/react-spatial-navigation';
 import {
   Tv, Search, Heart, History, Radio, RefreshCw, AlertCircle,
   Filter, Play, Sparkles
@@ -17,7 +17,7 @@ import {
 } from './services/api';
 
 // Khởi tạo Spatial Navigation cho TV Remote
-init({ debug: false, visualDebug: false });
+initNavigation({ debug: false, visualDebug: false });
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('channels'); // 'channels' | 'epg' | 'favorites' | 'history'

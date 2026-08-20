@@ -1,0 +1,32 @@
+{
+  "name": "chrtv-ott",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "cap:sync": "cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/cli": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "@noriginmedia/react-spatial-navigation": "^2.12.9",
+    "fast-xml-parser": "^5.0.8",
+    "lucide-react": "^1.16.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "shaka-player": "^4.16.2"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.5.4",
+    "postcss": "^8.5.26",
+    "tailwindcss": "^3.4.19",
+    "vite": "^6.2.1",
+    "wrangler": "^3.114.0"
+  }
+}

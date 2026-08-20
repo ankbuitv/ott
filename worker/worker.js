@@ -5,7 +5,7 @@
  */
 
 // Định cấu hình URL gốc nguồn dữ liệu & Fallback Stream
-const SOURCE_M3U_URL = "https://cdn.ankb.qzz.io/tv.m3u";
+const SOURCE_M3U_URL = "https://raw.githubusercontent.com/ankbuitv/chrtv/refs/heads/main/playlists/tv.m3u";
 const SOURCE_EPG_URL = "https://epg.io.vn/epgc.xml";
 const FALLBACK_STREAM_URL = "http://bore.pub:30113/hls/index.m3u8";
 

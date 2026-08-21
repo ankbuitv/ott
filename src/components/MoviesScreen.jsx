@@ -266,11 +266,11 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
       ) : (
         <div className="pb-20 space-y-10 pt-6">
           {/* Rows */}
-          <MovieRow title="🔥 Xu Hướng Tuần" items={rows.trending} cols={cols} onClick={openDetail} loading={loading} />
-          <MovieRow title="🎬 Đang Chiếu Rạp" items={rows.nowPlaying} cols={cols} onClick={openDetail} loading={loading} />
-          <MovieRow title="⭐ Đánh Giá Cao Nhất" items={rows.topRated} cols={cols} onClick={openDetail} loading={loading} />
-          <MovieRow title="📅 Sắp Chiếu" items={rows.upcoming} cols={cols} onClick={openDetail} loading={loading} />
-          <MovieRow title="📺 TV Shows Phổ Biến" items={rows.popularTV} cols={cols} onClick={openDetail} loading={loading} />
+          <MovieRow title="🔥 Xu Hướng Tuần" items={rows.trending} gridCls={gridCls} onClick={openDetail} loading={loading} />
+          <MovieRow title="🎬 Đang Chiếu Rạp" items={rows.nowPlaying} gridCls={gridCls} onClick={openDetail} loading={loading} />
+          <MovieRow title="⭐ Đánh Giá Cao Nhất" items={rows.topRated} gridCls={gridCls} onClick={openDetail} loading={loading} />
+          <MovieRow title="📅 Sắp Chiếu" items={rows.upcoming} gridCls={gridCls} onClick={openDetail} loading={loading} />
+          <MovieRow title="📺 TV Shows Phổ Biến" items={rows.popularTV} gridCls={gridCls} onClick={openDetail} loading={loading} />
 
           {/* Full catalog */}
           <section className="px-6 md:px-8">
@@ -331,7 +331,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
   );
 }
 
-function MovieRow({ title, items, cols, onClick, loading }) {
+function MovieRow({ title, items, gridCls = 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6', onClick, loading }) {
   return (
     <section className="px-6 md:px-8">
       <h3 className="text-base md:text-xl font-bold mb-3 tracking-tight">{title}</h3>

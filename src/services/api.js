@@ -30,12 +30,69 @@ export async function fetchEPGData() {
     const res = await fetch(`${BASE_WORKER_URL}/api/epg`, { headers: { Accept: "application/json" } });
     if (res.ok) {
       const json = await res.json();
-      if (json && json.data) return json.data;
+      if (json && json.data) {
+        // Nếu worker trả dữ liệu nhưng KHÔNG có chương trình nào (mock cũ/EPG lỗi),
+        // thử tải trực tiếp XMLTV từ trình duyệt để vẫn hiển thị EPG.
+        if (!json.data.programmes || json.data.programmes.length === 0) {
+          const direct = await fetchDirectEPG();
+          if (direct) return direct;
+        }
+        return json.data;
+      }
     }
   } catch (err) {
     console.warn("Worker EPG error:", err.message);
   }
+  // Worker không truy cập được — thử tải thẳng từ nguồn XMLTV công cộng
+  const direct = await fetchDirectEPG();
+  if (direct) return direct;
   return null;
+}
+
+// Fallback: tải EPG trực tiếp từ epg.io.vn (và các nguồn thay thế) ngay trên trình duyệt
+async function fetchDirectEPG() {
+  const sources = [
+    "https://epg.io.vn/epgc.xml",
+    "https://lichphatsong.io.vn/epgc.xml",
+  ];
+  for (const url of sources) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 8000);
+      const res = await fetch(url, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!res.ok) continue;
+      const data = parseXMLTV(await res.text());
+      if (data.programmes && data.programmes.length > 0) return data;
+    } catch (e) {
+      console.warn("Direct EPG fetch failed:", url, e.message);
+    }
+  }
+  return null;
+}
+
+// Parse XMLTV (epg.io.vn / lichphatsong.io.vn format) client-side
+function parseXMLTV(xml) {
+  const doc = new DOMParser().parseFromString(xml, "text/xml");
+  if (doc.querySelector("parsererror")) throw new Error("XML parse error");
+  const channels = {};
+  doc.querySelectorAll("channel").forEach(ch => {
+    const dn = ch.querySelector("display-name");
+    if (dn) channels[ch.getAttribute("id")] = { id: ch.getAttribute("id"), name: dn.textContent };
+  });
+  const programmes = [];
+  doc.querySelectorAll("programme").forEach(p => {
+    const t = p.querySelector("title");
+    const d = p.querySelector("desc");
+    programmes.push({
+      start: p.getAttribute("start"),
+      stop: p.getAttribute("stop"),
+      channel: p.getAttribute("channel"),
+      title: t ? t.textContent : "Chương trình",
+      desc: d ? d.textContent : "",
+    });
+  });
+  return { channels, programmes };
 }
 
 export function getProxyStreamUrl(streamUrl) {

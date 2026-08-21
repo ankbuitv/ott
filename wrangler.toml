@@ -18,19 +18,15 @@ assets = { directory = "./dist" }
 command = "npm run build"
 
 # ---------------------------------------------------------------------------
-# Cloudflare D1 Database (channels, user_favorites, watch_history)
+# Cloudflare D1 Database (users, sessions, channels, user_favorites, watch_history)
 #
-# Uncomment this block and replace database_id with the REAL D1 database ID
-# from your Cloudflare dashboard (Workers -> D1 -> your database -> ID) after
-# creating the database and applying schema.sql:
-#
-#   npx wrangler d1 create chrtv-db
-#   npx wrangler d1 execute chrtv-db --remote --file=./schema.sql
-#
-# [[d1_databases]]
-# binding = "DB"
-# database_name = "chrtv-db"
-# database_id = "REPLACE_WITH_REAL_D1_ID"
+# QUAN TRỌNG: `wrangler deploy` đồng bộ bindings theo file này — binding thêm
+# tay trên Dashboard sẽ bị XOÁ nếu không khai báo ở đây. Bắt buộc giữ block này.
+# worker/worker.js có ensureSchema() tự tạo bảng nên không cần chạy schema.sql.
+[[d1_databases]]
+binding = "DB"
+database_name = "chrtv-db"
+database_id = "6beab015-333c-45a2-8062-41d1fd3f066f"
 
 # ---------------------------------------------------------------------------
 # Cloudflare KV Namespace (EPG XML/JSON cache, TTL 3600s)

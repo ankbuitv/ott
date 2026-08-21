@@ -6,7 +6,7 @@ import { useDevice } from '../contexts/DeviceContext';
 import { useToast } from '../contexts/ToastContext';
 import { useProfile } from '../contexts/ProfileContext';
 
-const CATALOG_PAGE = 36; // số phim hiển thị mỗi lần "Xem thêm"
+const CATALOG_PAGE = 30; // số phim hiển thị mỗi lần "Xem thêm" (5 hàng x 6)
 
 export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = {}) {
   const device = useDevice();
@@ -135,7 +135,12 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
     );
   }
 
-  const cols = device.isMobile ? 2 : device.isTablet ? 3 : device.isTV ? 6 : 5;
+  // Lưới cố định: mobile 2 cột, tablet 3, desktop/TV 6 cột (1 hàng 6 phim)
+  const gridCls = device.isMobile
+    ? 'grid-cols-2'
+    : device.isTablet
+      ? 'grid-cols-3'
+      : 'lg:grid-cols-6 grid-cols-3';
 
   return (
     <div className="flex-1 bg-black text-white overflow-y-auto">
@@ -244,7 +249,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
               <p className="text-stone-500 text-sm">Không tìm thấy phim nào. Thử từ khóa khác.</p>
             </div>
           ) : (
-            <div className={`grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-${cols}`}>
+            <div className={`grid gap-2.5 ${gridCls}`}>
               {searchResults.map(m => <MovieCard key={`${m.media_type}-${m.id}`} movie={m} onClick={() => openDetail(m)} />)}
             </div>
           )}
@@ -271,8 +276,8 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
             </div>
 
             {catalogLoading && filteredCatalog.length === 0 ? (
-              <div className={`grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-${cols}`}>
-                {Array.from({ length: 10 }).map((_, i) => (
+              <div className={`grid gap-2.5 ${gridCls}`}>
+                {Array.from({ length: 12 }).map((_, i) => (
                   <div key={i} className="aspect-[2/3] bg-stone-800/40 rounded-xl animate-pulse"></div>
                 ))}
               </div>
@@ -283,7 +288,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
               </div>
             ) : (
               <>
-                <div className={`grid gap-3 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-${cols}`}>
+                <div className={`grid gap-2.5 ${gridCls}`}>
                   {visibleCatalog.map(m => <MovieCard key={`${m.media_type}-${m.id}`} movie={m} onClick={() => openDetail(m)} />)}
                 </div>
                 {visibleCount < filteredCatalog.length && (
@@ -323,12 +328,12 @@ function MovieRow({ title, items, cols, onClick, loading }) {
   return (
     <section className="px-6 md:px-8">
       <h3 className="text-base md:text-xl font-bold mb-3 tracking-tight">{title}</h3>
-      <div className={`grid gap-2 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-${cols}`}>
+      <div className={`grid gap-2.5 ${gridCls}`}>
         {loading
-          ? Array.from({ length: cols }).map((_, i) => (
+          ? Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="aspect-[2/3] bg-stone-800/40 rounded-xl animate-pulse"></div>
             ))
-          : items.filter(m => m.poster_path).slice(0, 18).map(m => (
+          : items.filter(m => m.poster_path).slice(0, 12).map(m => (
               <MovieCard key={`${m.media_type}-${m.id}`} movie={m} onClick={onClick} />
             ))}
       </div>

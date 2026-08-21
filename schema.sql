@@ -136,6 +136,14 @@ CREATE TABLE IF NOT EXISTS epg_cache (
   expires_at INTEGER NOT NULL
 );
 
+-- Per-channel EPG overrides (admin can customize EPG for a single channel)
+CREATE TABLE IF NOT EXISTS epg_overrides (
+  channel_id TEXT PRIMARY KEY,
+  channel_name TEXT DEFAULT '',
+  programmes TEXT NOT NULL,
+  updated_at INTEGER DEFAULT 0
+);
+
 -- M3U sources
 CREATE TABLE IF NOT EXISTS m3u_sources (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

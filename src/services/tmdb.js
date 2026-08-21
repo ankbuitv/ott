@@ -69,6 +69,20 @@ export async function searchMulti(query) {
 export async function getGenres() {
   return tmdbFetch('/genre/movie/list');
 }
+export async function getUpcoming() {
+  return tmdbFetch('/movie/upcoming');
+}
+export async function getMovieGenres() {
+  return tmdbFetch('/genre/movie/list');
+}
+export async function getTvGenres() {
+  return tmdbFetch('/genre/tv/list');
+}
+export async function discoverMovies({ page = 1, sort_by = 'popularity.desc', with_genres } = {}) {
+  const q = { page, sort_by };
+  if (with_genres) q.with_genres = with_genres;
+  return tmdbFetch('/discover/movie', q);
+}
 
 // --- Fallback khi TMDB fail / hết quota ---
 const FALLBACK_FEATURED = [
@@ -103,4 +117,43 @@ export const MovieAPI = {
   search: (q) => tmdbFetch('/search/multi', { query: q, include_adult: false }),
   details: getMovieDetails,
   trailer: (m) => getMovieTrailer(m.id, m.media_type),
+
+  /**
+   * Nạp kho phim lớn từ TMDB: nhiều endpoint x nhiều trang, gộp + dedupe.
+   * Khoảng 60-70 request; mỗi URL được cache 10 phút nên lần sau cực nhanh.
+   */
+  catalog: async () => {
+    const jobs = [];
+    const push = (fn) => jobs.push(fn);
+
+    // Trending (movie + tv)
+    for (let p = 1; p <= 4; p++) push(() => tmdbFetch('/trending/all/week', { page: p }));
+
+    // Phổ biến / đánh giá cao / đang chiếu / sắp chiếu
+    for (let p = 1; p <= 10; p++) push(() => tmdbFetch('/movie/popular', { page: p }));
+    for (let p = 1; p <= 8; p++) push(() => tmdbFetch('/movie/top_rated', { page: p }));
+    for (let p = 1; p <= 5; p++) push(() => tmdbFetch('/movie/now_playing', { page: p }));
+    for (let p = 1; p <= 5; p++) push(() => tmdbFetch('/movie/upcoming', { page: p }));
+
+    // Discover với nhiều cách sắp xếp để phủ nhiều phim hơn
+    const sorts = ['popularity.desc', 'vote_count.desc', 'revenue.desc', 'primary_release_date.desc', 'vote_average.desc'];
+    for (const s of sorts) for (let p = 1; p <= 3; p++) push(() => tmdbFetch('/discover/movie', { page: p, sort_by: s }));
+
+    // TV shows
+    for (let p = 1; p <= 8; p++) push(() => tmdbFetch('/tv/popular', { page: p }));
+    for (let p = 1; p <= 6; p++) push(() => tmdbFetch('/tv/top_rated', { page: p }));
+
+    // Chạy theo lô 8 request để không vượt rate limit
+    const byId = new Map();
+    for (let i = 0; i < jobs.length; i += 8) {
+      const batch = jobs.slice(i, i + 8);
+      const results = await Promise.all(batch.map(fn => fn().catch(() => ({ results: [] }))));
+      results.forEach(r => (r.results || []).forEach(m => {
+        if (!m.poster_path) return;
+        const key = `${m.media_type || 'movie'}-${m.id}`;
+        if (!byId.has(key)) byId.set(key, m);
+      }));
+    }
+    return { results: Array.from(byId.values()) };
+  },
 };

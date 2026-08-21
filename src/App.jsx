@@ -37,6 +37,7 @@ function AppContent() {
   const { user, isAuthenticated, token } = useAuth();
   const { currentProfile } = useProfile();
   const [showAuth, setShowAuth] = useState(false);
+  const [movieToOpen, setMovieToOpen] = useState(null); // phim được chọn từ TopNav search
 
   const [activeTab, setActiveTab] = useState(() => {
     return localStorage.getItem('chrtv_tab') || 'channels';
@@ -203,12 +204,14 @@ function AppContent() {
           setActiveTab={setActiveTab}
           activeTab={activeTab}
           onShowAuth={() => setShowAuth(true)}
+          onSelectChannel={handleSelectChannel}
+          onSelectMovie={(m) => { setMovieToOpen(m); setActiveTab('movies'); }}
         />
 
         <div className="flex flex-1 overflow-hidden">
           <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onShowSettings={() => setShowSettings(true)} onShowAdmin={() => setShowAdmin(true)} />
           <main className="flex-1 flex flex-col h-full overflow-y-auto pb-16 md:pb-0">
-            {showSettings ? <SettingsPage onClose={() => setShowSettings(false)} /> : <MoviesScreen />}
+            {showSettings ? <SettingsPage onClose={() => setShowSettings(false)} /> : <MoviesScreen openMovie={movieToOpen} onOpenMovieHandled={() => setMovieToOpen(null)} />}
           </main>
         </div>
       </div>
@@ -226,6 +229,8 @@ function AppContent() {
         setActiveTab={setActiveTab}
         activeTab={activeTab}
         onShowAuth={() => setShowAuth(true)}
+        onSelectChannel={handleSelectChannel}
+        onSelectMovie={(m) => { setMovieToOpen(m); setActiveTab('movies'); }}
       />
 
       <div className="flex flex-1 overflow-hidden">

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Megaphone, X } from 'lucide-react';
+import { API_BASE } from '../services/config';
 
-const BASE = window.location.origin;
+const BASE = API_BASE;
 
 export default function BroadcastBanner() {
   const [broadcasts, setBroadcasts] = useState([]);

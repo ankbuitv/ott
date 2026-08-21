@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { getStorage, setStorage } from '../hooks/useStorage';
+import { API_BASE } from '../services/config';
 
 const ProfileContext = createContext(null);
-const BASE = "https://chrtv-ott.htxuan-business.workers.dev";
+const BASE = API_BASE;
 
 export function ProfileProvider({ children }) {
   const [currentProfile, setCurrentProfile] = useState(() => getStorage('chrtv_profile', null));

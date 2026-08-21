@@ -37,13 +37,30 @@ CHRTV là hệ thống ứng dụng xem truyền hình IPTV chuyên nghiệp, ca
 # 1. Cài đặt các thư viện phụ thuộc
 npm install
 
-# 2. Chạy ứng dụng web giao diện Dev
+# 2. Chạy ứng dụng web giao diện Dev (vite proxy /api,/auth,/user,/admin -> Worker production)
 npm run dev
+
+# 2b. (Tuỳ chọn) Chạy Worker + D1 ở local rồi trỏ web vào đó
+npm run dev:api                                            # terminal 1 -> http://127.0.0.1:8787
+VITE_DEV_API_TARGET=http://127.0.0.1:8787 npm run dev      # terminal 2 -> http://localhost:3000
 
 # 3. Build ứng dụng Web & Đồng bộ sang Android Native
 npm run build
 npx cap sync android
 ```
+
+### 🔌 Frontend gọi API ở đâu?
+
+Toàn bộ base URL nằm ở **`src/services/config.js`** (không hardcode rải rác nữa):
+
+| Môi trường | Base URL dùng |
+|---|---|
+| Web do Worker phục vụ (production) | **same-origin** — gọi `/api/...`, `/auth/...` (không lo CORS) |
+| `npm run dev` | same-origin, vite dev server proxy sang `VITE_DEV_API_TARGET` |
+| APK Android / Android TV (Capacitor) | `PRODUCTION_API_BASE` = `https://play.ankb.qzz.io` |
+| Ghi đè thủ công | biến build `VITE_API_BASE`, hoặc `localStorage.chrtv_api_base` |
+
+Xem `.env.example` để biết các biến môi trường build.
 
 ## ☁️ Deploy lên Cloudflare Workers (Web Production)
 
@@ -59,26 +76,34 @@ Wrangler sẽ tự động chạy `npm run build` (khối `[build]`) trước kh
 Kết quả: Worker `chrtv-backend` phục vụ cả API (`/api/*`) lẫn giao diện web
 đã build trong `dist/`.
 
-### Bật lại Cloudflare D1 & KV (tùy chọn)
+### Bật lại Cloudflare D1 & KV (BẮT BUỘC nếu muốn dùng tài khoản)
 
-Mặc định config deploy **không bật binding D1/KV** vì ID trong `worker/wrangler.toml`
-cũ chỉ là placeholder (`chrtv-d1-database-id`, `chrtv-epg-kv-id`) khiến
-`wrangler deploy` báo lỗi. Worker tự động chạy chế độ dự phòng (danh sách kênh
-M3U/default, EPG fetch trực tiếp, Favorites & Lịch sử xem lưu LocalStorage).
-Muốn bật D1/KV thật:
+> ⚠️ **Đăng ký / đăng nhập / profile / admin bắt buộc phải có D1.** Khi Worker
+> chưa được bind D1, các API này trả về **503 kèm thông báo tiếng Việt rõ ràng**
+> (`code: "NO_DB"`) thay vì lỗi 500 khó hiểu; phần xem kênh, EPG, favorites,
+> lịch sử vẫn chạy bình thường (fallback M3U + LocalStorage).
+>
+> Worker **tự tạo đầy đủ bảng** (users, sessions, profiles, channels, EPG cache…)
+> ngay lần gọi API đầu tiên, nên chỉ cần tạo database + bind là xong, không bắt
+> buộc chạy tay `schema.sql`.
 
 ```bash
 # 1. Tạo tài nguyên trên Cloudflare
-npx wrangler d1 create chrtv-db
-npx wrangler kv namespace create EPG_KV
+npx wrangler d1 create chrtv-db          # copy database_id in ra màn hình
+npx wrangler kv namespace create EPG_KV  # (tuỳ chọn) copy id
 
-# 2. Tạo bảng dữ liệu (xem schema.sql)
+# 2. (Tuỳ chọn) Tạo sẵn bảng bằng schema.sql — Worker cũng tự tạo nếu bỏ qua
 npx wrangler d1 execute chrtv-db --remote --file=./schema.sql
 
-# 3. Bỏ comment 2 block [[d1_databases]] & [[kv_namespaces]] trong wrangler.toml
-#    và điền database_id / id thật từ Cloudflare Dashboard, sau đó:
+# 3. Bỏ comment block [[d1_databases]] (và [[kv_namespaces]] nếu cần) trong
+#    wrangler.toml, dán database_id / id thật vào, rồi deploy:
 npx wrangler deploy
 ```
+
+> Lưu ý: `wrangler deploy` đồng bộ bindings theo `wrangler.toml`. Nếu bạn chỉ
+> thêm binding trên Dashboard mà không ghi vào `wrangler.toml` thì lần deploy
+> sau sẽ **mất binding** và lỗi "chưa bật D1" quay lại.
+
 
 ---
 

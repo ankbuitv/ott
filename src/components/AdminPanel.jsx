@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Settings, Users, BarChart3, Bell, Radio, Send, Eye, TrendingUp, Calendar, Plus, Trash2, Save, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { API_BASE } from '../services/config';
 
-const BASE = window.location.origin;
+const BASE = API_BASE;
 
 // --- Helpers: XMLTV timestamp <-> datetime-local ---
 function xmltvToLocal(s) {

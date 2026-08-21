@@ -15,9 +15,17 @@ export default function HomePage({
     return findEpgForChannel(epgData.programmes, ch).now;
   };
 
-  const fCh = useMemo(() =>
-    channels.slice(0, 1).map(ch => ({ ...ch, epg: getEpgNow(ch) }))[0],
-  [channels, epgData]);
+  // Featured channel: ưu tiên kênh "Vietnam Today" (tên hoặc tvg-id VTC1), fallback kênh đầu tiên
+  const fCh = useMemo(() => {
+    const isVietnamToday = (ch) => {
+      const hay = ((ch.name || '') + ' ' + (ch.channel_id || '')).toLowerCase();
+      return /vietnam\s*today|vtc1|vtoday/.test(hay);
+    };
+    const target = channels.find(isVietnamToday);
+    const base = target || channels[0];
+    if (!base) return null;
+    return { ...base, epg: getEpgNow(base) };
+  }, [channels, epgData]);
 
   const groupedChannels = useMemo(() => {
     const groups = {};

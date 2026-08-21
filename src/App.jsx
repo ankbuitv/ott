@@ -3,7 +3,6 @@ import { initNavigation } from '@noriginmedia/react-spatial-navigation';
 
 import Sidebar from './components/Sidebar';
 import TopNav from './components/TopNav';
-import LiveStrip from './components/LiveStrip';
 import VideoPlayer from './components/VideoPlayer';
 import EpgGridTimeline from './components/EpgGridTimeline';
 import SettingsPage from './components/SettingsPage';
@@ -205,7 +204,7 @@ function AppContent() {
           activeTab={activeTab}
           onShowAuth={() => setShowAuth(true)}
         />
-        <LiveStrip />
+
         <div className="flex flex-1 overflow-hidden">
           <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onShowSettings={() => setShowSettings(true)} onShowAdmin={() => setShowAdmin(true)} />
           <main className="flex-1 flex flex-col h-full overflow-y-auto pb-16 md:pb-0">
@@ -228,7 +227,6 @@ function AppContent() {
         activeTab={activeTab}
         onShowAuth={() => setShowAuth(true)}
       />
-      <LiveStrip />
 
       <div className="flex flex-1 overflow-hidden">
         <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onShowSettings={() => setShowSettings(true)} onShowAdmin={() => setShowAdmin(true)} />

@@ -137,7 +137,7 @@ function json(data, status = 200) {
 // ========== API ROUTER ==========
 async function handleAPI(path, request, env, ctx) {
   if (path === "/api/playlist") return await handlePlaylist(env);
-  if (path === "/api/epg") return await handleEPG(env);
+  if (path === "/api/epg") return await handleEPG(env, request);
   if (path === "/api/proxy") return await handleProxy(request, env);
   if (path === "/api/favorites") return await handleFavorites(request, env);
   if (path === "/api/history") return await handleHistory(request, env);
@@ -206,11 +206,16 @@ const DEFAULT_CHANNELS = [
 ];
 
 // ========== EPG ==========
-async function handleEPG(env) {
+async function handleEPG(env, request) {
+  const rawOnly = request && new URL(request.url).searchParams.get("raw") === "1";
   if (env && env.DB) {
     try {
       const { results } = await env.DB.prepare("SELECT * FROM epg_cache WHERE key = 'epg_main' AND expires_at > ?").bind(Math.floor(Date.now() / 1000)).all();
-      if (results.length > 0) return json({ success: true, source: "cache", data: JSON.parse(results[0].data) });
+      if (results.length > 0) {
+        const cached = JSON.parse(results[0].data);
+        if (rawOnly) return json({ success: true, source: "cache", data: cached });
+        return json({ success: true, source: "cache", data: await mergeEPGOverrides(env, cached) });
+      }
     } catch {}
   }
 
@@ -227,7 +232,8 @@ async function handleEPG(env) {
               await env.DB.prepare("INSERT OR REPLACE INTO epg_cache (key, data, expires_at) VALUES ('epg_main', ?, ?)").bind(JSON.stringify(data), Math.floor(Date.now() / 1000) + 3600).run();
             } catch {}
           }
-          return json({ success: true, source: "xml", data });
+          if (rawOnly) return json({ success: true, source: "xml", data });
+          return json({ success: true, source: "xml", data: await mergeEPGOverrides(env, data) });
         }
       }
     } catch {}
@@ -241,7 +247,35 @@ async function handleEPG(env) {
       channelIds = results || [];
     } catch {}
   }
-  return json({ success: true, source: "mock", data: generateMockEPG(channelIds) });
+  const mockData = generateMockEPG(channelIds);
+  if (rawOnly) return json({ success: true, source: "mock", data: mockData });
+  return json({ success: true, source: "mock", data: await mergeEPGOverrides(env, mockData) });
+}
+
+// Gộp EPG tùy chỉnh theo kênh (epg_overrides) — override thay thế chương trình gốc của kênh đó
+async function mergeEPGOverrides(env, data) {
+  if (!env || !env.DB || !data || !data.programmes) return data;
+  try {
+    await env.DB.prepare("CREATE TABLE IF NOT EXISTS epg_overrides (channel_id TEXT PRIMARY KEY, channel_name TEXT DEFAULT '', programmes TEXT NOT NULL, updated_at INTEGER DEFAULT 0)").run();
+    const { results } = await env.DB.prepare("SELECT * FROM epg_overrides").all();
+    if (!results || results.length === 0) return data;
+    const programmeList = [...data.programmes];
+    const channels = { ...(data.channels || {}) };
+    for (const ov of results) {
+      let ovProgs = [];
+      try { ovProgs = JSON.parse(ov.programmes || '[]'); } catch {}
+      if (!Array.isArray(ovProgs)) ovProgs = [];
+      const rest = programmeList.filter(p => p.channel !== ov.channel_id);
+      programmeList.length = 0;
+      programmeList.push(...rest, ...ovProgs);
+      if (!channels[ov.channel_id]) {
+        channels[ov.channel_id] = { id: ov.channel_id, name: ov.channel_name || ov.channel_id };
+      }
+    }
+    return { channels, programmes: programmeList };
+  } catch (e) {
+    return data;
+  }
 }
 
 function parseEPGXml(xml) {
@@ -636,6 +670,40 @@ async function handleAdmin(path, request, env) {
   if (path === "/admin/broadcasts" && request.method === "GET") {
     const { results } = await env.DB.prepare("SELECT * FROM broadcasts WHERE is_active = 1 ORDER BY created_at DESC LIMIT 20").all();
     return json({ success: true, broadcasts: results });
+  }
+
+  // ========== EPG OVERRIDES (chỉnh EPG riêng từng kênh) ==========
+  if (path === "/admin/epg-overrides" && request.method === "GET") {
+    try {
+      await env.DB.prepare("CREATE TABLE IF NOT EXISTS epg_overrides (channel_id TEXT PRIMARY KEY, channel_name TEXT DEFAULT '', programmes TEXT NOT NULL, updated_at INTEGER DEFAULT 0)").run();
+      const { results } = await env.DB.prepare("SELECT channel_id, channel_name, programmes FROM epg_overrides ORDER BY channel_id ASC").all();
+      return json({ success: true, overrides: results.map(r => ({ channel_id: r.channel_id, channel_name: r.channel_name, programmes: JSON.parse(r.programmes || '[]') })) });
+    } catch (e) {
+      return json({ error: "Lỗi đọc override: " + (e.message || e) }, 500);
+    }
+  }
+
+  if (path === "/admin/epg-overrides" && request.method === "POST") {
+    const { channel_id, channel_name, programmes } = await request.json().catch(() => ({}));
+    if (!channel_id || !Array.isArray(programmes)) return json({ error: "Thiếu channel_id hoặc programmes" }, 400);
+    try {
+      await env.DB.prepare("CREATE TABLE IF NOT EXISTS epg_overrides (channel_id TEXT PRIMARY KEY, channel_name TEXT DEFAULT '', programmes TEXT NOT NULL, updated_at INTEGER DEFAULT 0)").run();
+      await env.DB.prepare("INSERT OR REPLACE INTO epg_overrides (channel_id, channel_name, programmes, updated_at) VALUES (?, ?, ?, ?)").bind(channel_id, channel_name || "", JSON.stringify(programmes), Math.floor(Date.now() / 1000)).run();
+      return json({ success: true });
+    } catch (e) {
+      return json({ error: "Lỗi lưu override: " + (e.message || e) }, 500);
+    }
+  }
+
+  if (path === "/admin/epg-overrides" && request.method === "DELETE") {
+    const channelId = new URL(request.url).searchParams.get("channel_id");
+    if (!channelId) return json({ error: "Thiếu channel_id" }, 400);
+    try {
+      await env.DB.prepare("DELETE FROM epg_overrides WHERE channel_id = ?").bind(channelId).run();
+      return json({ success: true });
+    } catch (e) {
+      return json({ error: "Lỗi xóa override: " + (e.message || e) }, 500);
+    }
   }
 
   return json({ error: "Not found" }, 404);

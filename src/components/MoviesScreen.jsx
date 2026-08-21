@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Search, Star, Play, X, Info, ChevronLeft, Volume2, Calendar, Clock, Film, Tv } from 'lucide-react';
 import { MovieAPI, imgPath, bgPath } from '../services/tmdb';
+import MoviePlayerModal from './MoviePlayerModal';
 import { useDevice } from '../contexts/DeviceContext';
 import { useToast } from '../contexts/ToastContext';
 import { useProfile } from '../contexts/ProfileContext';
@@ -17,6 +18,7 @@ export default function MoviesScreen() {
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [selected, setSelected] = useState(null); // movie detail modal
+  const [playMovie, setPlayMovie] = useState(null); // full-screen third-party player
   const [trailer, setTrailer] = useState(null);
   const [trailerLoading, setTrailerLoading] = useState(false);
 
@@ -118,11 +120,11 @@ export default function MoviesScreen() {
               </p>
               <div className="flex items-center gap-3">
                 <button
-                  onClick={() => openDetail(hero)}
+                  onClick={() => setPlayMovie(hero)}
                   className="flex items-center gap-2 bg-white text-black px-6 md:px-8 py-2.5 md:py-3 rounded-md font-bold text-sm hover:bg-white/90 transition shadow-lg"
                 >
                   <Play className="w-5 h-5 fill-current" />
-                  Phát
+                  Xem phim
                 </button>
                 <button
                   onClick={() => openDetail(hero)}
@@ -185,7 +187,13 @@ export default function MoviesScreen() {
           trailer={trailer}
           trailerLoading={trailerLoading}
           onClose={() => setSelected(null)}
+          onPlay={() => setPlayMovie(selected)}
         />
+      )}
+
+      {/* Full-screen third-party player */}
+      {playMovie && (
+        <MoviePlayerModal movie={playMovie} onClose={() => setPlayMovie(null)} />
       )}
     </div>
   );
@@ -232,7 +240,7 @@ function MovieCard({ movie, onClick }) {
   );
 }
 
-function MovieDetailModal({ movie, trailer, trailerLoading, onClose }) {
+function MovieDetailModal({ movie, trailer, trailerLoading, onClose, onPlay }) {
   return (
     <div className="fixed inset-0 z-[200] bg-black/85 backdrop-blur-sm overflow-y-auto" onClick={onClose}>
       <div className="relative max-w-4xl mx-auto my-8 bg-stone-900 rounded-2xl overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
@@ -276,25 +284,23 @@ function MovieDetailModal({ movie, trailer, trailerLoading, onClose }) {
             </div>
           </div>
 
-          {!trailer && !trailerLoading && (
-            <div className="mt-4 space-y-2">
+          <div className="mt-4 space-y-2">
+            <button
+              onClick={onPlay}
+              className="w-full px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition"
+            >
+              <Play className="w-4 h-4 fill-current" />
+              ▶ Xem phim (nguồn thứ 3)
+            </button>
+            {!trailer && !trailerLoading && (
               <button
                 onClick={onClose}
-                className="w-full px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl flex items-center justify-center gap-2"
+                className="w-full px-6 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-stone-300 font-semibold rounded-xl transition"
               >
-                <Play className="w-4 h-4 fill-current" />
                 Quay lại
               </button>
-              <a
-                href={`https://www.youtube.com/results?search_query=${encodeURIComponent((movie.title || movie.name) + ' trailer')}`}
-                target="_blank"
-                rel="noreferrer"
-                className="w-full px-6 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-stone-300 font-semibold rounded-xl flex items-center justify-center gap-2 text-sm transition"
-              >
-                <span className="text-red-500">▶</span> Tìm trailer trên YouTube
-              </a>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </div>

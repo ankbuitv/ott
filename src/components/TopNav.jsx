@@ -17,8 +17,15 @@ export default function TopNav({ channels, searchQuery, setSearchQuery, user, cu
     if (q.length < 2) { setMovieResults([]); setSearchingMovies(false); return; }
     setSearchingMovies(true);
     const t = setTimeout(async () => {
-      const r = await MovieAPI.search(q).catch(() => ({ results: [] }));
-      setMovieResults((r.results || []).filter(m => (m.media_type === 'movie' || m.media_type === 'tv') && m.poster_path).slice(0, 6));
+      let r = await MovieAPI.search(q).catch(() => ({ results: [] }));
+      let res = (r.results || []).filter(m => (m.media_type === 'movie' || m.media_type === 'tv') && m.poster_path).slice(0, 6);
+      // Fallback local nếu TMDB search không ra (key lỗi/hết quota)
+      if (res.length === 0) {
+        res = (await MovieAPI.searchFallback(q).catch(() => []))
+          .filter(m => m.poster_path)
+          .slice(0, 6);
+      }
+      setMovieResults(res);
       setSearchingMovies(false);
     }, 400);
     return () => clearTimeout(t);

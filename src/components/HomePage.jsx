@@ -29,12 +29,29 @@ export default function HomePage({
     return groups;
   }, [channels]);
 
-  const displayGroups = useMemo(() => {
-    if (activeFilter !== 'all') return { [activeFilter]: groupedChannels[activeFilter] || [] };
+  // All groups, unlimitted, for full channel display
+  const allGroups = useMemo(() => {
     return Object.fromEntries(
-      Object.entries(groupedChannels).sort((a, b) => b[1].length - a[1].length).slice(0, 6)
+      Object.entries(groupedChannels).sort((a, b) => b[1].length - a[1].length)
     );
-  }, [groupedChannels, activeFilter]);
+  }, [groupedChannels]);
+
+  // Filter groups when a tab is selected
+  const filteredGroups = useMemo(() => {
+    if (selectedCategory && selectedCategory !== 'all') {
+      return groupedChannels[selectedCategory]
+        ? { [selectedCategory]: groupedChannels[selectedCategory] }
+        : {};
+    }
+    return allGroups;
+  }, [groupedChannels, selectedCategory, allGroups]);
+
+  // Top 6 groups for bento grid only
+  const topGroups = useMemo(() => {
+    return Object.fromEntries(
+      Object.entries(allGroups).slice(0, 6)
+    );
+  }, [allGroups]);
 
   const recentChannels = useMemo(() => {
     const ids = watchHistory.slice(0, 8).map(h => h.channel_id);
@@ -127,7 +144,7 @@ export default function HomePage({
       {/* STICKY TABS */}
       <div className="sticky top-[57px] z-30 bg-black/85 glass border-y border-white/5">
         <div className="max-w-[1400px] mx-auto px-8">
-          <div className="flex items-center gap-7 overflow-x-auto scrollbar-none text-sm font-medium">
+          <div className="flex items-center gap-7 overflow-x-autouto scrollbar-none text-sm font-medium">
             {categories.slice(0, 10).map(cat => (
               <button
                 key={cat}
@@ -180,37 +197,38 @@ export default function HomePage({
             </div>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            {Object.keys(displayGroups).slice(0, 6).map((cat, i) => (
+            {Object.keys(topGroups).slice(0, 6).map((cat, i) => (
               <button key={cat} onClick={() => setSelectedCategory(cat)} className={`card relative aspect-square rounded-2xl bg-gradient-to-br ${gradients[i]} p-5 cursor-pointer overflow-hidden text-left`}>
                 <div className="absolute -bottom-4 -right-4 text-7xl opacity-30">{icons[i]}</div>
                 <div className="relative z-10">
-                  <div className="text-3xl font-black tracking-tighter">{displayGroups[cat]?.length || 0}</div>
+                  <div className="text-3xl font-black tracking-tighter">{topGroups[cat]?.length || 0}</div>
                   <p className="text-sm font-bold leading-tight">{cat}</p>
-                  <p className="text-[10px] opacity-80 mt-0.5">{displayGroups[cat]?.length || 0} kenh</p>
+                  <p className="text-[10px] opacity-80 mt-0.5">{topGroups[cat]?.length || 0} kenh</p>
                 </div>
               </button>
             ))}
           </div>
         </section>
 
-        {/* ROW 3: Channel Grid */}
-        {Object.entries(displayGroups).map(([groupName, groupChannels]) => (
+        {/* ROW 3: Channel Grid — ALL CHANNELS */}
+        {Object.entries(filteredGroups).map(([groupName, groupChannels]) => (
           <section key={groupName}>
             <div className="flex items-end justify-between mb-5">
               <div>
                 <p className="text-[10px] text-blue-400 font-bold uppercase tracking-widest mb-1">📺 {groupName}</p>
                 <h2 className="font-display text-2xl font-black tracking-tight">Kenh {groupName}</h2>
+                <p className="text-xs text-stone-500 mt-1">{groupChannels.length} kenh</p>
               </div>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {groupChannels.slice(0, 8).map(ch => {
+              {groupChannels.map(ch => {
                 const isFav = favorites.includes(ch.channel_id);
                 return (
                   <div key={ch.channel_id} className="card rounded-2xl bg-stone-900/40 border border-stone-800 hover:border-red-500/40 overflow-hidden cursor-pointer">
                     <div className="relative aspect-[4/3] bg-gradient-to-br from-stone-700 via-stone-800 to-stone-900 flex items-center justify-center overflow-hidden">
                       <div className="absolute inset-0 opacity-30" style={{background: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,.05) 10px, rgba(255,255,255,.05) 20px)'}}></div>
-                      {ch.logo ? (
-                        <img src={ch.logo} alt="" className="w-16 h-16 object-contain relative z-10" onError={e => e.target.style.display = 'none'} />
+                      {ch.logoo ? (
+                        <img src={ch.logoo} alt="" className="w-16 h-16 object-contain relative z-10" onError={e => e.target.style.display = 'none'} />
                       ) : (
                         <span className="text-5xl font-black text-white/30 tracking-tighter relative z-10">{ch.name.charAt(0)}</span>
                       )}

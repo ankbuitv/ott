@@ -473,15 +473,27 @@ async function handleAuth(path, request, env) {
 
     try {
       await env.DB.prepare("INSERT INTO users (username, email, password_hash, verify_code, verify_expires) VALUES (?, ?, ?, ?, ?)").bind(username, email, hash, verifyCode, verifyExpires).run();
-      // Gửi email xác minh qua Brevo (nếu chưa cấu hình thì vẫn insert user thành công)
-      const tmpl = emailTemplateVerify(verifyCode);
-      const sent = await sendBrevoEmail(env, { to: email, subject: tmpl.subject, html: tmpl.html });
-      // Trả verifyCode trong response để dev F12 thấy; production chỉ gửi qua email
-      return json({ success: true, message: "Đăng ký thành công! Kiểm tra email để lấy mã xác minh.", verifyCode, emailSent: sent.ok });
     } catch (e) {
       if (e.message?.includes("UNIQUE")) return json({ error: "Username hoặc email đã tồn tại" }, 409);
-      return json({ error: "Lỗi đăng ký" }, 500);
+      console.error("register INSERT error:", e?.message || e);
+      return json({ error: "Lỗi đăng ký: " + (e?.message || "database") }, 500);
     }
+    // Gửi email — bọc try riêng để nếu Brevo fail thì user vẫn đăng ký được
+    let emailSent = false;
+    try {
+      const tmpl = emailTemplateVerify(verifyCode);
+      const sent = await sendBrevoEmail(env, { to: email, subject: tmpl.subject, html: tmpl.html });
+      emailSent = sent.ok;
+    } catch (e) {
+      console.error("Brevo send error (non-blocking):", e?.message || e);
+    }
+    console.log(`[AUTH/register] user=${username} email=${email} emailSent=${emailSent}`);
+    return json({
+      success: true,
+      message: emailSent ? "Đăng ký thành công! Kiểm tra email để lấy mã xác minh." : "Đăng ký thành công! Email tạm chưa gửi được — báo admin cấu hình Brevo.",
+      verifyCode, // Dev F12 thấy; production chỉ gửi qua email
+      emailSent
+    });
   }
 
   // Login

@@ -23,6 +23,8 @@ import { SettingsProvider, useSettings } from './contexts/SettingsContext';
 import { ToastProvider, useToast } from './contexts/ToastContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ProfileProvider, useProfile } from './contexts/ProfileContext';
+import { I18nProvider, useI18n } from './contexts/I18nContext';
+import LanguagePicker from './components/LanguagePicker';
 
 import { fetchChannels, fetchEPGData, fetchFavorites, toggleFavoriteApi, recordWatchHistory, DEFAULT_FALLBACK_STREAM } from './services/api';
 import { getFavorites, setFavorites as saveFavs, getHistory, setHistory as saveHistory } from './hooks/useStorage';
@@ -36,6 +38,8 @@ function AppContent() {
   const { addToast } = useToast();
   const { user, isAuthenticated, token } = useAuth();
   const { currentProfile } = useProfile();
+  const { hasPicked, resetPicker } = useI18n();
+  const [showLangPicker, setShowLangPicker] = useState(!hasPicked());
   const [showAuth, setShowAuth] = useState(false);
   const [movieToOpen, setMovieToOpen] = useState(null); // phim được chọn từ TopNav search
 
@@ -178,6 +182,11 @@ function AppContent() {
   }, [isPlayerOpen]);
 
   // GATING
+  // Language picker — show lần đầu (chưa chọn ngôn ngữ)
+  if (showLangPicker) {
+    return <LanguagePicker onClose={() => setShowLangPicker(false)} />;
+  }
+
   if (!isAuthenticated || !user) {
     return (
       <>
@@ -323,13 +332,15 @@ export default function App() {
   return (
     <DeviceProvider>
       <SettingsProvider>
-        <ToastProvider>
-          <AuthProvider>
-            <ProfileProvider>
-              <AppContent />
-            </ProfileProvider>
-          </AuthProvider>
-        </ToastProvider>
+        <I18nProvider>
+          <ToastProvider>
+            <AuthProvider>
+              <ProfileProvider>
+                <AppContent />
+              </ProfileProvider>
+            </AuthProvider>
+          </ToastProvider>
+        </I18nProvider>
       </SettingsProvider>
     </DeviceProvider>
   );

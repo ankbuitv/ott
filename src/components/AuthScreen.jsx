@@ -174,7 +174,7 @@ export default function AuthScreen() {
                 <button type="button" onClick={() => { setView('forgot'); setError(''); setSuccess(''); }} className="text-red-400 hover:text-red-300">{t('auth.link.forgot')}</button>
               </div>
               <button type="submit" disabled={loading} className="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-bold text-sm rounded-xl shadow-lg shadow-red-600/30 transition-all flex items-center justify-center gap-2 mt-2">
-                {loading ? t('app.loading')} : <>{t('auth.btn.login')} <ArrowRight className="w-4 h-4" /></>}
+                {loading ? t('app.loading') : <>{t('auth.btn.login')} <ArrowRight className="w-4 h-4" /></>}
               </button>
             </form>
           )}
@@ -198,7 +198,7 @@ export default function AuthScreen() {
                 </button>
               </div>
               <button type="submit" disabled={loading} className="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-bold text-sm rounded-xl shadow-lg shadow-red-600/30 transition-all flex items-center justify-center gap-2 mt-2">
-                {loading ? t('app.loading')} : <>{t('auth.btn.register')} <ArrowRight className="w-4 h-4" /></>}
+                {loading ? t('app.loading') : <>{t('auth.btn.register')} <ArrowRight className="w-4 h-4" /></>}
               </button>
               <p className="text-[10px] text-stone-500 leading-relaxed text-center pt-2">
                 {t('auth.terms_label')} <a className="text-stone-300 underline">{t('auth.terms_link')}</a>

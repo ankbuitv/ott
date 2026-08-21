@@ -1,13 +1,27 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { X, RefreshCw, ExternalLink, AlertTriangle, ChevronLeft, ChevronRight, Play, Film } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { X, RefreshCw, ExternalLink, AlertTriangle, ChevronLeft, ChevronRight, Play, Shield, ShieldOff, SkipForward, Sparkles } from 'lucide-react';
 import { buildEmbedSources, openExternalSearch } from '../services/embeds';
 
 /**
  * CHRTV - Trình phát phim (nguồn thứ 3)
- * Nhúng player từ các embed API (vidsrc fyi/top/me/hair, embed.su, 2embed,
- * multiembed, moviesapi) — tất cả chỉ cần TMDB ID. Có selector để chuyển
- * server nếu 1 server lỗi.
+ * Nhúng player từ các embed API — tất cả chỉ cần TMDB ID. Có selector để
+ * chuyển server nếu 1 server lỗi.
+ *
+ * Chống quảng cáo:
+ * - iframe được sandbox (không allow-popups / allow-top-navigation / allow-modals
+ *   / allow-downloads) => chặn pop-up, pop-under, redirect cướp trang.
+ * - referrerPolicy="no-referrer" để không lộ trang cha cho script quảng cáo.
+ * - Nút "Chặn QC" trên header cho phép tắt sandbox nếu server nào không chịu
+ *   phát khi bị sandbox (lưu localStorage, mặc định BẬT).
+ * - Chặn luôn window.open ở trang cha trong lúc modal đang mở (khôi phục khi đóng).
  */
+
+const ADBLOCK_KEY = 'chrtv_movie_adblock'; // localStorage: '0' = tắt, mặc định bật
+
+// Quyền sandbox tối thiểu để player chạy được nhưng KHÔNG mở được pop-up/redirect.
+// Tuyệt đối không thêm: allow-popups, allow-top-navigation*, allow-modals, allow-downloads.
+const SANDBOX_PERMS = 'allow-scripts allow-same-origin allow-forms allow-presentation allow-pointer-lock allow-orientation-lock';
+
 export default function MoviePlayerModal({ movie, onClose }) {
   const isTV = movie?.media_type === 'tv';
   const [season, setSeason] = useState(1);
@@ -15,6 +29,10 @@ export default function MoviePlayerModal({ movie, onClose }) {
   const [sourceIdx, setSourceIdx] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0); // tăng dần để ép iframe mount lại
+  const [adBlock, setAdBlock] = useState(() => {
+    try { return localStorage.getItem(ADBLOCK_KEY) !== '0'; } catch { return true; }
+  });
 
   const sources = useMemo(() => buildEmbedSources(movie, isTV ? season : null, isTV ? episode : null), [movie, isTV, season, episode]);
   const current = sources[sourceIdx] || null;
@@ -25,11 +43,30 @@ export default function MoviePlayerModal({ movie, onClose }) {
     setError(false);
   }, []);
 
+  // Chuyển sang server kế tiếp trong danh sách (dùng ở màn hình lỗi)
+  const nextSource = useCallback(() => {
+    setSourceIdx(prev => (prev + 1) % Math.max(1, sources.length));
+    setLoading(true);
+    setError(false);
+  }, [sources.length]);
+
+  // Tải lại player hiện tại: tăng reloadKey để key iframe đổi => mount lại thật sự
   const reload = useCallback(() => {
     setLoading(true);
     setError(false);
-    // force iframe re-render by bumping a key
-    setSourceIdx(prev => prev);
+    setReloadKey(k => k + 1);
+  }, []);
+
+  // Bật/tắt chặn quảng cáo (sandbox iframe) — lưu localStorage, mount lại iframe
+  const toggleAdBlock = useCallback(() => {
+    setAdBlock(prev => {
+      const next = !prev;
+      try { localStorage.setItem(ADBLOCK_KEY, next ? '1' : '0'); } catch { /* bỏ qua */ }
+      return next;
+    });
+    setLoading(true);
+    setError(false);
+    setReloadKey(k => k + 1);
   }, []);
 
   // ESC đóng
@@ -38,6 +75,28 @@ export default function MoviePlayerModal({ movie, onClose }) {
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
   }, [onClose]);
+
+  // Chặn window.open ở trang cha khi modal đang mở (script QC hay lợi dụng),
+  // khôi phục nguyên trạng khi đóng modal.
+  useEffect(() => {
+    const originalOpen = window.open;
+    window.open = function blockedOpen() {
+      console.warn('[CHRTV] Đã chặn window.open trong lúc xem phim (chống pop-up quảng cáo).');
+      return null;
+    };
+    return () => { window.open = originalOpen; };
+  }, []);
+
+  // Timeout ~20s: nếu iframe chưa load xong thì coi như server lỗi
+  const loadTimerRef = useRef(null);
+  useEffect(() => {
+    if (!loading || error) return undefined;
+    loadTimerRef.current = setTimeout(() => {
+      setLoading(false);
+      setError(true);
+    }, 20000);
+    return () => clearTimeout(loadTimerRef.current);
+  }, [loading, error, sourceIdx, season, episode, reloadKey, adBlock]);
 
   if (!movie) return null;
 
@@ -57,9 +116,25 @@ export default function MoviePlayerModal({ movie, onClose }) {
             </p>
           </div>
         </div>
-        <button onClick={onClose} className="w-9 h-9 rounded-full bg-white/5 hover:bg-white/15 flex items-center justify-center text-stone-300 hover:text-white transition shrink-0">
-          <X className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Nút bật/tắt chặn quảng cáo (sandbox iframe) */}
+          <button
+            onClick={toggleAdBlock}
+            title={adBlock ? 'Đang chặn quảng cáo (sandbox). Bấm để tắt nếu server không phát được.' : 'Đã tắt chặn quảng cáo — có thể bị pop-up. Bấm để bật lại.'}
+            className={`px-3 py-1.5 rounded-full text-[11px] font-bold flex items-center gap-1.5 transition-all border ${
+              adBlock
+                ? 'bg-emerald-600/20 text-emerald-400 border-emerald-500/40 hover:bg-emerald-600/30'
+                : 'bg-white/5 text-stone-400 border-white/10 hover:bg-white/10 hover:text-white'
+            }`}
+          >
+            {adBlock ? <Shield className="w-3.5 h-3.5" /> : <ShieldOff className="w-3.5 h-3.5" />}
+            <span className="hidden sm:inline">Chặn QC</span>
+            <span>{adBlock ? 'BẬT' : 'TẮT'}</span>
+          </button>
+          <button onClick={onClose} className="w-9 h-9 rounded-full bg-white/5 hover:bg-white/15 flex items-center justify-center text-stone-300 hover:text-white transition shrink-0">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
       </div>
 
       {/* Body */}
@@ -86,13 +161,17 @@ export default function MoviePlayerModal({ movie, onClose }) {
         <div className="flex-1 relative bg-black flex items-center justify-center min-h-0">
           {current && (
             <iframe
-              key={`${sourceIdx}-${season}-${episode}`}
+              // key chứa cả reloadKey + adBlock: đổi trạng thái là iframe mount lại
+              key={`${sourceIdx}-${season}-${episode}-${reloadKey}-${adBlock ? 'ab1' : 'ab0'}`}
               src={current.url}
               title={`${current.name} player`}
               className="absolute inset-0 w-full h-full border-0"
               allow="autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write"
               allowFullScreen
-              referrerPolicy="origin"
+              referrerPolicy="no-referrer"
+              // sandbox KHÔNG cấp allow-popups / allow-top-navigation* / allow-modals
+              // / allow-downloads => chặn pop-up, pop-under, redirect cướp trang
+              {...(adBlock ? { sandbox: SANDBOX_PERMS } : {})}
               onLoad={() => setLoading(false)}
             />
           )}
@@ -102,7 +181,7 @@ export default function MoviePlayerModal({ movie, onClose }) {
             <div className="absolute inset-0 z-10 bg-black/80 backdrop-blur flex flex-col items-center justify-center">
               <div className="w-14 h-14 border-4 border-red-500 border-t-transparent rounded-full animate-spin mb-4"></div>
               <p className="text-xs text-stone-400">Đang tải {current?.name}…</p>
-              <p className="text-[10px] text-stone-600 mt-1">Nếu lâu quá, chuyển server bên dưới</p>
+              <p className="text-[10px] text-stone-600 mt-1">Nếu lâu quá, chuyển server bên dưới (tự báo lỗi sau 20 giây)</p>
             </div>
           )}
 
@@ -111,12 +190,18 @@ export default function MoviePlayerModal({ movie, onClose }) {
             <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black px-6 text-center">
               <AlertTriangle className="w-10 h-10 text-amber-400 mb-3" />
               <h3 className="text-base font-bold text-white mb-1">Server {current?.name} không phát được</h3>
-              <p className="text-xs text-stone-500 mb-4 max-w-sm">Nguồn này có thể đang lỗi hoặc hết phim. Thử server khác bên dưới.</p>
+              <p className="text-xs text-stone-500 mb-4 max-w-sm">
+                Nguồn này có thể đang lỗi hoặc hết phim.
+                {adBlock && ' Nếu nghi do chặn quảng cáo, thử tắt "Chặn QC" ở góc trên.'}
+              </p>
               <div className="flex items-center gap-2 flex-wrap justify-center">
+                <button onClick={nextSource} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5">
+                  <SkipForward className="w-3.5 h-3.5" /> Server kế tiếp
+                </button>
                 <button onClick={reload} className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl flex items-center gap-1.5">
                   <RefreshCw className="w-3.5 h-3.5" /> Tải lại
                 </button>
-                <button onClick={() => openExternalSearch(movie)} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5">
+                <button onClick={() => openExternalSearch(movie)} className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl flex items-center gap-1.5">
                   <ExternalLink className="w-3.5 h-3.5" /> Tìm nguồn khác
                 </button>
               </div>
@@ -132,20 +217,28 @@ export default function MoviePlayerModal({ movie, onClose }) {
               <button
                 key={s.name}
                 onClick={() => switchSource(i)}
-                className={`px-3.5 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all ${
+                className={`px-3.5 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all flex items-center gap-1 ${
                   i === sourceIdx
                     ? 'bg-red-600 text-white shadow-lg shadow-red-600/30'
                     : 'bg-white/5 hover:bg-white/10 text-stone-400 hover:text-white border border-white/10'
                 }`}
               >
                 {i + 1}. {s.name}
+                {/* Nhãn "sạch" cho nguồn ít/không quảng cáo */}
+                {s.adFree && (
+                  <span className={`flex items-center gap-0.5 text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full ${
+                    i === sourceIdx ? 'bg-white/20 text-white' : 'bg-emerald-500/15 text-emerald-400'
+                  }`}>
+                    <Sparkles className="w-2.5 h-2.5" /> sạch
+                  </span>
+                )}
               </button>
             ))}
             <button onClick={reload} className="px-3 py-1.5 rounded-full text-[11px] font-bold text-stone-400 hover:text-white hover:bg-white/10 border border-white/10 whitespace-nowrap flex items-center gap-1">
               <RefreshCw className="w-3 h-3" /> Reload
             </button>
           </div>
-          <p className="text-[9px] text-stone-600 mt-1.5">Nguồn thứ 3 (embed API) — nếu 1 server lỗi, bấm số khác để chuyển. Nút Reload tải lại player hiện tại.</p>
+          <p className="text-[9px] text-stone-600 mt-1.5">Nguồn thứ 3 (embed API) — nguồn gắn nhãn "sạch" ít/không quảng cáo, nên thử trước. Nếu 1 server lỗi, bấm số khác để chuyển.</p>
         </div>
       </div>
     </div>

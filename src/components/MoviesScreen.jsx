@@ -94,12 +94,13 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
   useEffect(() => {
     if (!search.trim()) { setSearchResults([]); setSearching(false); return; }
     setSearching(true);
-    const q = search.trim().toLowerCase();
+    const q = search.trim();
+    const ql = q.toLowerCase();
     const t = setTimeout(async () => {
       // 1) tìm local trong catalog
-      const local = catalog.filter(m => (m.title || m.name || '').toLowerCase().includes(q)).slice(0, 40);
-      // 2) gọi TMDB search để lấy thêm (phim chưa nạp)
-      const r = await MovieAPI.search(search).catch(() => ({ results: [] }));
+      const local = catalog.filter(m => (m.title || m.name || '').toLowerCase().includes(ql)).slice(0, 40);
+      // 2) gọi TMDB search để lấy thêm (phim chưa nạp) - luôn gọi, không phụ thuộc catalog
+      const r = await MovieAPI.search(q).catch(() => ({ results: [] }));
       const seen = new Set(local.map(m => `${m.media_type}-${m.id}`));
       const remote = (r.results || []).filter(m => {
         const k = `${m.media_type}-${m.id}`;
@@ -107,7 +108,17 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
         seen.add(k);
         return m.media_type === 'movie' || m.media_type === 'tv';
       });
-      setSearchResults([...local, ...remote].slice(0, 60));
+      // Nếu TMDB search fail (key không hợp lệ) mà local cũng rỗng -> thử search trong fallback
+      let final = [...local, ...remote];
+      if (final.length === 0) {
+        const fb = await MovieAPI.searchFallback(q).catch(() => []);
+        const seen2 = new Set();
+        fb.forEach(m => {
+          const k = `${m.media_type}-${m.id}`;
+          if (!seen2.has(k)) { seen2.add(k); final.push(m); }
+        });
+      }
+      setSearchResults(final.slice(0, 60));
       setSearching(false);
     }, 350);
     return () => clearTimeout(t);

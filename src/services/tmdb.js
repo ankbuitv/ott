@@ -113,7 +113,12 @@ const FALLBACK_FEATURED = [
   { id: 550, title: 'Fight Club', backdrop_path: '/zS5e7PpP1W4O1nD0fW1l2L3e3vB.jpg', poster_path: '/pB8BM7pdSp6B6Ih7QZ4DrQ3PmJK.jpg', overview: 'Norton và Pitt lập câu lạc bộ đấm nhau...', vote_average: 8.4, release_date: '1999-10-15', media_type: 'movie' },
   { id: 496243, title: 'Parasite', backdrop_path: '/TU9NIjwzjoKPwQHoHshkFcQUCG.jpg', poster_path: '/7IiTTgloJzvGI1TAYymCfbfl3vT.jpg', overview: 'Gia đình nghèo thâm nhập biệt thự...', vote_average: 8.5, release_date: '2019-05-30', media_type: 'movie' },
   { id: 335983, title: 'Venom', backdrop_path: '/2uNW4WbgBML25D3cq0c9lKqlY5e.jpg', poster_path: '/2uNW4WbgBML25D3cq0c9lKqlY5e.jpg', overview: 'Eddie Brock hợp nhất với symbiote...', vote_average: 6.8, release_date: '2018-10-03', media_type: 'movie' },
-  { id: 438148, title: 'Venom: Let There Be Carnage', backdrop_path: '/rjkmN1dniUHVYAtwuV3Tji7FsDV.jpg', poster_path: '/rjkmN1dniUHVYAtwuV3Tji7FsDV.jpg', overview: 'Venom đối đầu Carnage...', vote_average: 6.8, release_date: '2021-09-30', media_type: 'movie' },
+  { id: 580489, title: 'Venom: Let There Be Carnage', backdrop_path: '/rjkmN1dniUHVYAtwuV3Tji7FsDV.jpg', poster_path: '/rjkmN1dniUHVYAtwuV3Tji7FsDV.jpg', overview: 'Venom đối đầu Carnage...', vote_average: 6.8, release_date: '2021-09-30', media_type: 'movie' },
+  { id: 211672, title: 'Minions', backdrop_path: '/uX7AMUa5jJfR1bXxZ4T2gUZJmQv.jpg', poster_path: '/q0R4crx2SehcEEQEkYObktdeFy.jpg', overview: 'Lũ Minions tìm chủ nhân mới...', vote_average: 6.4, release_date: '2015-06-17', media_type: 'movie' },
+  { id: 438148, title: 'Minions: The Rise of Gru', backdrop_path: '/wKiOkZTN9lUUUNZLmtnwubZYONg.jpg', poster_path: '/wKiOkZTN9lUUUNZLmtnwubZYONg.jpg', overview: 'Gru trẻ tuổi và lũ Minions...', vote_average: 7.2, release_date: '2022-06-29', media_type: 'movie' },
+  { id: 20352, title: 'Despicable Me', backdrop_path: '/4nFmBZkQdJzWQ2lD7mP0yV2eLqH.jpg', poster_path: '/9O7gLzmreU0nGkIB6K3BsJbzvNv.jpg', overview: 'Gru âm mưu trộm Mặt Trăng...', vote_average: 7.3, release_date: '2010-07-08', media_type: 'movie' },
+  { id: 93456, title: 'Despicable Me 2', backdrop_path: '/1c2b4r5d6e7f8g9h0i1j2k3l4m5n6o7p.jpg', poster_path: '/kQrYyBQHKB5hL1T4c4U4qY9kGmR.jpg', overview: 'Gru gia nhập Liên minh chống tội phạm...', vote_average: 7.1, release_date: '2013-06-26', media_type: 'movie' },
+  { id: 324852, title: 'Despicable Me 3', backdrop_path: '/6t3YWl7hrrMlUxOiU3YsLcHED80.jpg', poster_path: '/6t3YWl7hrrMlUxOiU3YsLcHED80.jpg', overview: 'Gru gặp anh em sinh đôi Dru...', vote_average: 6.9, release_date: '2017-06-15', media_type: 'movie' },
   { id: 634649, title: 'Spider-Man: No Way Home', backdrop_path: '/1g0dhYtq4irTY1GPXvft6k4YLjm.jpg', poster_path: '/1g0dhYtq4irTY1GPXvft6k4YLjm.jpg', overview: 'Peter Parker mở đa vũ trụ...', vote_average: 8.0, release_date: '2021-12-15', media_type: 'movie' },
   { id: 429617, title: 'Spider-Man: Far From Home', backdrop_path: '/4q2NNj4S5dG2RLFftCpQgDEuE41.jpg', poster_path: '/4q2NNj4S5dG2RLFftCpQgDEuE41.jpg', overview: 'Peter đi châu Âu...', vote_average: 7.4, release_date: '2019-06-28', media_type: 'movie' },
   { id: 315635, title: 'Spider-Man: Homecoming', backdrop_path: '/c24sv2weTHPsmc9aQ7mYVFZkxr2.jpg', poster_path: '/c24sv2weTHPsmc9aQ7mYVFZkxr2.jpg', overview: 'Peter Parker tập làm siêu anh hùng...', vote_average: 7.3, release_date: '2017-07-05', media_type: 'movie' },
@@ -174,62 +179,66 @@ export const MovieAPI = {
   topRated: () => safe('tr2', () => getTopRated(), FALLBACK_TOP_RATED),
   popularTV: () => safe('tv', () => getPopularTV(), FALLBACK_TV),
   search: (q) => tmdbFetch('/search/multi', { query: q, include_adult: false }),
+  // Tìm trong fallback local khi TMDB search không trả kết quả (key lỗi/hết quota)
+  searchFallback: (q) => {
+    const ql = (q || '').toLowerCase().trim();
+    if (!ql) return Promise.resolve([]);
+    const all = [...FALLBACK_FEATURED];
+    return Promise.resolve(
+      all.filter(m =>
+        (m.title || m.name || '').toLowerCase().includes(ql) ||
+        (m.overview || '').toLowerCase().includes(ql)
+      )
+    );
+  },
   details: getMovieDetails,
   trailer: (m) => getMovieTrailer(m.id, m.media_type),
 
   /**
-   * Nạp kho phim lớn từ TMDB: nhiều endpoint x nhiều trang, gộp + dedupe.
-   * Khoảng 60-70 request; mỗi URL được cache 10 phút nên lần sau cực nhanh.
+   * Nạp ~200 phim TMDB cho catalog trang chính.
+   * Tìm kiếm thêm phim qua search() - gọi TMDB /search/multi trực tiếp.
    */
   catalog: async () => {
-    const jobs = [];
-    const push = (fn) => jobs.push(fn);
-
-    // Trending (movie + tv)
-    for (let p = 1; p <= 5; p++) push(() => tmdbFetch('/trending/all/week', { page: p }));
-
-    // Phổ biến / đánh giá cao / đang chiếu / sắp chiếu (nhiều trang hơn)
-    for (let p = 1; p <= 25; p++) push(() => tmdbFetch('/movie/popular', { page: p }));
-    for (let p = 1; p <= 15; p++) push(() => tmdbFetch('/movie/top_rated', { page: p }));
-    for (let p = 1; p <= 10; p++) push(() => tmdbFetch('/movie/now_playing', { page: p }));
-    for (let p = 1; p <= 10; p++) push(() => tmdbFetch('/movie/upcoming', { page: p }));
-
-    // Discover với nhiều cách sắp xếp để phủ nhiều phim hơn
-    const sorts = ['popularity.desc', 'vote_count.desc', 'revenue.desc', 'primary_release_date.desc', 'vote_average.desc', 'original_title.asc'];
-    for (const s of sorts) for (let p = 1; p <= 5; p++) push(() => tmdbFetch('/discover/movie', { page: p, sort_by: s }));
-
-    // Discover theo từng thể loại phim (mở rộng phạm vi)
-    const genreIds = [28, 12, 16, 35, 80, 18, 10751, 14, 36, 27, 10402, 9648, 10749, 878, 10770, 53, 10752, 37];
-    for (const gid of genreIds) {
-      for (let p = 1; p <= 3; p++) push(() => tmdbFetch('/discover/movie', { page: p, with_genres: gid, sort_by: 'popularity.desc' }));
-    }
-
-    // TV shows
-    for (let p = 1; p <= 20; p++) push(() => tmdbFetch('/tv/popular', { page: p }));
-    for (let p = 1; p <= 15; p++) push(() => tmdbFetch('/tv/top_rated', { page: p }));
-
-    // Chạy theo lô 10 request để không vượt rate limit
     const byId = new Map();
-    for (let i = 0; i < jobs.length; i += 10) {
-      const batch = jobs.slice(i, i + 10);
-      const results = await Promise.all(batch.map(fn => fn().catch(() => ({ results: [] }))));
-      results.forEach(r => (r.results || []).forEach(m => {
-        if (!m.poster_path) return;
-        const key = `${m.media_type || 'movie'}-${m.id}`;
-        if (!byId.has(key)) byId.set(key, m);
-      }));
-    }
+    const add = (items) => (items || []).forEach(m => {
+      if (!m.poster_path) return;
+      const key = `${m.media_type || 'movie'}-${m.id}`;
+      if (!byId.has(key)) byId.set(key, m);
+    });
 
-    const results = Array.from(byId.values());
+    // Chỉ nạp vài trang mỗi loại = ~200 phim
+    const pages = [
+      ['/trending/all/week', { page: 1 }],
+      ['/trending/all/week', { page: 2 }],
+      ['/movie/popular', { page: 1 }],
+      ['/movie/popular', { page: 2 }],
+      ['/movie/popular', { page: 3 }],
+      ['/movie/top_rated', { page: 1 }],
+      ['/movie/top_rated', { page: 2 }],
+      ['/movie/now_playing', { page: 1 }],
+      ['/movie/now_playing', { page: 2 }],
+      ['/movie/upcoming', { page: 1 }],
+      ['/tv/popular', { page: 1 }],
+      ['/tv/popular', { page: 2 }],
+      ['/tv/top_rated', { page: 1 }],
+    ];
 
-    // Nếu TMDB trả về ít (key lỗi/hết quota), bổ sung fallback để thư viện không trống
-    if (results.length < 30) {
-      const seen = new Set(results.map(m => `${m.media_type || 'movie'}-${m.id}`));
+    const results = await Promise.all(
+      pages.map(([path, q]) =>
+        tmdbFetch(path, q).then(r => { add(r.results); return r; }).catch(() => {})
+      )
+    );
+
+    const arr = Array.from(byId.values());
+
+    // Fallback nếu không có dữ liệu thật
+    if (arr.length < 30) {
+      const seen = new Set(arr.map(m => `${m.media_type || 'movie'}-${m.id}`));
       FALLBACK_FEATURED.forEach(m => {
         const k = `${m.media_type || 'movie'}-${m.id}`;
-        if (!seen.has(k)) { seen.add(k); results.push(m); }
+        if (!seen.has(k)) { seen.add(k); arr.push(m); }
       });
     }
-    return { results };
+    return { results: arr };
   },
 };

@@ -1,11 +1,38 @@
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMG = 'https://image.tmdb.org/t/p';
 // Default fallback key — get free one at https://www.themoviedb.org/settings/api
-const TMDB_KEY = import.meta.env.VITE_TMDB_KEY || '1b3b8c6a4c1f2a0f5b8e6e2a7c8d4e1f';
+const DEFAULT_TMDB_KEY = 'c02e885e3955667731c6267bd30fa92d';
+const KEY_STORAGE = 'chrtv_tmdb_key';
+const envKey = import.meta.env.VITE_TMDB_KEY;
+// Key mặc định cũ (không hợp lệ) — chỉ dùng để nhận biết "chưa cấu hình key thật"
+const DUMMY_KEY = '1b3b8c6a4c1f2a0f5b8e6e2a7c8d4e1f';
 
-// Warn if no real key configured so the Movies section uses fallback data
-if (!import.meta.env.VITE_TMDB_KEY) {
-  console.warn('[TMDB] Chua cau hinh VITE_TMDB_KEY - Movies se dung du lieu du phong. Xem TMDB.md de lay key mien phi.');
+// Key ưu tiên: key người dùng dán trong app (localStorage) > key build (env) > key nhúng sẵn
+export function getTMDBKey() {
+  try {
+    const saved = localStorage.getItem(KEY_STORAGE);
+    if (saved && saved.trim()) return saved.trim();
+  } catch {}
+  return envKey || DEFAULT_TMDB_KEY;
+}
+export function setTMDBKey(k) {
+  try { localStorage.setItem(KEY_STORAGE, (k || '').trim()); } catch {}
+  cache.clear(); // đổi key -> xoá cache cũ
+}
+// Còn dùng key giả cũ (chưa có key thật) hay không
+export function isDefaultTMDBKey() {
+  try {
+    if (localStorage.getItem(KEY_STORAGE)?.trim()) return false;
+  } catch {}
+  if (envKey) return false;
+  return getTMDBKey() === DUMMY_KEY;
+}
+
+// Warn if the current key is the old dummy (no real key yet)
+if (typeof localStorage === 'undefined' || !localStorage.getItem(KEY_STORAGE)) {
+  if (!envKey && DEFAULT_TMDB_KEY === DUMMY_KEY) {
+    console.warn('[TMDB] Chua cau hinh VITE_TMDB_KEY - Movies se dung du lieu du phong. Xem TMDB.md de lay key mien phi.');
+  }
 }
 
 const cache = new Map();
@@ -19,7 +46,7 @@ const fromCache = (k) => {
 };
 
 async function tmdbFetch(path, query = {}) {
-  const q = { api_key: TMDB_KEY, language: 'vi-VN', ...query };
+  const q = { api_key: getTMDBKey(), language: 'vi-VN', ...query };
   const qs = new URLSearchParams(q).toString();
   const key = `${path}?${qs}`;
   const cached = fromCache(key);
@@ -178,7 +205,25 @@ export const MovieAPI = {
   nowPlaying: () => safe('np', () => getNowPlaying(), FALLBACK_NOW_PLAYING),
   topRated: () => safe('tr2', () => getTopRated(), FALLBACK_TOP_RATED),
   popularTV: () => safe('tv', () => getPopularTV(), FALLBACK_TV),
-  search: (q) => tmdbFetch('/search/multi', { query: q, include_adult: false }),
+  search: async (q) => {
+    // Thử tiếng Việt trước, nếu rỗng thì thử không ép ngôn ngữ (phim chưa có tên Việt)
+    let r = await tmdbFetch('/search/multi', { query: q, include_adult: false });
+    if (!(r.results || []).length) {
+      r = await tmdbFetch('/search/multi', { query: q, include_adult: false, language: 'en-US' });
+    }
+    return r;
+  },
+  // Kiểm tra 1 key có hợp lệ không (gọi /configuration — endpoint nhẹ nhất)
+  verifyKey: async (key) => {
+    try {
+      const q = new URLSearchParams({ api_key: (key || '').trim() });
+      const res = await fetch(`${TMDB_BASE}/configuration?${q}`);
+      const data = await res.json();
+      return { ok: res.ok && !!data.images, status: res.status, status_message: data.status_message };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  },
   // Tìm trong fallback local khi TMDB search không trả kết quả (key lỗi/hết quota)
   searchFallback: (q) => {
     const ql = (q || '').toLowerCase().trim();

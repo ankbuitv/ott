@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🔍 Test Tìm Phim TMDB — CHRTV</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+    background: #0b0c10;
+    color: #e7e5e4;
+    min-height: 100vh;
+    padding: 24px;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .sub { color:#a8a29e; font-size: 13px; margin-bottom: 20px; }
+  .card {
+    background: #17181d;
+    border: 1px solid #26272e;
+    border-radius: 14px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  label { display:block; font-size:12px; color:#a8a29e; margin-bottom:6px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
+  input[type=text] {
+    width:100%; padding:10px 12px; border-radius:10px;
+    border:1px solid #33343c; background:#0f1014; color:#e7e5e4;
+    font-size:14px; outline:none;
+  }
+  input[type=text]:focus { border-color:#e11d48; }
+  .row { display:flex; gap:10px; }
+  .row input { flex:1; }
+  button {
+    padding:10px 18px; border-radius:10px; border:none; cursor:pointer;
+    background:#e11d48; color:#fff; font-weight:700; font-size:14px;
+    transition: background .15s;
+  }
+  button:hover { background:#be123c; }
+  button:disabled { opacity:.5; cursor:wait; }
+  .meta { font-size:12px; color:#a8a29e; margin-top:8px; }
+  .meta b { color:#d6d3d1; }
+  .ok { color:#4ade80; font-weight:700; }
+  .err { color:#f87171; font-weight:700; }
+  .msg { margin-top:10px; font-size:13px; line-height:1.6; white-space:pre-wrap; }
+  .grid {
+    display:grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap:14px; margin-top:14px;
+  }
+  .movie { cursor:pointer; transition: transform .12s; }
+  .movie:hover { transform: translateY(-3px); }
+  .poster {
+    aspect-ratio: 2/3; border-radius:10px; background:#1c1d24;
+    background-size:cover; background-position:center;
+    border:1px solid #26272e; position:relative; overflow:hidden;
+  }
+  .noimg { display:flex; align-items:center; justify-content:center; color:#57534e; font-size:11px; }
+  .badge {
+    position:absolute; top:6px; left:6px; font-size:10px; font-weight:800;
+    padding:2px 7px; border-radius:6px; text-transform:uppercase; letter-spacing:.03em;
+  }
+  .badge.movie { background:#e11d48; color:#fff; }
+  .badge.tv { background:#2563eb; color:#fff; }
+  .title { font-size:12.5px; font-weight:600; margin-top:6px; line-height:1.3; }
+  .year { font-size:11px; color:#a8a29e; }
+  .stars { font-size:11px; color:#fbbf24; }
+  .footer { margin-top:18px; font-size:12px; color:#78716c; line-height:1.7; }
+  code { background:#26272e; padding:1px 6px; border-radius:5px; font-size:12px; color:#fda4af; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🔍 Test Tìm Phim trên TMDB</h1>
+  <div class="sub">Gõ tên phim bất kỳ → xem TMDB trả về kết quả gì (Minions, Avatar, Batman, phim Việt...)</div>
+
+  <div class="card">
+    <label>API Key TMDB (key app đang dùng)</label>
+    <input type="text" id="key" value="c02e885e3955667731c6267bd30fa92d" spellcheck="false">
+    <div class="meta">Nếu bạn đã có key thật (từ <a href="https://www.themoviedb.org/settings/api" target="_blank" style="color:#fda4af">themoviedb.org/settings/api</a>), dán vào đây để test. Bấm <b>Kiểm tra key</b> xem key có hợp lệ không.</div>
+  </div>
+
+  <div class="card">
+    <label>Tên phim cần tìm</label>
+    <div class="row">
+      <input type="text" id="q" value="minions" placeholder="VD: minions, avatar, batman, doraemon..." onkeydown="if(event.key==='Enter')doSearch()">
+      <button id="btn" onclick="doSearch()">Tìm kiếm</button>
+    </div>
+    <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
+      <button style="background:#26272e; color:#d6d3d1; padding:6px 12px; font-size:12px;" onclick="quick('minions')">Minions</button>
+      <button style="background:#26272e; color:#d6d3d1; padding:6px 12px; font-size:12px;" onclick="quick('avatar')">Avatar</button>
+      <button style="background:#26272e; color:#d6d3d1; padding:6px 12px; font-size:12px;" onclick="quick('batman')">Batman</button>
+      <button style="background:#26272e; color:#d6d3d1; padding:6px 12px; font-size:12px;" onclick="quick('one piece')">One Piece</button>
+      <button style="background:#26272e; color:#d6d3d1; padding:6px 12px; font-size:12px;" onclick="quick('bố già')">Bố già (Việt)</button>
+      <button id="btnKey" style="background:#26272e; color:#d6d3d1; padding:6px 12px; font-size:12px;" onclick="checkKey()">🔑 Kiểm tra key</button>
+    </div>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <div class="card" id="resultsCard" style="display:none">
+    <div class="meta" id="resultMeta"></div>
+    <div class="grid" id="grid"></div>
+  </div>
+
+  <div class="footer">
+    <b>Hướng dẫn:</b><br>
+    1. Bấm <b>Tìm kiếm</b> — app gọi thẳng TMDB <code>/search/multi</code> từ trình duyệt.<br>
+    2. Nếu thấy <span class="ok">Kết quả: N phim</span> → key hoạt động, search TMDB OK. Nếu thấy <span class="err">status_message</span> → key sai/hết quota, thay key khác.<br>
+    3. Bấm vào poster → mở trang TMDB của phim đó.<br>
+    4. <b>Ghi chú:</b> TMDB API hỗ trợ CORS nên chạy trực tiếp từ trình duyệt được — app CHRTV dùng cách y hệt thế này.
+  </div>
+</div>
+
+<script>
+const BASE = 'https://api.themoviedb.org/3';
+const IMG = 'https://image.tmdb.org/t/p/w342';
+const keyEl = document.getElementById('key');
+const qEl = document.getElementById('q');
+const msgEl = document.getElementById('msg');
+const gridEl = document.getElementById('grid');
+const metaEl = document.getElementById('resultMeta');
+const resultsCard = document.getElementById('resultsCard');
+
+function quick(q) { qEl.value = q; doSearch(); }
+
+async function tmdb(path, params) {
+  const q = new URLSearchParams({ api_key: keyEl.value.trim(), language: 'vi-VN', ...params });
+  const res = await fetch(`${BASE}${path}?${q}`);
+  const data = await res.json();
+  return { status: res.status, data };
+}
+
+async function checkKey() {
+  const btn = document.getElementById('btnKey');
+  btn.disabled = true;
+  msgEl.innerHTML = '⏳ Đang kiểm tra key...';
+  try {
+    const { status, data } = await tmdb('/configuration');
+    if (data.images) {
+      msgEl.innerHTML = `<span class="ok">✅ Key HỢP LỆ!</span> — TMDB trả về cấu hình hình ảnh bình thường. Tìm phim thoải mái.`;
+    } else {
+      msgEl.innerHTML = `<span class="err">❌ Key KHÔNG hoạt động</span> (HTTP ${status})<br>status_message: ${data.status_message || 'unknown'}<br>→ Lấy key miễn phí tại themoviedb.org/settings/api rồi dán vào ô trên.`;
+    }
+  } catch (e) {
+    msgEl.innerHTML = `<span class="err">⚠️ Lỗi mạng:</span> ${e.message}`;
+  }
+  btn.disabled = false;
+}
+
+async function doSearch() {
+  const q = qEl.value.trim();
+  if (!q) { msgEl.innerHTML = 'Nhập tên phim trước!'; return; }
+  const btn = document.getElementById('btn');
+  btn.disabled = true;
+  msgEl.innerHTML = '⏳ Đang tìm...';
+  try {
+    const { status, data } = await tmdb('/search/multi', { query: q, include_adult: 'false' });
+    const results = (data.results || []).filter(m => (m.media_type === 'movie' || m.media_type === 'tv') && m.poster_path);
+    if (data.status_message) {
+      msgEl.innerHTML = `<span class="err">❌ Lỗi TMDB:</span> HTTP ${status} — ${data.status_message}<br><span style="color:#a8a29e">→ Key này không dùng được. Dán key thật vào ô API Key hoặc báo tôi cấu hình.</span>`;
+      resultsCard.style.display = 'none';
+      return;
+    }
+    if (results.length === 0) {
+      msgEl.innerHTML = `HTTP ${status} — Không tìm thấy "${q}" (thử từ khóa khác, hoặc key bị giới hạn).`;
+      resultsCard.style.display = 'none';
+      return;
+    }
+    msgEl.innerHTML = `<span class="ok">✅ OK!</span> HTTP ${status} — tìm thấy <b>${data.total_results.toLocaleString()}</b> kết quả, hiển thị ${results.length} phim có poster.`;
+    metaEl.textContent = `Key: ${keyEl.value.trim().slice(0, 8)}... | Ngôn ngữ: vi-VN | Đang hiển thị ${results.length} / ${data.total_results} kết quả`;
+    resultsCard.style.display = 'block';
+    gridEl.innerHTML = results.map(m => `
+      <div class="movie" onclick="window.open('https://www.themoviedb.org/${m.media_type}/${m.id}', '_blank')" title="Mở trang TMDB">
+        <div class="poster" style="background-image:url('${IMG}${m.poster_path}')">
+          <span class="badge ${m.media_type}">${m.media_type === 'movie' ? 'Phim' : 'TV'}</span>
+        </div>
+        <div class="title">${(m.title || m.name || '').escapeHTML()}</div>
+        <div class="year">${(m.release_date || m.first_air_date || '').slice(0,4) || '—'}</div>
+        <div class="stars">⭐ ${m.vote_average ? m.vote_average.toFixed(1) : '—'}</div>
+      </div>`).join('');
+  } catch (e) {
+    msgEl.innerHTML = `<span class="err">⚠️ Lỗi mạng:</span> ${e.message}<br><span style="color:#a8a29e">→ TMDB không truy cập được từ trình duyệt của bạn? Kiểm tra mạng/VPN.</span>`;
+  }
+  btn.disabled = false;
+}
+
+String.prototype.escapeHTML = function() {
+  return this.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+};
+
+// Tự động tìm "minions" khi mở trang
+doSearch();
+</script>
+</body>
+</html>

@@ -277,10 +277,23 @@ function MovieDetailModal({ movie, trailer, trailerLoading, onClose }) {
           </div>
 
           {!trailer && !trailerLoading && (
-            <button className="w-full mt-3 px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl flex items-center justify-center gap-2">
-              <Play className="w-4 h-4 fill-current" />
-              Trailer không khả dụng — Quay lại
-            </button>
+            <div className="mt-4 space-y-2">
+              <button
+                onClick={onClose}
+                className="w-full px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl flex items-center justify-center gap-2"
+              >
+                <Play className="w-4 h-4 fill-current" />
+                Quay lại
+              </button>
+              <a
+                href={`https://www.youtube.com/results?search_query=${encodeURIComponent((movie.title || movie.name) + ' trailer')}`}
+                target="_blank"
+                rel="noreferrer"
+                className="w-full px-6 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-stone-300 font-semibold rounded-xl flex items-center justify-center gap-2 text-sm transition"
+              >
+                <span className="text-red-500">▶</span> Tìm trailer trên YouTube
+              </a>
+            </div>
           )}
         </div>
       </div>

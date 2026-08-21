@@ -1,79 +1,93 @@
-name: Build Android APK
+name: Build Android APK (CHRTV)
 
 on:
+  workflow_dispatch:
   push:
-    branches:
-      - main # Hoặc nhánh bạn muốn trigger build
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
 
 jobs:
   build_apk:
-    runs-on: ubuntu-latest # Máy ảo chạy trên cloud với Ubuntu
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GRADLE_USER_HOME: ~/.gradle
+      ANDROID_HOME: ${{ github.workspace }}/.android-sdk
+      ANDROID_SDK_ROOT: ${{ github.workspace }}/.android-sdk
+      CMDLINE_TOOLS_VERSION: '11076708'
+      BUILD_TOOLS_VERSION: '34.0.0'
+      PLATFORM_VERSION: 'android-34'
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout source
+        uses: actions/checkout@v4
 
-    - name: Set up Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20' # Sử dụng Node.js phiên bản LTS tương ứng với project
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
 
-    - name: Cache Node modules
-      uses: actions/cache@v4
-      with:
-        path: '**/node_modules'
-        key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+      - name: Create .env with TMDB key
+        run: |
+          echo "VITE_TMDB_KEY=${{ secrets.VITE_TMDB_KEY }}" > .env
 
-    - name: Install Node dependencies
-      run: npm ci # Sử dụng 'npm ci' để cài đặt chính xác từ package-lock.json
+      - name: Build web assets
+        run: npm run build
 
-    - name: Build web assets
-      run: npm run build
+      - name: Sync Capacitor -> Android
+        run: npx cap sync android
 
-    - name: Sync Capacitor with Android
-      run: npx cap sync android
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
 
-    # --- Cấu hình môi trường Android Build ---
-    # Android SDK và Java thường đã có sẵn trên runner của GitHub Actions
-    # Tuy nhiên, bạn có thể cần tùy chỉnh theo yêu cầu cụ thể của project hoặc Capacitor.
+      # Tải cmdline-tools trực tiếp, không dùng actions/setup-android
+      - name: Install Android SDK command-line tools
+        run: |
+          mkdir -p $ANDROID_HOME/cmdline-tools
+          cd $ANDROID_HOME/cmdline-tools
+          curl -sSLf "https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS_VERSION}_latest.zip" -o tools.zip
+          unzip -q tools.zip
+          mv cmdline-tools latest
+          rm tools.zip
 
-    - name: Set up Android SDK
-      uses: actions/setup-android@v3 # action này giúp cài đặt Android SDK
-      # Bạn có thể cần cấu hình thêm version nếu cần:
-      # with:
-      #   sdk-platform: '34' # Ví dụ: Android 14 SDK Platform
-      #   build-tools-version: '34.0.0' # Ví dụ: Build Tools 34.0.0
+      - name: Accept Android SDK licenses
+        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
 
-    # Có thể cần một bước để cấu hình thêm Java nếu mặc định không phù hợp
-    # - name: Set up Java
-    #   uses: actions/setup-java@v3
-    #   with:
-    #     distribution: 'temurin' # Hoặc 'zulu', 'adopt'
-    #     java-version: '17' # Hoặc '11'
+      - name: Install Android platform & build-tools
+        run: |
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
+            "platform-tools" \
+            "platforms;${PLATFORM_VERSION}" \
+            "build-tools;${BUILD_TOOLS_VERSION}" \
+            "extras;google;usb_driver"
 
-    - name: Generate TMDB API Key file (.env)
-      run: |
-        echo "VITE_TMDB_KEY=${{ secrets.VITE_TMDB_KEY }}" > .env
-        echo "TMDB API Key được cấu hình từ GitHub Secrets."
-      # Bạn cần thêm TMDB API Key của mình vào GitHub Secrets dưới tên VITE_TMDB_KEY
+      - name: Install TV platform (hỗ trợ Android TV box)
+        run: $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "tv;${PLATFORM_VERSION}"
 
-    - name: Build Android Release APK
-      run: |
-        cd android
-        # Sẽ sử dụng Gradle Wrapper đã có trong project
-        # Lệnh này sẽ build file .aab (App Bundle)
-        ./gradlew bundleRelease
-        # Nếu muốn build APK trực tiếp, dùng:
-        # ./gradlew assembleRelease
-      env:
-        # Đảm bảo Capacitor có thể truy cập env var
-        VITE_TMDB_KEY: ${{ secrets.VITE_TMDB_KEY }}
+      - name: Build Android APK/AAB
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew bundleRelease --no-daemon --stacktrace
+          ./gradlew assembleRelease --no-daemon
 
-    - name: Upload APK/AAB artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: chrtv-android-release
-        path: android/app/build/outputs/bundle/release/app-release.aab # Hoặc đường dẫn tới file .apk
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chrtv-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload App Bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chrtv-appbundle
+          path: android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: warn
+          retention-days: 30

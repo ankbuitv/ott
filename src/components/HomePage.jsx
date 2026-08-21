@@ -87,6 +87,12 @@ export default function HomePage({
                 <span className="text-[10px] font-bold tracking-widest">LIVE NOW</span>
               </span>
               <span className="text-[10px] text-stone-400 font-medium tracking-wider uppercase">{fCh?.group_title || 'Kenh'}</span>
+              {fCh?.logo && (
+                <span className="flex items-center gap-2 pl-1">
+                  <img src={fCh.logo} alt={fCh.name} className="w-7 h-7 object-contain rounded-md bg-white/10 p-0.5 border border-white/10" onError={e => e.target.style.display = 'none'} />
+                  <span className="text-[11px] text-stone-300 font-bold">{fCh?.name}</span>
+                </span>
+              )}
             </div>
 
             <h1 className="font-display text-7xl font-black tracking-tight leading-[0.95] mb-5">
@@ -107,8 +113,8 @@ export default function HomePage({
               </span>
             </div>
 
-            <p className="text-base text-stone-300 mb-7 max-w-lg leading-relaxed">
-              {fCh?.epg?.desc || ('Kenh ' + (fCh?.name || 'truyen hinh') + ' truc tiep. Phat song 24/7 voi chat luong HD.')}
+            <p className="text-sm text-stone-400 mb-7 max-w-md leading-snug line-clamp-2">
+              {fCh?.epg?.desc || ('Kênh ' + (fCh?.name || 'truyền hình') + ' trực tiếp, phát sóng 24/7 với chất lượng HD.')}
             </p>
 
             <div className="flex items-center gap-3">
@@ -127,13 +133,15 @@ export default function HomePage({
             <div className="rounded-3xl bg-gradient-to-br from-stone-900 to-black border border-white/10 overflow-hidden shadow-2xl">
               <div className="aspect-video relative bg-gradient-to-br from-red-900/40 via-purple-900/30 to-blue-900/40 flex items-center justify-center">
                 {fCh?.logo ? (
-                  <img src={fCh.logo} alt="" className="w-24 h-24 object-contain opacity-60" onError={e => e.target.style.display = 'none'} />
+                  <div className="w-36 h-36 rounded-2xl bg-white/95 shadow-2xl shadow-red-900/30 flex items-center justify-center p-4">
+                    <img src={fCh.logo} alt={fCh.name} className="w-full h-full object-contain" onError={e => { e.target.style.display = 'none'; }} />
+                  </div>
                 ) : (
                   <div className="text-center">
-                    <div className="w-20 h-20 mx-auto bg-white/10 backdrop-blur-xl rounded-full border border-white/20 flex items-center justify-center mb-3">
+                    <div className="w-24 h-24 mx-auto bg-white/10 backdrop-blur-xl rounded-full border border-white/20 flex items-center justify-center mb-3">
                       <svg className="w-10 h-10" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                     </div>
-                    <p className="text-xs text-stone-400">Dang phat — {fCh?.name || 'CHRTV'}</p>
+                    <p className="text-xs text-stone-400">Đang phát — {fCh?.name || 'CHRTV'}</p>
                   </div>
                 )}
                 <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-red-600 text-[10px] font-bold px-2.5 py-1 rounded-md">
@@ -152,7 +160,7 @@ export default function HomePage({
       {/* STICKY TABS */}
       <div className="sticky top-[57px] z-30 bg-black/85 glass border-y border-white/5">
         <div className="max-w-[1400px] mx-auto px-8">
-          <div className="flex items-center gap-7 overflow-x-autouto scrollbar-none text-sm font-medium">
+          <div className="flex items-center gap-7 overflow-x-auto scrollbar-none text-sm font-medium">
             {categories.slice(0, 10).map(cat => (
               <button
                 key={cat}
@@ -235,8 +243,8 @@ export default function HomePage({
                   <div key={ch.channel_id} className="card rounded-2xl bg-stone-900/40 border border-stone-800 hover:border-red-500/40 overflow-hidden cursor-pointer">
                     <div className="relative aspect-[4/3] bg-gradient-to-br from-stone-700 via-stone-800 to-stone-900 flex items-center justify-center overflow-hidden">
                       <div className="absolute inset-0 opacity-30" style={{background: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,.05) 10px, rgba(255,255,255,.05) 20px)'}}></div>
-                      {ch.logoo ? (
-                        <img src={ch.logoo} alt="" className="w-16 h-16 object-contain relative z-10" onError={e => e.target.style.display = 'none'} />
+                      {ch.logo ? (
+                        <img src={ch.logo} alt="" className="w-16 h-16 object-contain relative z-10" onError={e => e.target.style.display = 'none'} />
                       ) : (
                         <span className="text-5xl font-black text-white/30 tracking-tighter relative z-10">{ch.name.charAt(0)}</span>
                       )}

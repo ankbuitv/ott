@@ -1,4 +1,18 @@
-const BASE_WORKER_URL = "https://chrtv-ott.htxuan-business.workers.dev";
+import { API_BASE } from "./config";
+
+const BASE_WORKER_URL = API_BASE;
+
+// Token đăng nhập (AuthContext lưu bằng JSON.stringify) — cần gửi kèm để
+// favorites / lịch sử xem đồng bộ được lên server thay vì luôn rơi về localStorage.
+function authHeaders() {
+  try {
+    const raw = localStorage.getItem("chrtv_token");
+    const token = raw ? JSON.parse(raw) : "";
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch {
+    return {};
+  }
+}
 
 export const DEFAULT_FALLBACK_STREAM = "http://bore.pub:30113/hls/index.m3u8";
 export const CHRTV_LOGO_URL = "https://i.ibb.co/HDmcxzMK/Gemini-Generated-Image-v7i9yav7i9yav7i9-removebg-preview.png";
@@ -103,10 +117,15 @@ export function getProxyStreamUrl(streamUrl) {
 
 export async function fetchFavorites() {
   try {
-    const res = await fetch(`${BASE_WORKER_URL}/api/favorites`);
+    const res = await fetch(`${BASE_WORKER_URL}/api/favorites`, { headers: authHeaders() });
     if (res.ok) {
       const json = await res.json();
-      if (json && json.favorites) return json.favorites;
+      // Server trả về mảng object {channel_id,...} — app dùng mảng id nên phải map lại
+      if (json && Array.isArray(json.favorites) && json.favorites.length > 0) {
+        const ids = json.favorites.map(f => (typeof f === "string" ? f : f.channel_id)).filter(Boolean);
+        localStorage.setItem("chrtv_favorites", JSON.stringify(ids));
+        return ids;
+      }
     }
   } catch (e) {}
   const saved = localStorage.getItem("chrtv_favorites");
@@ -126,7 +145,7 @@ export async function toggleFavoriteApi(channelId, isFav) {
   try {
     await fetch(`${BASE_WORKER_URL}/api/favorites`, {
       method: isFav ? "POST" : "DELETE",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify({ channel_id: channelId })
     });
   } catch (e) {}
@@ -144,7 +163,7 @@ export async function recordWatchHistory(channelId, position = 0) {
   try {
     await fetch(`${BASE_WORKER_URL}/api/history`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify({ channel_id: channelId, last_position: position })
     });
   } catch (e) {}

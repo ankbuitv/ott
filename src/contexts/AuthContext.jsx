@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { getStorage, setStorage, removeStorage } from '../hooks/useStorage';
+import { API_BASE } from '../services/config';
 
 const AuthContext = createContext(null);
-const BASE = "https://chrtv-ott.htxuan-business.workers.dev";
+const BASE = API_BASE;
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => getStorage('chrtv_user', null));

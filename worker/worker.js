@@ -213,6 +213,7 @@ function emailTemplateReset(token) {
 }
 
 async function getUser(request, env) {
+  if (!hasDB(env)) return null;
   const auth = request.headers.get("Authorization");
   if (!auth || !auth.startsWith("Bearer ")) return null;
   const userId = verifyJWT(auth.slice(7));
@@ -225,6 +226,64 @@ async function getUser(request, env) {
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { ...CORS, "Content-Type": "application/json" } });
+}
+
+// ========== DATABASE BOOTSTRAP ==========
+// Worker tự tạo bảng nếu D1 còn trống => chỉ cần bind D1 tên "DB" là chạy được,
+// không bắt buộc phải chạy tay `wrangler d1 execute ... --file=./schema.sql`.
+const SCHEMA_STATEMENTS = [
+  `CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, avatar_url TEXT DEFAULT '', display_name TEXT DEFAULT '', role TEXT DEFAULT 'user', email_verified INTEGER DEFAULT 0, verify_code TEXT DEFAULT '', verify_expires INTEGER DEFAULT 0, reset_token TEXT DEFAULT '', reset_expires INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, token TEXT UNIQUE NOT NULL, expires_at INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS user_settings (user_id INTEGER PRIMARY KEY, theme TEXT DEFAULT 'dark', default_quality TEXT DEFAULT 'auto', buffer_goal INTEGER DEFAULT 10, language TEXT DEFAULT 'vi', parental_pin TEXT DEFAULT '', parental_enabled INTEGER DEFAULT 0, settings_json TEXT DEFAULT '{}', updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS user_favorites (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, channel_id TEXT NOT NULL, sort_order INTEGER DEFAULT 0, group_name TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, channel_id))`,
+  `CREATE TABLE IF NOT EXISTS watch_history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, channel_id TEXT NOT NULL, last_position INTEGER DEFAULT 0, watch_count INTEGER DEFAULT 1, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, channel_id))`,
+  `CREATE TABLE IF NOT EXISTS channels (id INTEGER PRIMARY KEY AUTOINCREMENT, channel_id TEXT UNIQUE NOT NULL, name TEXT NOT NULL, logo TEXT DEFAULT '', group_title TEXT DEFAULT '', stream_url TEXT NOT NULL, catchup_type TEXT DEFAULT 'append', catchup_days INTEGER DEFAULT 7, is_active INTEGER DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS channel_ratings (id INTEGER PRIMARY KEY AUTOINCREMENT, channel_id TEXT NOT NULL, user_id INTEGER NOT NULL, rating INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(channel_id, user_id))`,
+  `CREATE TABLE IF NOT EXISTS notifications (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, body TEXT NOT NULL, type TEXT DEFAULT 'info', channel_id TEXT DEFAULT '', url TEXT DEFAULT '', is_read INTEGER DEFAULT 0, target TEXT DEFAULT 'all', created_by INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, expires_at INTEGER DEFAULT 0)`,
+  `CREATE TABLE IF NOT EXISTS analytics (id INTEGER PRIMARY KEY AUTOINCREMENT, event TEXT NOT NULL, user_id INTEGER DEFAULT 0, channel_id TEXT DEFAULT '', data TEXT DEFAULT '{}', ip TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS program_reminders (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, channel_id TEXT NOT NULL, program_title TEXT NOT NULL, remind_at DATETIME NOT NULL, is_sent INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS epg_cache (key TEXT PRIMARY KEY, data TEXT NOT NULL, expires_at INTEGER NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS epg_overrides (channel_id TEXT PRIMARY KEY, channel_name TEXT DEFAULT '', programmes TEXT NOT NULL, updated_at INTEGER DEFAULT 0)`,
+  `CREATE TABLE IF NOT EXISTS m3u_sources (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, url TEXT NOT NULL, is_active INTEGER DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS broadcasts (id INTEGER PRIMARY KEY AUTOINCREMENT, message TEXT NOT NULL, type TEXT DEFAULT 'info', is_active INTEGER DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, expires_at INTEGER DEFAULT 0)`,
+  `CREATE TABLE IF NOT EXISTS user_profiles (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, name TEXT NOT NULL, avatar_url TEXT DEFAULT '', is_child INTEGER DEFAULT 0, pin_hash TEXT DEFAULT '', active INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE INDEX IF NOT EXISTS idx_watch_history_user ON watch_history(user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_favorites_user ON user_favorites(user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_notifications_target ON notifications(target)`,
+  `CREATE INDEX IF NOT EXISTS idx_analytics_event ON analytics(event, created_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_program_reminders_user ON program_reminders(user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token)`,
+];
+
+let schemaReady = false;
+
+function hasDB(env) {
+  return !!(env && env.DB && typeof env.DB.prepare === "function");
+}
+
+async function ensureSchema(env) {
+  if (!hasDB(env)) return false;
+  if (schemaReady) return true;
+  try {
+    if (typeof env.DB.batch === "function") {
+      await env.DB.batch(SCHEMA_STATEMENTS.map((sql) => env.DB.prepare(sql)));
+    } else {
+      for (const sql of SCHEMA_STATEMENTS) await env.DB.prepare(sql).run();
+    }
+    schemaReady = true;
+    return true;
+  } catch (e) {
+    console.error("ensureSchema error:", e?.message || e);
+    return false;
+  }
+}
+
+// Trả lỗi rõ ràng (503) thay vì 500 khó hiểu khi Worker chưa được bind D1.
+function dbUnavailable() {
+  return json({
+    error: "Máy chủ chưa bật cơ sở dữ liệu D1 nên chưa dùng được tài khoản. Vào Cloudflare Dashboard → Workers → chrtv-backend → Settings → Bindings → thêm D1 binding tên 'DB' (hoặc bỏ comment [[d1_databases]] trong wrangler.toml) rồi deploy lại.",
+    code: "NO_DB",
+  }, 503);
 }
 
 // ========== API ROUTER ==========
@@ -246,7 +305,8 @@ async function handleAPI(path, request, env, ctx) {
 
 // ========== PLAYLIST ==========
 async function handlePlaylist(env) {
-  if (env && env.DB) {
+  if (hasDB(env)) {
+    await ensureSchema(env);
     try {
       const { results } = await env.DB.prepare("SELECT * FROM channels WHERE is_active = 1 ORDER BY id ASC").all();
       if (results && results.length > 0) return json({ success: true, source: "d1", data: results });
@@ -257,14 +317,16 @@ async function handlePlaylist(env) {
     if (resp.ok) {
       const parsed = parseM3U(await resp.text());
       if (parsed.length > 0) {
-        // Store in D1 if available
-        if (env && env.DB) {
+        // Lưu vào D1 nếu có (dùng batch để không vượt giới hạn subrequest/CPU của Worker)
+        if (hasDB(env)) {
           try {
-            await env.DB.prepare("DELETE FROM channels").run();
-            for (const ch of parsed) {
-              await env.DB.prepare("INSERT OR REPLACE INTO channels (channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(ch.channel_id, ch.name, ch.logo, ch.group_title, ch.stream_url, ch.catchup_type, ch.catchup_days).run();
+            const stmt = env.DB.prepare("INSERT OR REPLACE INTO channels (channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, 1)");
+            const rows = parsed.map(ch => stmt.bind(ch.channel_id, ch.name, ch.logo, ch.group_title, ch.stream_url, ch.catchup_type, ch.catchup_days));
+            if (typeof env.DB.batch === "function") {
+              await env.DB.batch([env.DB.prepare("DELETE FROM channels")]);
+              for (let i = 0; i < rows.length; i += 50) await env.DB.batch(rows.slice(i, i + 50));
             }
-          } catch {}
+          } catch (e) { console.error("cache channels error:", e?.message || e); }
         }
         return json({ success: true, source: "m3u", data: parsed });
       }
@@ -439,26 +501,72 @@ function generateMockEPG(channelList = []) {
 
 // ========== PROXY ==========
 async function handleProxy(request, env) {
-  const targetUrl = new URL(request.url).searchParams.get("url");
+  const reqUrl = new URL(request.url);
+  const targetUrl = reqUrl.searchParams.get("url");
   if (!targetUrl) return new Response("Missing url", { status: 400, headers: CORS });
+
+  const proxyBase = `${reqUrl.origin}${reqUrl.pathname}`;
+  const fetchOpts = {
+    headers: { "User-Agent": "VLC/3.0.21 LibVLC/3.0.21", "Accept": "*/*", "Referer": safeOrigin(targetUrl) },
+    signal: AbortSignal.timeout(8000),
+  };
+
   for (let i = 0; i < 3; i++) {
     try {
-      const resp = await fetch(targetUrl, { headers: { "User-Agent": "VLC/3.0.21 LibVLC/3.0.21", "Accept": "*/*", "Referer": new URL(targetUrl).origin }, signal: AbortSignal.timeout(5000) });
-      if (resp.ok) {
-        const h = new Headers(resp.headers); Object.entries(CORS).forEach(([k, v]) => h.set(k, v));
-        return new Response(resp.body, { status: resp.status, headers: h });
-      }
+      const resp = await fetch(targetUrl, fetchOpts);
+      if (resp.ok) return await proxyResponse(resp, targetUrl, proxyBase);
     } catch {}
   }
   try {
-    const fb = await fetch(FALLBACK_STREAM_URL, { headers: { "User-Agent": "VLC/3.0.21 LibVLC/3.0.21" } });
-    if (fb.ok) { const h = new Headers(fb.headers); Object.entries(CORS).forEach(([k, v]) => h.set(k, v)); return new Response(fb.body, { status: fb.status, headers: h }); }
+    const fb = await fetch(FALLBACK_STREAM_URL, { headers: fetchOpts.headers });
+    if (fb.ok) return await proxyResponse(fb, FALLBACK_STREAM_URL, proxyBase);
   } catch {}
   return new Response("Stream unavailable", { status: 502, headers: CORS });
 }
 
+function safeOrigin(u) {
+  try { return new URL(u).origin; } catch { return ""; }
+}
+
+// Trả response kèm CORS. Với playlist HLS (.m3u8) thì viết lại URL con thành URL
+// đi qua chính proxy này — nếu không, segment tương đối (vd: seg-1.ts) sẽ bị trình
+// duyệt resolve thành /api/seg-1.ts và luồng không phát được.
+async function proxyResponse(resp, targetUrl, proxyBase) {
+  const ct = (resp.headers.get("Content-Type") || "").toLowerCase();
+  const isPlaylist = ct.includes("mpegurl") || /\.m3u8(\?|$)/i.test(targetUrl);
+  const headers = new Headers(resp.headers);
+  headers.delete("Content-Encoding");
+  headers.delete("Content-Length");
+  Object.entries(CORS).forEach(([k, v]) => headers.set(k, v));
+
+  if (!isPlaylist) return new Response(resp.body, { status: resp.status, headers });
+
+  const text = await resp.text();
+  const rewritten = rewriteM3U8(text, targetUrl, proxyBase);
+  headers.set("Content-Type", "application/vnd.apple.mpegurl");
+  return new Response(rewritten, { status: resp.status, headers });
+}
+
+function rewriteM3U8(text, targetUrl, proxyBase) {
+  const toProxy = (raw) => {
+    try { return `${proxyBase}?url=${encodeURIComponent(new URL(raw, targetUrl).toString())}`; }
+    catch { return raw; }
+  };
+  return text.split(/\r?\n/).map((line) => {
+    const l = line.trim();
+    if (!l) return line;
+    if (l.startsWith("#")) {
+      // Viết lại URI="..." trong các tag (EXT-X-KEY, EXT-X-MAP, EXT-X-MEDIA...)
+      return line.replace(/URI="([^"]+)"/g, (_m, uri) => `URI="${toProxy(uri)}"`);
+    }
+    return toProxy(l);
+  }).join("\n");
+}
+
 // ========== AUTH ==========
 async function handleAuth(path, request, env) {
+  if (!hasDB(env)) return dbUnavailable();
+  await ensureSchema(env);
   const body = await request.json().catch(() => ({}));
 
   // Register
@@ -598,18 +706,11 @@ async function handleAuth(path, request, env) {
 }
 
 // ========== USER ==========
-async function ensureTables(env) {
-  try {
-    await env.DB.prepare("CREATE TABLE IF NOT EXISTS user_profiles (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, name TEXT NOT NULL, avatar_url TEXT DEFAULT '', is_child INTEGER DEFAULT 0, pin_hash TEXT DEFAULT '', active INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)").run();
-    await env.DB.prepare("CREATE TABLE IF NOT EXISTS epg_cache (key TEXT PRIMARY KEY, data TEXT NOT NULL, expires_at INTEGER NOT NULL)").run();
-  } catch (e) {
-    console.error('ensureTables error:', e.message || e);
-  }
-}
 async function handleUser(path, request, env) {
+  if (!hasDB(env)) return dbUnavailable();
+  await ensureSchema(env);
   const user = await getUser(request, env);
   if (!user) return json({ error: "Chưa đăng nhập" }, 401);
-  await ensureTables(env);
 
   // Get profile + profiles + settings
   if (path === "/user/profile" && request.method === "GET") {
@@ -722,12 +823,14 @@ async function handleUser(path, request, env) {
 // ========== ADMIN ==========
 async function handleAdmin(path, request, env) {
   // Auth: chấp nhận JWT user có role=admin HOẶC master JWT_SECRET (bypass mạnh, ai biết secret = admin)
+  if (!hasDB(env)) return dbUnavailable();
+  await ensureSchema(env);
   const auth = request.headers.get("Authorization") || "";
-  let isAdmin = auth === `Bearer ${JWT_SECRET}`;
-  if (!isAdmin) {
-    const user = await getUser(request, env);
-    if (!user || user.role !== 'admin') return json({ error: "Không có quyền admin" }, 403);
-    isAdmin = true;
+  const isMaster = auth === `Bearer ${JWT_SECRET}`;
+  let adminUser = null;
+  if (!isMaster) {
+    adminUser = await getUser(request, env);
+    if (!adminUser || adminUser.role !== 'admin') return json({ error: "Không có quyền admin" }, 403);
   }
 
   // Dashboard stats
@@ -753,7 +856,7 @@ async function handleAdmin(path, request, env) {
   if (path === "/admin/notify" && request.method === "POST") {
     const { title, body: msgBody, type, channel_id, target } = await request.json().catch(() => ({}));
     if (!title || !msgBody) return json({ error: "Thiếu tiêu đề/nội dung" }, 400);
-    await env.DB.prepare("INSERT INTO notifications (title, body, type, channel_id, target, created_by) VALUES (?, ?, ?, ?, ?, ?)").bind(title, msgBody, type || "info", channel_id || "", target || "all", user.id).run();
+    await env.DB.prepare("INSERT INTO notifications (title, body, type, channel_id, target, created_by) VALUES (?, ?, ?, ?, ?, ?)").bind(title, msgBody, type || "info", channel_id || "", target || "all", adminUser?.id || 0).run();
     return json({ success: true });
   }
 
@@ -837,6 +940,9 @@ async function handleAdmin(path, request, env) {
 
 // ========== FAVORITES ==========
 async function handleFavorites(request, env) {
+  // Không có D1 => client tự lưu localStorage, trả về rỗng thay vì lỗi 500
+  if (!hasDB(env)) return request.method === "GET" ? json({ success: true, favorites: [], local: true }) : json({ success: true, local: true });
+  await ensureSchema(env);
   const user = await getUser(request, env);
   if (!user) return json({ error: "Chưa đăng nhập" }, 401);
 
@@ -865,6 +971,8 @@ async function handleFavorites(request, env) {
 
 // ========== HISTORY ==========
 async function handleHistory(request, env) {
+  if (!hasDB(env)) return request.method === "GET" ? json({ success: true, history: [], local: true }) : json({ success: true, local: true });
+  await ensureSchema(env);
   const user = await getUser(request, env);
   if (!user) return json({ error: "Chưa đăng nhập" }, 401);
 
@@ -887,6 +995,8 @@ async function handleHistory(request, env) {
 
 // ========== RATING ==========
 async function handleRating(request, env) {
+  if (!hasDB(env)) return request.method === "GET" ? json({ success: true, avg: 0, count: 0, userRating: 0, local: true }) : json({ success: true, local: true });
+  await ensureSchema(env);
   const user = await getUser(request, env);
   if (!user) return json({ error: "Chưa đăng nhập" }, 401);
 
@@ -910,6 +1020,8 @@ async function handleRating(request, env) {
 
 // ========== NOTIFICATIONS ==========
 async function handleNotifications(request, env) {
+  if (!hasDB(env)) return json({ success: true, notifications: [] });
+  await ensureSchema(env);
   const user = await getUser(request, env);
   const userId = user?.id || 0;
 
@@ -923,6 +1035,8 @@ async function handleNotifications(request, env) {
 
 // ========== REMINDERS ==========
 async function handleReminders(request, env) {
+  if (!hasDB(env)) return request.method === "GET" ? json({ success: true, reminders: [], local: true }) : json({ success: true, local: true });
+  await ensureSchema(env);
   const user = await getUser(request, env);
   if (!user) return json({ error: "Chưa đăng nhập" }, 401);
 
@@ -950,26 +1064,58 @@ async function handleReminders(request, env) {
 
 // ========== BROADCASTS ==========
 async function handleBroadcasts(env) {
+  if (!hasDB(env)) return json({ success: true, broadcasts: [] });
+  await ensureSchema(env);
   const { results } = await env.DB.prepare("SELECT * FROM broadcasts WHERE is_active = 1 AND (expires_at = 0 OR expires_at > ?) ORDER BY created_at DESC LIMIT 5").bind(Math.floor(Date.now() / 1000)).all();
   return json({ success: true, broadcasts: results });
 }
 
 // ========== CHANNELS ==========
 async function handleChannels(env) {
-  const { results } = await env.DB.prepare("SELECT id, channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days FROM channels WHERE is_active = 1 ORDER BY id ASC").all();
-  return json({ success: true, channels: results });
+  if (hasDB(env)) {
+    try {
+      const { results } = await env.DB.prepare("SELECT id, channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days FROM channels WHERE is_active = 1 ORDER BY id ASC").all();
+      if (results && results.length > 0) return json({ success: true, channels: results });
+    } catch (e) { console.error("handleChannels D1 error:", e?.message || e); }
+  }
+  // Chưa có D1 (hoặc bảng rỗng) => lấy trực tiếp từ M3U nguồn
+  return json({ success: true, channels: await loadChannelsFromSource() });
+}
+
+// Tải danh sách kênh từ playlist M3U gốc, fallback danh sách mặc định
+async function loadChannelsFromSource() {
+  try {
+    const resp = await fetch(SOURCE_M3U_URL, { headers: { "User-Agent": "CHRTV-OTT/2.0" }, signal: AbortSignal.timeout(6000) });
+    if (resp.ok) {
+      const parsed = parseM3U(await resp.text());
+      if (parsed.length > 0) return parsed;
+    }
+  } catch (e) { console.error("loadChannelsFromSource error:", e?.message || e); }
+  return DEFAULT_CHANNELS;
 }
 
 // ========== SEARCH ==========
 async function handleSearch(request, env) {
   const q = new URL(request.url).searchParams.get("q");
   if (!q) return json({ success: true, results: [] });
-  const { results } = await env.DB.prepare("SELECT channel_id, name, logo, group_title FROM channels WHERE name LIKE ? AND is_active = 1 LIMIT 20").bind(`%${q}%`).all();
-  return json({ success: true, results });
+  if (hasDB(env)) {
+    try {
+      const { results } = await env.DB.prepare("SELECT channel_id, name, logo, group_title FROM channels WHERE name LIKE ? AND is_active = 1 LIMIT 20").bind(`%${q}%`).all();
+      if (results && results.length > 0) return json({ success: true, results });
+    } catch (e) { console.error("handleSearch D1 error:", e?.message || e); }
+  }
+  const needle = q.toLowerCase();
+  const list = (await loadChannelsFromSource())
+    .filter(ch => (ch.name || "").toLowerCase().includes(needle))
+    .slice(0, 20)
+    .map(ch => ({ channel_id: ch.channel_id, name: ch.name, logo: ch.logo, group_title: ch.group_title }));
+  return json({ success: true, results: list });
 }
 
 // ========== ANALYTICS ==========
 async function handleAnalytics(request, env) {
+  if (!hasDB(env)) return json({ success: true, skipped: true });
+  await ensureSchema(env);
   const body = await request.json().catch(() => ({}));
   const ip = request.headers.get("CF-Connecting-IP") || "";
   try {

@@ -1,93 +1,90 @@
 import React from 'react';
-import { Tv, Calendar, Heart, History, Settings, Sparkles, Layers } from 'lucide-react';
-import FocusableWrapper from './FocusableWrapper';
+import { useProfile } from '../contexts/ProfileContext';
 
-const CHRTV_LOGO_URL = "https://i.ibb.co/HDmcxzMK/Gemini-Generated-Image-v7i9yav7i9yav7i9-removebg-preview.png";
+const navItems = [
+  { id: 'channels', label: 'TRANG CHỦ', icon: HomeIcon },
+  { id: 'epg', label: 'LỊCH EPG', icon: CalendarIcon },
+  { id: 'movies', label: 'PHIM ẢNH', icon: FilmIcon },
+  { id: 'favorites', label: 'YÊU THÍCH', icon: HeartIcon },
+  { id: 'history', label: 'LỊCH SỬ', icon: ClockIcon },
+];
 
-/**
- * Sidebar - Thanh điều hướng Sidebar Dark Mode (Phong cách FPT Play / Netflix)
- * Tác giả: CHRTV OTT Full-stack Architect
- */
-export default function Sidebar({ activeTab, setActiveTab }) {
-  const menuItems = [
-    { id: 'channels', label: 'Xem Tivi', icon: Tv },
-    { id: 'epg', label: 'Lịch EPG', icon: Calendar },
-    { id: 'favorites', label: 'Yêu Thích', icon: Heart },
-    { id: 'history', label: 'Lịch Sử Xem', icon: History },
-  ];
+function HomeIcon() { return <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><path d="m9 9 5 12 1.774-5.226L21 14 9 3l-2 5.226z"/></svg>; }
+function CalendarIcon() { return <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>; }
+function FilmIcon() { return <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"/></svg>; }
+function HeartIcon() { return <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>; }
+function ClockIcon() { return <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>; }
+function SettingsIcon() { return <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>; }
+
+export default function Sidebar({ activeTab, setActiveTab, onShowSettings, onShowAdmin }) {
+  const { currentProfile } = useProfile();
 
   return (
     <>
-      {/* Sidebar cho Desktop & Android TV */}
-      <aside className="hidden md:flex flex-col w-64 bg-[#090a0e] border-r border-slate-800/80 p-5 select-none shrink-0 z-20">
-        {/* CHRTV Logo Header */}
-        <div className="flex items-center gap-3 px-2 py-3 mb-8 border-b border-slate-800/80">
-          <img
-            src={CHRTV_LOGO_URL}
-            alt="CHRTV Logo"
-            className="h-10 object-contain drop-shadow-lg"
-          />
-          <div>
-            <h1 className="font-extrabold text-lg text-white tracking-wider">CHRTV</h1>
-            <span className="text-[10px] text-red-500 font-bold uppercase tracking-widest">
-              OTT IPTV PRO
-            </span>
-          </div>
-        </div>
-
-        {/* Danh Sách Menu Điều Hướng */}
-        <nav className="flex-1 space-y-2">
-          {menuItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = activeTab === item.id;
-
-            return (
-              <FocusableWrapper
-                key={item.id}
-                onClick={() => setActiveTab(item.id)}
-                className={`flex items-center gap-3.5 px-4 py-3.5 rounded-xl font-bold text-sm transition-all ${
-                  isActive
-                    ? 'bg-red-600 text-white shadow-lg shadow-red-600/30'
-                    : 'text-slate-400 hover:text-slate-100 hover:bg-slate-900'
-                }`}
-              >
-                <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-slate-400'}`} />
-                <span>{item.label}</span>
-              </FocusableWrapper>
-            );
-          })}
-        </nav>
-
-        {/* Chân Trang Sidebar */}
-        <div className="pt-4 border-t border-slate-800/80">
-          <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800/60 text-xs text-slate-400">
-            <div className="flex items-center gap-1.5 font-semibold text-slate-200 mb-1">
-              <Sparkles className="w-4 h-4 text-amber-400" /> CHRTV Full-stack
-            </div>
-            <p className="text-[11px] text-slate-400">Hệ sinh thái IPTV siêu mượt cho Web, Mobile & Android TV D-pad.</p>
-          </div>
-        </div>
-      </aside>
-
-      {/* Bottom Bar cho Mobile Responsive */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#090a0e]/95 backdrop-blur-lg border-t border-slate-800/80 px-4 py-2 flex items-center justify-around z-50">
-        {menuItems.map((item) => {
+      {/* Desktop Sidebar — narrow icon dock */}
+      <aside className="hidden md:flex flex-col w-20 bg-[#060608] border-r border-white/5 h-full shrink-0 z-10 items-center py-6 gap-1.5">
+        {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
-
           return (
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-all ${
-                isActive ? 'text-red-500 font-bold' : 'text-slate-400'
+              className={`nav-btn w-14 h-14 rounded-2xl flex flex-col items-center justify-center gap-0.5 transition-all ${
+                isActive
+                  ? 'bg-white/[0.08] text-white'
+                  : 'text-stone-500 hover:text-white hover:bg-white/5'
               }`}
             >
-              <Icon className="w-5 h-5" />
-              <span className="text-[10px]">{item.label}</span>
+              <Icon />
+              <span className="text-[8px] font-bold tracking-tight">{item.label}</span>
             </button>
           );
         })}
+
+        {onShowSettings && (
+          <button
+            onClick={onShowSettings}
+            className="nav-btn w-10 h-10 mt-auto hover:bg-white/5 rounded-full flex items-center justify-center text-stone-500 hover:text-white transition-all"
+          >
+            <SettingsIcon />
+          </button>
+        )}
+        {onShowAdmin && (
+          <button
+            onClick={onShowAdmin}
+            className="nav-btn w-10 h-10 hover:bg-white/5 rounded-full flex items-center justify-center text-stone-500 hover:text-white transition-all"
+          >
+            <span className="text-[10px]">⚙️</span>
+          </button>
+        )}
+        {currentProfile && (
+          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-amber-500 to-red-600 flex items-center justify-center font-bold text-white text-xs mt-1 cursor-pointer">
+            {currentProfile.name[0].toUpperCase()}
+          </div>
+        )}
+      </aside>
+
+      {/* Mobile Bottom Bar */}
+      <div className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-black/95 backdrop-blur-xl border-t border-white/10 px-6 py-3">
+        <div className="flex items-center justify-around">
+          {navItems.slice(0, 5).map((item) => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => setActiveTab(item.id)}
+                className={`flex flex-col items-center ${
+                  isActive ? 'text-white' : 'text-stone-500'
+                }`}
+              >
+                <Icon />
+                <span className="text-[9px] mt-0.5">{item.label.split(' ')[0]}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </>
   );

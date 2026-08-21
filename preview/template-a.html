@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="vi" class="dark">
+<head>
+<meta charset="UTF-8">
+<title>Template A — Netflix-style</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+body { background: #141414; font-family: 'Inter', sans-serif; }
+.row::-webkit-scrollbar { height: 0; }
+.poster { transition: transform .25s; }
+.poster:hover { transform: scale(1.06); z-index: 10; }
+.hero-grad { background: linear-gradient(77deg,rgba(0,0,0,.6) 0,transparent 85%); }
+</style>
+</head>
+<body class="text-white overflow-x-hidden">
+
+<!-- Top Nav -->
+<nav class="fixed top-0 inset-x-0 z-50 flex items-center justify-between px-12 py-4 bg-gradient-to-b from-black/80 to-transparent">
+  <div class="flex items-center gap-8">
+    <div class="text-red-600 font-black text-2xl tracking-tighter">CHRTV</div>
+    <a class="text-sm text-white font-semibold" href="#">Trang chủ</a>
+    <a class="text-sm text-gray-400 hover:text-white" href="#">Lịch EPG</a>
+    <a class="text-sm text-gray-400 hover:text-white" href="#">Yêu thích</a>
+    <a class="text-sm text-gray-400 hover:text-white" href="#">Lịch sử</a>
+  </div>
+  <div class="flex items-center gap-5">
+    <input class="bg-black/40 border border-white/10 px-4 py-1.5 rounded text-sm w-56 focus:outline-none focus:border-red-600" placeholder="Tìm kênh, chương trình...">
+    <div class="w-8 h-8 rounded bg-red-600 flex items-center justify-center font-bold">A</div>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="relative h-[78vh]">
+  <div class="absolute inset-0 bg-gradient-to-r from-black via-black/50 to-transparent"></div>
+  <div class="absolute inset-y-0 right-0 w-2/3 bg-cover bg-center" style="background-image: url('https://images.unsplash.com/photo-1593784991095-a205069470b6?w=1600'); filter: brightness(.55)"></div>
+  <div class="relative h-full flex flex-col justify-center px-12 max-w-2xl">
+    <div class="flex items-center gap-2 mb-4">
+      <span class="px-2 py-0.5 bg-red-600 text-[10px] font-bold rounded">LIVE</span>
+      <span class="text-xs text-gray-300">VTV1 HD · Tin tức</span>
+    </div>
+    <h1 class="text-6xl font-black tracking-tight leading-none mb-3">Thời sự 19h</h1>
+    <div class="flex items-center gap-3 text-sm text-gray-300 mb-5">
+      <span class="text-emerald-400 font-bold">98% match</span>
+      <span>2026</span>
+      <span class="border border-gray-500 px-1.5 text-[10px]">TV-Xem tivi</span>
+      <span>4.8 ★</span>
+    </div>
+    <p class="text-base text-gray-300 mb-6 leading-relaxed">Bản tin thời sự tối nay cập nhật những tin nóng nhất trong ngày: chính trị, kinh tế, xã hội và quốc tế. Phát sóng trực tiếp lúc 19:00 hàng ngày trên kênh VTV1.</p>
+    <div class="flex items-center gap-3">
+      <button class="flex items-center gap-2 bg-white text-black px-7 py-2.5 rounded font-bold hover:bg-white/90">
+        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+        Xem ngay
+      </button>
+      <button class="flex items-center gap-2 bg-gray-500/40 text-white px-7 py-2.5 rounded font-bold hover:bg-gray-500/60">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg>
+        Thông tin
+      </button>
+    </div>
+  </div>
+</section>
+
+<!-- Section Title Bar -->
+<div class="px-12 mt-8 mb-4 flex items-center justify-between">
+  <div>
+    <h2 class="text-2xl font-bold">Xem gần đây</h2>
+    <p class="text-xs text-gray-500 mt-1">Tiếp tục xem những kênh bạn đang theo dõi</p>
+  </div>
+  <a class="text-sm text-gray-400 hover:text-white" href="#">Xem tất cả →</a>
+</div>
+
+<!-- Recent row -->
+<div class="row flex gap-2 overflow-x-auto px-12 pb-4">
+  <div class="poster relative shrink-0 w-64 h-36 rounded-md bg-cover bg-center" style="background-image:url('https://i.ibb.co/HDmcxzMK/Gemini-Generated-Image-v7i9yav7i9yav7i9-removebg-preview.png'); background-color:#222">
+    <div class="absolute inset-0 bg-gradient-to-t from-black/90 to-transparent rounded-md"></div>
+    <div class="absolute bottom-2 left-2"><p class="text-[11px] text-gray-400">VTV1</p><p class="text-sm font-bold">Thời sự 19h</p></div>
+    <button class="absolute top-2 right-2 w-8 h-8 rounded-full bg-red-600 flex items-center justify-center opacity-0 hover:opacity-100 transition"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
+  </div>
+  <div class="poster relative shrink-0 w-64 h-36 rounded-md bg-cover bg-center bg-blue-900">
+    <div class="absolute inset-0 bg-gradient-to-t from-black/90 to-transparent rounded-md"></div>
+    <div class="absolute bottom-2 left-2"><p class="text-[11px] text-gray-400">VTV3</p><p class="text-sm font-bold">Gặp nhau cuối tuần</p></div>
+  </div>
+  <div class="poster relative shrink-0 w-64 h-36 rounded-md bg-emerald-900">
+    <div class="absolute inset-0 bg-gradient-to-t from-black/90 to-transparent rounded-md"></div>
+    <div class="absolute bottom-2 left-2"><p class="text-[11px] text-gray-400">HTV7</p><p class="text-sm font-bold">Đường lên đỉnh Olympia</p></div>
+  </div>
+  <div class="poster relative shrink-0 w-64 h-36 rounded-md bg-red-950">
+    <div class="absolute inset-0 bg-gradient-to-t from-black/90 to-transparent rounded-md"></div>
+    <div class="absolute bottom-2 left-2"><p class="text-[11px] text-gray-400">ON Sports</p><p class="text-sm font-bold">Bóng đá V-League</p></div>
+  </div>
+  <div class="poster relative shrink-0 w-64 h-36 rounded-md bg-purple-900">
+    <div class="absolute inset-0 bg-gradient-to-t from-black/90 to-transparent rounded-md"></div>
+    <div class="absolute bottom-2 left-2"><p class="text-[11px] text-gray-400">VTV5</p><p class="text-sm font-bold">Thế giới 24h</p></div>
+  </div>
+</div>
+
+<!-- Trending Now -->
+<div class="px-12 mt-8 mb-4 flex items-end justify-between">
+  <div>
+    <div class="flex items-center gap-2 text-red-600 font-bold text-xs uppercase tracking-widest mb-1">🔥 Trending Now</div>
+    <h2 class="text-2xl font-bold">Đang hot tuần này</h2>
+  </div>
+  <div class="flex gap-2">
+    <button class="px-4 py-1.5 bg-white/5 border border-white/10 rounded text-xs hover:bg-white/10">Tất Cả</button>
+    <button class="px-4 py-1.5 bg-white/5 border border-white/10 rounded text-xs hover:bg-white/10">VTV</button>
+    <button class="px-4 py-1.5 bg-white/5 border border-white/10 rounded text-xs hover:bg-white/10">HTV</button>
+    <button class="px-4 py-1.5 bg-white/5 border border-white/10 rounded text-xs hover:bg-white/10">Thể Thao</button>
+  </div>
+</div>
+
+<!-- Grid Poster -->
+<div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 px-12 pb-12">
+  <div class="poster relative aspect-video rounded-md overflow-hidden bg-cover bg-center bg-blue-950">
+    <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
+    <div class="absolute top-2 left-2"><span class="bg-red-600 text-[9px] font-bold px-1.5 py-0.5 rounded">LIVE</span></div>
+    <div class="absolute bottom-2 left-2 right-2">
+      <p class="text-sm font-bold truncate">VTV1 HD</p>
+      <p class="text-[10px] text-gray-400 truncate">Thời sự 19h · 18:00-19:30</p>
+    </div>
+  </div>
+  <div class="poster relative aspect-video rounded-md overflow-hidden bg-cover bg-center bg-purple-950">
+    <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
+    <div class="absolute bottom-2 left-2 right-2">
+      <p class="text-sm font-bold truncate">VTV3</p>
+      <p class="text-[10px] text-gray-400 truncate">Gặp nhau cuối tuần</p>
+    </div>
+  </div>
+  <div class="poster relative aspect-video rounded-md overflow-hidden bg-cover bg-center bg-emerald-950">
+    <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
+    <div class="absolute bottom-2 left-2 right-2">
+      <p class="text-sm font-bold truncate">HTV7</p>
+      <p class="text-[10px] text-gray-400 truncate">Đường lên đỉnh Olympia</p>
+    </div>
+  </div>
+  <div class="poster relative aspect-video rounded-md overflow-hidden bg-cover bg-center bg-red-950">
+    <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
+    <div class="absolute top-2 left-2"><span class="bg-red-600 text-[9px] font-bold px-1.5 py-0.5 rounded">LIVE</span></div>
+    <div class="absolute bottom-2 left-2 right-2">
+      <p class="text-sm font-bold truncate">ON Sports</p>
+      <p class="text-[10px] text-gray-400 truncate">Bóng đá V-League</p>
+    </div>
+  </div>
+  <div class="poster relative aspect-video rounded-md overflow-hidden bg-cover bg-center bg-yellow-950">
+    <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
+    <div class="absolute bottom-2 left-2 right-2">
+      <p class="text-sm font-bold truncate">VTV5</p>
+      <p class="text-[10px] text-gray-400 truncate">Thế giới 24h</p>
+    </div>
+  </div>
+  <div class="poster relative aspect-video rounded-md overflow-hidden bg-cover bg-center bg-pink-950">
+    <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
+    <div class="absolute bottom-2 left-2 right-2">
+      <p class="text-sm font-bold truncate">HTV9</p>
+      <p class="text-[10px] text-gray-400 truncate">Showbiz HTV</p>
+    </div>
+  </div>
+  <div class="poster relative aspect-video rounded-md overflow-hidden bg-cover bg-center bg-indigo-950">
+    <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
+    <div class="absolute bottom-2 left-2 right-2">
+      <p class="text-sm font-bold truncate">VTV2</p>
+      <p class="text-[10px] text-gray-400 truncate">Khám phá thế giới</p>
+    </div>
+  </div>
+  <div class="poster relative aspect-video rounded-md overflow-hidden bg-cover bg-center bg-cyan-950">
+    <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
+    <div class="absolute bottom-2 left-2 right-2">
+      <p class="text-sm font-bold truncate">VTV4</p>
+      <p class="text-[10px] text-gray-400 truncate">Nhịp cầu nối những dòng sông</p>
+    </div>
+  </div>
+  <div class="poster relative aspect-video rounded-md overflow-hidden bg-cover bg-center bg-orange-950">
+    <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
+    <div class="absolute bottom-2 left-2 right-2">
+      <p class="text-sm font-bold truncate">HTV7 HD</p>
+      <p class="text-[10px] text-gray-400 truncate">Tin tức tổng hợp</p>
+    </div>
+  </div>
+  <div class="poster relative aspect-video rounded-md overflow-hidden bg-cover bg-center bg-slate-800">
+    <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
+    <div class="absolute bottom-2 left-2 right-2">
+      <p class="text-sm font-bold truncate">VTV6</p>
+      <p class="text-[10px] text-gray-400 truncate">Khám phá Việt Nam</p>
+    </div>
+  </div>
+  <div class="poster relative aspect-video rounded-md overflow-hidden bg-cover bg-center bg-rose-950">
+    <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
+    <div class="absolute bottom-2 left-2 right-2">
+      <p class="text-sm font-bold truncate">VTC1</p>
+      <p class="text-[10px] text-gray-400 truncate">Phim Việt</p>
+    </div>
+  </div>
+  <div class="poster relative aspect-video rounded-md overflow-hidden bg-cover bg-center bg-teal-950">
+    <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
+    <div class="absolute bottom-2 left-2 right-2">
+      <p class="text-sm font-bold truncate">VTC9</p>
+      <p class="text-[10px] text-gray-400 truncate">Ca nhạc trẻ</p>
+    </div>
+  </div>
+</div>
+
+<!-- Footer -->
+<footer class="border-t border-white/10 px-12 py-8 mt-8 text-xs text-gray-500">
+  <p class="mb-2">© 2026 CHRTV IPTV Player</p>
+  <p class="text-[10px] text-gray-700">Vietnam · Web · Android TV · iOS · Smart TV</p>
+</footer>
+</body>
+</html>

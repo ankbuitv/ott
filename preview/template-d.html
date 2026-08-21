@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Template D — Magazine Grid</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+body { background: #fafaf9; font-family: 'Inter', sans-serif; }
+.dark { background: #0a0a0a; color: #f5f5f4; }
+.tile { transition: all .3s cubic-bezier(.4,0,.2,1); }
+.tile:hover { transform: translateY(-4px); box-shadow: 0 20px 40px rgba(220,38,38,.4); }
+.live-dot { width: 8px; height: 8px; border-radius: 50%; background: #ef4444; box-shadow: 0 0 12px rgba(239,68,68,.8); animation: blink 1.2s infinite; }
+@keyframes blink { 50% { opacity: .3; } }
+</style>
+</head>
+<body class="text-stone-900 overflow-x-hidden dark">
+
+<!-- Header -->
+<header class="sticky top-0 z-50 backdrop-blur-2xl bg-[#0a0a0a]/80 border-b border-stone-700/40">
+  <div class="max-w-[1500px] mx-auto flex items-center justify-between px-8 py-4">
+    <div class="flex items-center gap-10">
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center shadow-lg shadow-red-600/50">
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="m9 9 5 12 1.774-5.226L21 14 9 3l-2 5.226z"/></svg>
+        </div>
+        <span class="font-black text-xl tracking-tight text-white">CHRTV</span>
+        <span class="px-1.5 py-0.5 bg-stone-700/40 text-stone-300 text-[9px] font-bold rounded tracking-wider">LIVE</span>
+      </div>
+      <nav class="hidden md:flex items-center gap-7 text-sm font-medium">
+        <a class="text-white" href="#">Trang chủ</a>
+        <a class="text-stone-400 hover:text-white transition" href="#">Trực tiếp</a>
+        <a class="text-stone-400 hover:text-white transition" href="#">Lịch EPG</a>
+        <a class="text-stone-400 hover:text-white transition" href="#">Yêu thích</a>
+        <a class="text-stone-400 hover:text-white transition" href="#">Lịch sử</a>
+      </nav>
+    </div>
+    <div class="flex items-center gap-3">
+      <div class="hidden md:flex items-center gap-2 bg-stone-800/60 px-3 py-2 rounded-lg border border-stone-700/40 focus-within:border-stone-500">
+        <svg class="w-4 h-4 text-stone-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input class="bg-transparent text-sm text-white placeholder:text-stone-500 focus:outline-none w-44" placeholder="Tìm kênh, chương trình...">
+        <kbd class="hidden md:block px-1.5 py-0.5 text-[10px] text-stone-500 bg-stone-700/50 rounded">⌘K</kbd>
+      </div>
+      <button class="w-9 h-9 rounded-full bg-stone-800/60 hover:bg-stone-700 text-stone-400 hover:text-white flex items-center justify-center">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+      </button>
+      <button class="w-9 h-9 rounded-full bg-stone-800/60 hover:bg-stone-700 text-stone-400 hover:text-white flex items-center justify-center">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9"/></svg>
+      </button>
+      <div class="w-9 h-9 rounded-full bg-gradient-to-br from-amber-500 to-red-600 flex items-center justify-center font-bold text-white text-sm">A</div>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-[1500px] mx-auto px-8 py-8 space-y-12">
+
+<!-- Hero Magazine -->
+<section class="grid md:grid-cols-12 gap-6">
+  <!-- Main Featured -->
+  <div class="md:col-span-8 relative rounded-3xl overflow-hidden bg-gradient-to-br from-red-900 to-stone-900 h-[480px] flex items-end p-8 group">
+    <div class="absolute inset-0 bg-cover bg-center opacity-70" style="background-image: url('https://images.unsplash.com/photo-1522869635100-9f4c5e86aa37?w=1600'); filter: hue-rotate(-20deg) contrast(1.1);"></div>
+    <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
+    <div class="absolute top-6 left-6 flex items-center gap-2 bg-stone-900/80 backdrop-blur px-3 py-1.5 rounded-full border border-stone-700">
+      <span class="live-dot"></span>
+      <span class="text-[10px] font-bold tracking-wider text-white">LIVE NOW</span>
+    </div>
+    <div class="absolute top-6 right-6 px-3 py-1.5 bg-stone-900/80 backdrop-blur rounded-full border border-stone-700">
+      <span class="text-[10px] text-stone-300 font-medium">12.4K đang xem</span>
+    </div>
+    <div class="relative z-10 max-w-xl">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-2xl">📺</div>
+        <div>
+          <p class="text-xs text-stone-300 uppercase font-bold tracking-widest">VTV1 HD</p>
+          <p class="text-[10px] text-stone-400">Đài Truyền hình Việt Nam</p>
+        </div>
+      </div>
+      <h1 class="text-6xl font-black tracking-tighter leading-[0.95] mb-4 text-white">Thời sự<br>19h</h1>
+      <p class="text-base text-stone-300 leading-relaxed mb-6 max-w-md">Bản tin thời sự trong ngày. Cập nhật tin nóng nhất về chính trị, kinh tế, xã hội và quốc tế từ VTV1.</p>
+      <div class="flex items-center gap-3">
+        <button class="flex items-center gap-2 bg-white text-stone-900 px-6 py-2.5 rounded-full font-bold text-sm hover:bg-stone-100 transition">
+          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+          Xem ngay
+        </button>
+        <button class="flex items-center gap-2 bg-stone-800/60 backdrop-blur text-white px-6 py-2.5 rounded-full font-medium text-sm hover:bg-stone-700/60 border border-stone-600 transition">
+          + Yêu thích
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Side list -->
+  <div class="md:col-span-4 flex flex-col gap-3">
+    <div class="text-[10px] text-stone-500 font-bold uppercase tracking-widest">Đang hot ngay bây giờ</div>
+    <div class="flex-1 rounded-2xl bg-stone-900/40 border border-stone-800/60 p-2 space-y-2 overflow-y-auto max-h-[460px]">
+      <div class="flex gap-3 items-center p-2 rounded-xl hover:bg-stone-800/40 cursor-pointer transition">
+        <div class="w-20 h-12 rounded-lg bg-gradient-to-br from-blue-700 to-blue-900 shrink-0 flex items-center justify-center text-xl">📡</div>
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-bold truncate">VTV3</p>
+          <p class="text-[10px] text-stone-500 truncate">Gặp nhau cuối tuần</p>
+        </div>
+        <div class="flex flex-col items-end">
+          <span class="flex items-center gap-1"><span class="live-dot"></span><span class="text-[9px] text-red-400 font-bold">LIVE</span></span>
+        </div>
+      </div>
+      <div class="flex gap-3 items-center p-2 rounded-xl hover:bg-stone-800/40 cursor-pointer transition">
+        <div class="w-20 h-12 rounded-lg bg-gradient-to-br from-emerald-700 to-emerald-900 shrink-0 flex items-center justify-center text-xl">📡</div>
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-bold truncate">HTV7</p>
+          <p class="text-[10px] text-stone-500 truncate">Đường lên đỉnh Olympia</p>
+        </div>
+        <div class="flex flex-col items-end">
+          <span class="flex items-center gap-1"><span class="live-dot"></span><span class="text-[9px] text-red-400 font-bold">LIVE</span></span>
+        </div>
+      </div>
+      <div class="flex gap-3 items-center p-2 rounded-xl hover:bg-stone-800/40 cursor-pointer transition">
+        <div class="w-20 h-12 rounded-lg bg-gradient-to-br from-red-700 to-orange-900 shrink-0 flex items-center justify-center text-xl">📡</div>
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-bold truncate">ON Sports</p>
+          <p class="text-[10px] text-stone-500 truncate">V-League · Hà Nội 2-1 SLNA</p>
+        </div>
+        <div class="flex flex-col items-end">
+          <span class="flex items-center gap-1"><span class="live-dot"></span><span class="text-[9px] text-red-400 font-bold">LIVE</span></span>
+        </div>
+      </div>
+      <div class="flex gap-3 items-center p-2 rounded-xl hover:bg-stone-800/40 cursor-pointer transition">
+        <div class="w-20 h-12 rounded-lg bg-gradient-to-br from-blue-800 to-indigo-900 shrink-0 flex items-center justify-center text-xl">📡</div>
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-bold truncate">VTV5</p>
+          <p class="text-[10px] text-stone-500 truncate">Thế giới 24h</p>
+        </div>
+        <div class="flex flex-col items-end">
+          <span class="flex items-center gap-1"><span class="live-dot"></span><span class="text-[9px] text-red-400 font-bold">LIVE</span></span>
+        </div>
+      </div>
+      <div class="flex gap-3 items-center p-2 rounded-xl hover:bg-stone-800/40 cursor-pointer transition">
+        <div class="w-20 h-12 rounded-lg bg-gradient-to-br from-pink-700 to-rose-900 shrink-0 flex items-center justify-center text-xl">📡</div>
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-bold truncate">HTV9</p>
+          <p class="text-[10px] text-stone-500 truncate">Showbiz HTV</p>
+        </div>
+      </div>
+      <div class="flex gap-3 items-center p-2 rounded-xl hover:bg-stone-800/40 cursor-pointer transition">
+        <div class="w-20 h-12 rounded-lg bg-gradient-to-br from-purple-700 to-purple-900 shrink-0 flex items-center justify-center text-xl">📡</div>
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-bold truncate">VTV2</p>
+          <p class="text-[10px] text-stone-500 truncate">Khám phá thế giới</p>
+        </div>
+      </div>
+      <div class="flex gap-3 items-center p-2 rounded-xl hover:bg-stone-800/40 cursor-pointer transition">
+        <div class="w-20 h-12 rounded-lg bg-gradient-to-br from-yellow-700 to-amber-900 shrink-0 flex items-center justify-center text-xl">📡</div>
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-bold truncate">VTV4</p>
+          <p class="text-[10px] text-stone-500 truncate">Nhịp cầu nối những dòng sông</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Section: Thể loại Bento Grid -->
+<section>
+  <div class="flex items-end justify-between mb-5">
+    <div>
+      <p class="text-[10px] text-stone-500 font-bold uppercase tracking-widest mb-1">Khám phá</p>
+      <h2 class="text-2xl font-black tracking-tight">Kênh theo thể loại</h2>
+    </div>
+    <button class="text-xs text-stone-400 hover:text-white">Xem tất cả →</button>
+  </div>
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div class="tile rounded-2xl bg-gradient-to-br from-red-600 to-red-800 p-6 cursor-pointer">
+      <div class="text-3xl mb-3">📰</div>
+      <p class="font-bold">Tin tức</p>
+      <p class="text-[10px] text-white/70 mt-1">12 kênh</p>
+    </div>
+    <div class="tile rounded-2xl bg-gradient-to-br from-orange-600 to-red-700 p-6 cursor-pointer">
+      <div class="text-3xl mb-3">⚽</div>
+      <p class="font-bold">Thể thao</p>
+      <p class="text-[10px] text-white/70 mt-1">8 kênh</p>
+    </div>
+    <div class="tile rounded-2xl bg-gradient-to-br from-purple-600 to-pink-700 p-6 cursor-pointer">
+      <div class="text-3xl mb-3">🎬</div>
+      <p class="font-bold">Phim ảnh</p>
+      <p class="text-[10px] text-white/70 mt-1">15 kênh</p>
+    </div>
+    <div class="tile rounded-2xl bg-gradient-to-br from-cyan-600 to-blue-700 p-6 cursor-pointer">
+      <div class="text-3xl mb-3">👶</div>
+      <p class="font-bold">Thiếu nhi</p>
+      <p class="text-[10px] text-white/70 mt-1">5 kênh</p>
+    </div>
+  </div>
+</section>
+
+<!-- Section: Grid 3-col Tile Cards - themed colors -->
+<section>
+  <div class="flex items-end justify-between mb-5">
+    <div>
+      <p class="text-[10px] text-stone-500 font-bold uppercase tracking-widest mb-1">VTV</p>
+      <h2 class="text-2xl font-black tracking-tight">Kênh VTV · Đài Truyền hình Việt Nam</h2>
+    </div>
+  </div>
+  <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+    <div class="tile rounded-2xl bg-stone-900/40 border border-stone-800 hover:border-red-500/40 overflow-hidden cursor-pointer">
+      <div class="aspect-[4/3] bg-gradient-to-br from-blue-700 to-blue-900 flex items-center justify-center relative">
+        <span class="text-6xl font-black text-white/30">V1</span>
+        <div class="absolute top-3 left-3 px-2 py-0.5 bg-red-600 text-[10px] font-bold rounded inline-flex items-center gap-1">
+          <span class="live-dot"></span> LIVE
+        </div>
+        <div class="absolute bottom-3 right-3 px-2 py-0.5 bg-stone-900/80 backdrop-blur text-[10px] rounded">HD</div>
+      </div>
+      <div class="p-4">
+        <p class="font-bold">VTV1 HD</p>
+        <p class="text-[10px] text-stone-500 mt-1">Thời sự 19h · Tin tức</p>
+      </div>
+    </div>
+    <div class="tile rounded-2xl bg-stone-900/40 border border-stone-800 hover:border-red-500/40 overflow-hidden cursor-pointer">
+      <div class="aspect-[4/3] bg-gradient-to-br from-purple-700 to-purple-900 flex items-center justify-center relative">
+        <span class="text-6xl font-black text-white/30">V3</span>
+        <div class="absolute top-3 left-3 px-2 py-0.5 bg-red-600 text-[10px] font-bold rounded inline-flex items-center gap-1">
+          <span class="live-dot"></span> LIVE
+        </div>
+      </div>
+      <div class="p-4">
+        <p class="font-bold">VTV3 HD</p>
+        <p class="text-[10px] text-stone-500 mt-1">Gặp nhau cuối tuần</p>
+      </div>
+    </div>
+    <div class="tile rounded-2xl bg-stone-900/40 border border-stone-800 hover:border-red-500/40 overflow-hidden cursor-pointer">
+      <div class="aspect-[4/3] bg-gradient-to-br from-indigo-700 to-indigo-900 flex items-center justify-center relative">
+        <span class="text-6xl font-black text-white/30">V2</span>
+      </div>
+      <div class="p-4">
+        <p class="font-bold">VTV2 HD</p>
+        <p class="text-[10px] text-stone-500 mt-1">Khám phá thế giới</p>
+      </div>
+    </div>
+    <div class="tile rounded-2xl bg-stone-900/40 border border-stone-800 hover:border-red-500/40 overflow-hidden cursor-pointer">
+      <div class="aspect-[4/3] bg-gradient-to-br from-cyan-700 to-cyan-900 flex items-center justify-center relative">
+        <span class="text-6xl font-black text-white/30">V4</span>
+      </div>
+      <div class="p-4">
+        <p class="font-bold">VTV4</p>
+        <p class="text-[10px] text-stone-500 mt-1">Nhịp cầu nối những dòng sông</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Thể thao - horizontal compact list -->
+<section>
+  <div class="flex items-end justify-between mb-5">
+    <div>
+      <p class="text-[10px] text-orange-500 font-bold uppercase tracking-widest mb-1">THỂ THAO</p>
+      <h2 class="text-2xl font-black tracking-tight">Đang thi đấu trực tiếp</h2>
+    </div>
+  </div>
+  <div class="space-y-3">
+    <div class="flex items-center gap-4 p-4 rounded-2xl bg-gradient-to-r from-orange-900/30 to-stone-900/40 border border-orange-800/30 cursor-pointer hover:border-orange-500/50 transition">
+      <div class="w-16 h-16 bg-gradient-to-br from-red-700 to-orange-900 rounded-xl flex items-center justify-center text-2xl shrink-0">⚽</div>
+      <div class="flex-1">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="flex items-center gap-1"><span class="live-dot"></span><span class="text-[10px] font-bold text-red-400">LIVE</span></span>
+          <span class="text-[10px] text-orange-400 font-medium">V-LEAGUE 2026</span>
+        </div>
+        <p class="text-lg font-bold">Hà Nội FC <span class="text-red-400">2-1</span> SLNA</p>
+        <p class="text-xs text-stone-500">ON Sports · Hiệp 2 · 78'</p>
+      </div>
+      <div class="text-center">
+        <p class="text-2xl font-black text-stone-400">12K</p>
+        <p class="text-[10px] text-stone-500">đang xem</p>
+      </div>
+      <svg class="w-5 h-5 text-stone-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+    </div>
+    <div class="flex items-center gap-4 p-4 rounded-2xl bg-stone-900/40 border border-stone-800 cursor-pointer hover:border-stone-700 transition">
+      <div class="w-16 h-16 bg-gradient-to-br from-amber-700 to-orange-900 rounded-xl flex items-center justify-center text-2xl shrink-0">🏀</div>
+      <div class="flex-1">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="flex items-center gap-1"><span class="live-dot"></span><span class="text-[10px] font-bold text-red-400">LIVE</span></span>
+          <span class="text-[10px] text-orange-400 font-medium">NBA · Regular Season</span>
+        </div>
+        <p class="text-lg font-bold">Lakers <span class="text-red-400">78 - 82</span> Warriors</p>
+        <p class="text-xs text-stone-500">HTV Thể thao · Quý 3</p>
+      </div>
+      <div class="text-center">
+        <p class="text-2xl font-black text-stone-400">8K</p>
+        <p class="text-[10px] text-stone-500">đang xem</p>
+      </div>
+      <svg class="w-5 h-5 text-stone-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+    </div>
+    <div class="flex items-center gap-4 p-4 rounded-2xl bg-stone-900/40 border border-stone-800 cursor-pointer hover:border-stone-700 transition">
+      <div class="w-16 h-16 bg-gradient-to-br from-emerald-700 to-teal-900 rounded-xl flex items-center justify-center text-2xl shrink-0">🎾</div>
+      <div class="flex-1">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="flex items-center gap-1"><span class="live-dot"></span><span class="text-[10px] font-bold text-red-400">LIVE</span></span>
+          <span class="text-[10px] text-orange-400 font-medium">GRAND SLAM</span>
+        </div>
+        <p class="text-lg font-bold">Djokovic <span class="text-red-400">vs</span> Alcaraz</p>
+        <p class="text-xs text-stone-500">VTV6 · Set 4 — chưa kết thúc</p>
+      </div>
+      <div class="text-center">
+        <p class="text-2xl font-black text-stone-400">4K</p>
+        <p class="text-[10px] text-stone-500">đang xem</p>
+      </div>
+      <svg class="w-5 h-5 text-stone-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- Bottom Tab Bar for Mobile -->
+<div class="fixed bottom-0 inset-x-0 bg-[#0a0a0a]/90 backdrop-blur-xl border-t border-stone-800 px-6 py-3 md:hidden">
+  <div class="flex items-center justify-around max-w-md mx-auto">
+    <button class="flex flex-col items-center text-white"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3"/></svg><span class="text-[9px] mt-0.5 font-medium">Home</span></button>
+    <button class="flex flex-col items-center text-stone-500"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg><span class="text-[9px] mt-0.5">Tìm</span></button>
+    <button class="flex flex-col items-center text-stone-500"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg><span class="text-[9px] mt-0.5">EPG</span></button>
+    <button class="flex flex-col items-center text-stone-500"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg><span class="text-[9px] mt-0.5">Yêu thích</span></button>
+    <button class="flex flex-col items-center text-stone-500"><svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/></svg><span class="text-[9px] mt-0.5">Profile</span></button>
+  </div>
+</div>
+
+</body>
+</html>

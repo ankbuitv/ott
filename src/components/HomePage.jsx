@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { findEpgForChannel } from '../utils/epgMatch';
+import { useI18n } from '../contexts/I18nContext';
 
 const LOGO_FALLBACK = "https://i.ibb.co/HDmcxzMK/Gemini-Generated-Image-v7i9yav7i9yav7i9-removebg-preview.png";
 
@@ -8,6 +9,7 @@ export default function HomePage({
   onSelectChannel, onToggleFavorite,
   selectedCategory, setSelectedCategory, categories,
 }) {
+  const { t } = useI18n();
   const [activeFilter, setActiveFilter] = useState('all');
 
   const getEpgNow = (ch) => {
@@ -15,7 +17,6 @@ export default function HomePage({
     return findEpgForChannel(epgData.programmes, ch).now;
   };
 
-  // Featured channel: ưu tiên kênh "Vietnam Today" (tên hoặc tvg-id VTC1), fallback kênh đầu tiên
   const fCh = useMemo(() => {
     const isVietnamToday = (ch) => {
       const hay = ((ch.name || '') + ' ' + (ch.channel_id || '')).toLowerCase();
@@ -37,14 +38,12 @@ export default function HomePage({
     return groups;
   }, [channels]);
 
-  // All groups, unlimitted, for full channel display
   const allGroups = useMemo(() => {
     return Object.fromEntries(
       Object.entries(groupedChannels).sort((a, b) => b[1].length - a[1].length)
     );
   }, [groupedChannels]);
 
-  // Filter groups when a tab is selected
   const filteredGroups = useMemo(() => {
     if (selectedCategory && selectedCategory !== 'all') {
       return groupedChannels[selectedCategory]
@@ -54,7 +53,6 @@ export default function HomePage({
     return allGroups;
   }, [groupedChannels, selectedCategory, allGroups]);
 
-  // Top 6 groups for bento grid only
   const topGroups = useMemo(() => {
     return Object.fromEntries(
       Object.entries(allGroups).slice(0, 6)
@@ -84,9 +82,9 @@ export default function HomePage({
             <div className="flex items-center gap-3 mb-4">
               <span className="flex items-center gap-1.5 bg-red-600/15 backdrop-blur border border-red-600/30 text-red-400 px-3 py-1 rounded-full">
                 <span className="live-dot shadow-red-400/60"></span>
-                <span className="text-[10px] font-bold tracking-widest">LIVE NOW</span>
+                <span className="text-[10px] font-bold tracking-widest">{t('app.live_now')}</span>
               </span>
-              <span className="text-[10px] text-stone-400 font-medium tracking-wider uppercase">{fCh?.group_title || 'Kenh'}</span>
+              <span className="text-[10px] text-stone-400 font-medium tracking-wider uppercase">{fCh?.group_title || ''}</span>
               {fCh?.logo && (
                 <span className="flex items-center gap-2 pl-1">
                   <img src={fCh.logo} alt={fCh.name} className="w-7 h-7 object-contain rounded-md bg-white/10 p-0.5 border border-white/10" onError={e => e.target.style.display = 'none'} />
@@ -98,33 +96,33 @@ export default function HomePage({
             <h1 className="font-display text-7xl font-black tracking-tight leading-[0.95] mb-5">
               {fCh?.name || 'CHRTV'}<br />
               <span className="bg-gradient-to-r from-red-400 to-amber-400 bg-clip-text text-transparent">
-                {fCh?.epg?.title || 'Truc tiep'}
+                {fCh?.epg?.title || t('app.live_now')}
               </span>
             </h1>
 
             <div className="flex items-center gap-3 text-sm text-stone-400 mb-5">
               <span className="text-amber-400 font-bold">★★★★★ 4.8</span>
               <span>·</span>
-              <span>{fCh?.group_title || 'Tong hop'}</span>
+              <span>{fCh?.group_title || ''}</span>
               <span>·</span>
               <span className="flex items-center gap-1">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
-                12.4K dang xem
+                12.4K {t('app.live_now').includes('TRỰC TIẾP') ? 'đang xem' : 'watching'}
               </span>
             </div>
 
             <p className="text-sm text-stone-400 mb-7 max-w-md leading-snug line-clamp-2">
-              {fCh?.epg?.desc || ('Kênh ' + (fCh?.name || 'truyền hình') + ' trực tiếp, phát sóng 24/7 với chất lượng HD.')}
+              {fCh?.epg?.desc || fCh?.name}
             </p>
 
             <div className="flex items-center gap-3">
               <button onClick={() => fCh && onSelectChannel(fCh)} className="flex items-center gap-2.5 bg-white text-black px-7 py-3 rounded-full font-bold text-sm hover:bg-stone-200 transition shadow-lg shadow-white/10">
                 <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                Xem ngay
+                {t('movies.btn.play')}
               </button>
               <button onClick={() => fCh && onToggleFavorite(fCh.channel_id)} className="flex items-center gap-2.5 bg-white/10 backdrop-blur border border-white/15 text-white px-6 py-3 rounded-full font-medium text-sm hover:bg-white/20 transition">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                Yeu thich
+                {t('app.live_now').includes('TRỰC TIẾP') ? 'Yêu thích' : 'Favorite'}
               </button>
             </div>
           </div>
@@ -141,15 +139,15 @@ export default function HomePage({
                     <div className="w-24 h-24 mx-auto bg-white/10 backdrop-blur-xl rounded-full border border-white/20 flex items-center justify-center mb-3">
                       <svg className="w-10 h-10" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                     </div>
-                    <p className="text-xs text-stone-400">Đang phát — {fCh?.name || 'CHRTV'}</p>
+                    <p className="text-xs text-stone-400">{t('app.loading')} — {fCh?.name || 'CHRTV'}</p>
                   </div>
                 )}
                 <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-red-600 text-[10px] font-bold px-2.5 py-1 rounded-md">
-                  <span className="w-1.5 h-1.5 rounded-full bg-white"></span> LIVE
+                  <span className="w-1.5 h-1.5 rounded-full bg-white"></span> {t('player.live')}
                 </div>
               </div>
               <div className="p-4">
-                <p className="text-sm font-bold">{fCh?.name} · {fCh?.epg?.title || 'Dang phat'}</p>
+                <p className="text-sm font-bold">{fCh?.name} · {fCh?.epg?.title || t('player.live')}</p>
                 <p className="text-xs text-stone-500">{fCh?.epg ? (fCh.epg.start + ' — ' + fCh.epg.stop) : '24/7'}</p>
               </div>
             </div>
@@ -167,7 +165,7 @@ export default function HomePage({
                 onClick={() => setSelectedCategory(cat)}
                 className={`tab-btn whitespace-nowrap py-3.5 px-1 ${selectedCategory === cat ? 'active text-white' : 'text-stone-400 hover:text-white'}`}
               >
-                {cat}
+                {cat === 'Tất Cả' ? t('movies.genre.all') : cat}
               </button>
             ))}
           </div>
@@ -176,14 +174,13 @@ export default function HomePage({
 
       <div className="max-w-[1400px] mx-auto px-8 py-8 space-y-12 pb-32">
 
-        {/* ROW 1: Picked by You */}
         {recentChannels.length > 0 && (
           <section>
             <div className="flex items-end justify-between mb-5">
               <div>
-                <p className="text-[10px] text-red-400 font-bold uppercase tracking-widest mb-1">Danh cho ban</p>
-                <h2 className="font-display text-2xl font-black tracking-tight">Picked by You</h2>
-                <p className="text-xs text-stone-500 mt-1">Dua tren lich su xem cua ban</p>
+                <p className="text-[10px] text-red-400 font-bold uppercase tracking-widest mb-1">{t('app.live_now').includes('TRỰC TIẾP') ? 'Dành cho bạn' : 'Picked for you'}</p>
+                <h2 className="font-display text-2xl font-black tracking-tight">{t('app.live_now').includes('TRỰC TIẾP') ? 'Picked by You' : 'Recently Watched'}</h2>
+                <p className="text-xs text-stone-500 mt-1">{t('app.live_now').includes('TRỰC TIẾP') ? 'Dựa trên lịch sử xem' : 'Based on your watch history'}</p>
               </div>
             </div>
             <div className="row flex gap-4 overflow-x-auto pb-4 -mx-2 px-2">
@@ -192,7 +189,7 @@ export default function HomePage({
                   <div className="relative aspect-video rounded-2xl overflow-hidden bg-gradient-to-br from-stone-700 via-stone-800 to-stone-900 mb-2">
                     <img src={ch.logo} alt="" className="absolute inset-0 w-full h-full object-contain p-6" onError={e => e.target.style.display = 'none'} />
                     <div className="absolute top-3 left-3 px-2.5 py-1 bg-red-600 text-[10px] font-bold rounded-md flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-white"></span> LIVE
+                      <span className="w-1.5 h-1.5 rounded-full bg-white"></span> {t('player.live')}
                     </div>
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div>
                   </div>
@@ -204,12 +201,11 @@ export default function HomePage({
           </section>
         )}
 
-        {/* ROW 2: Bento Grid */}
         <section>
           <div className="flex items-end justify-between mb-5">
             <div>
-              <p className="text-[10px] text-amber-400 font-bold uppercase tracking-widest mb-1">Kham pha</p>
-              <h2 className="font-display text-2xl font-black tracking-tight">The loai pho bien</h2>
+              <p className="text-[10px] text-amber-400 font-bold uppercase tracking-widest mb-1">{t('app.live_now').includes('TRỰC TIẾP') ? 'Khám phá' : 'Explore'}</p>
+              <h2 className="font-display text-2xl font-black tracking-tight">{t('app.live_now').includes('TRỰC TIẾP') ? 'Thể loại phổ biến' : 'Popular Categories'}</h2>
             </div>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -219,21 +215,20 @@ export default function HomePage({
                 <div className="relative z-10">
                   <div className="text-3xl font-black tracking-tighter">{topGroups[cat]?.length || 0}</div>
                   <p className="text-sm font-bold leading-tight">{cat}</p>
-                  <p className="text-[10px] opacity-80 mt-0.5">{topGroups[cat]?.length || 0} kenh</p>
+                  <p className="text-[10px] opacity-80 mt-0.5">{topGroups[cat]?.length || 0} {t('app.live_now').includes('TRỰC TIẾP') ? 'kênh' : 'channels'}</p>
                 </div>
               </button>
             ))}
           </div>
         </section>
 
-        {/* ROW 3: Channel Grid — ALL CHANNELS */}
         {Object.entries(filteredGroups).map(([groupName, groupChannels]) => (
           <section key={groupName}>
             <div className="flex items-end justify-between mb-5">
               <div>
                 <p className="text-[10px] text-blue-400 font-bold uppercase tracking-widest mb-1">📺 {groupName}</p>
-                <h2 className="font-display text-2xl font-black tracking-tight">Kenh {groupName}</h2>
-                <p className="text-xs text-stone-500 mt-1">{groupChannels.length} kenh</p>
+                <h2 className="font-display text-2xl font-black tracking-tight">{groupName}</h2>
+                <p className="text-xs text-stone-500 mt-1">{groupChannels.length} {t('app.live_now').includes('TRỰC TIẾP') ? 'kênh' : 'channels'}</p>
               </div>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -249,7 +244,7 @@ export default function HomePage({
                         <span className="text-5xl font-black text-white/30 tracking-tighter relative z-10">{ch.name.charAt(0)}</span>
                       )}
                       <div className="absolute top-3 left-3 px-2 py-0.5 bg-red-600 text-[10px] font-bold rounded flex items-center gap-1">
-                        <span className="w-1 h-1 rounded-full bg-white"></span> LIVE
+                        <span className="w-1 h-1 rounded-full bg-white"></span> {t('player.live')}
                       </div>
                       <div className="absolute bottom-3 right-3 px-2 py-0.5 bg-black/70 backdrop-blur text-[10px] rounded font-medium">HD</div>
                     </div>
@@ -258,9 +253,9 @@ export default function HomePage({
                         <p className="font-bold text-base">{ch.name}</p>
                         <span className="text-[10px] text-amber-400 font-bold">★</span>
                       </div>
-                      <p className="text-[11px] text-stone-500 line-clamp-1">{getEpgNow(ch)?.title || 'Dang phat'}</p>
+                      <p className="text-[11px] text-stone-500 line-clamp-1">{getEpgNow(ch)?.title || t('player.live')}</p>
                       <div className="flex items-center gap-2 mt-3">
-                        <button onClick={() => onSelectChannel(ch)} className="flex-1 py-1.5 bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold rounded-lg transition">Xem</button>
+                        <button onClick={() => onSelectChannel(ch)} className="flex-1 py-1.5 bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold rounded-lg transition">{t('app.live_now').includes('TRỰC TIẾP') ? 'Xem' : 'Watch'}</button>
                         <button onClick={() => onToggleFavorite(ch.channel_id)} className="px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg transition">
                           <svg className={`w-3 h-3 ${isFav ? 'fill-red-500 text-red-500' : 'text-stone-400 hover:text-white'}`} fill={isFav ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>
                         </button>

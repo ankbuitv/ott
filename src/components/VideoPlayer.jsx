@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { useI18n } from '../contexts/I18nContext';
 import shaka from 'shaka-player';
 import {
   Play, Pause, Volume2, VolumeX, Maximize, Minimize,
@@ -63,6 +64,7 @@ export default function VideoPlayer({
   onNextChannel, onPrevChannel, onClose,
   allChannels = [], onOpenSettings,
 }) {
+  const { t } = useI18n();
   const videoRef = useRef(null);
   const containerRef = useRef(null);
   const shakaPlayerRef = useRef(null);

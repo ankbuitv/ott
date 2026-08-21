@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useI18n } from '../contexts/I18nContext';
 import { Calendar, Clock, Play, Search, Filter, Tv, Radio } from 'lucide-react';
 import FocusableWrapper from './FocusableWrapper';
 import { formatTimeHHMM, formatDateVN, parseEpgDate } from '../utils/dateUtils';
@@ -10,7 +11,8 @@ export default function EpgGridTimeline({
   onPlayCatchup,
   onSelectChannel,
 }) {
-  const [selectedCategory, setSelectedCategory] = useState('Tất Cả');
+  const { t } = useI18n();
+  const [selectedCategory, setSelectedCategory] = useState(t('movies.genre.all'));
   const [selectedDayOffset, setSelectedDayOffset] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -22,21 +24,21 @@ export default function EpgGridTimeline({
       tabs.push({
         offset,
         date: d,
-        label: offset === 0 ? 'Hôm Nay' : (offset === -1 ? 'Hôm Qua' : formatDateVN(d))
+        label: offset === 0 ? t('epg.today') : (offset === -1 ? t('epg.yesterday') : formatDateVN(d))
       });
     }
     return tabs;
   }, []);
 
   const categories = useMemo(() => {
-    const groups = new Set(['Tất Cả']);
+    const groups = new Set([t('movies.genre.all')]);
     channels.forEach(ch => { if (ch.group_title) groups.add(ch.group_title); });
     return Array.from(groups);
   }, [channels]);
 
   const filteredChannels = useMemo(() => {
     return channels.filter(ch => {
-      const matchCat = selectedCategory === 'Tất Cả' || ch.group_title === selectedCategory;
+      const matchCat = selectedCategory === t('movies.genre.all') || ch.group_title === selectedCategory;
       const matchSearch = !searchQuery || ch.name.toLowerCase().includes(searchQuery.toLowerCase());
       return matchCat && matchSearch;
     });

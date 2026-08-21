@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { useI18n } from '../contexts/I18nContext';
 import { Plus, Edit2, Trash2, Lock, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useProfile, AVATAR_OPTIONS } from '../contexts/ProfileContext';
 import { AvatarBubble } from './Logo';
 
 export default function ProfileGate() {
+  const { t } = useI18n();
   const { user, token, logout } = useAuth();
   const { profiles, currentProfile, fetchProfiles, createProfile, updateProfile, deleteProfile, verifyPin, selectProfile } = useProfile();
   const [editing, setEditing] = useState(null);

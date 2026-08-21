@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { X, Mail, Lock, User, Eye, EyeOff, Check, ArrowRight, RotateCcw } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { useI18n } from '../contexts/I18nContext';
 
 export default function AuthModal({ open, onClose, initialView = 'login' }) {
+  const { t } = useI18n();
   const [view, setView] = useState(initialView); // login, register, verify, forgot, reset
   const [loginVal, setLoginVal] = useState('');
   const [email, setEmail] = useState('');
@@ -25,7 +27,7 @@ export default function AuthModal({ open, onClose, initialView = 'login' }) {
     e.preventDefault();
     setError('');
     const r = await login(loginVal, password);
-    if (r.success) { addToast('Đăng nhập thành công!', 'success'); onClose(); }
+    if (r.success) { addToast(t('auth.msg.login_ok'), 'success'); onClose(); }
     else setError(r.error);
   };
 
@@ -34,8 +36,8 @@ export default function AuthModal({ open, onClose, initialView = 'login' }) {
     setError(''); setSuccess('');
     const r = await register(username, email, password);
     if (r.success) {
-      setSuccess(r.message || 'Đăng ký thành công! Nhập mã xác minh từ email.');
-      if (r.verifyCode) setSuccess(`Mã xác minh: ${r.verifyCode}`);
+      setSuccess(r.message || t('auth.msg.registered'));
+      if (r.verifyCode) setSuccess(t('auth.msg.verify_code_label') + r.verifyCode);
       setView('verify');
     } else setError(r.error);
   };
@@ -44,7 +46,7 @@ export default function AuthModal({ open, onClose, initialView = 'login' }) {
     e.preventDefault();
     setError('');
     const r = await verifyEmail(email, verifyCode);
-    if (r.success) { addToast('Xác minh email thành công!', 'success'); onClose(); }
+    if (r.success) { addToast(t('auth.msg.verified'), 'success'); onClose(); }
     else setError(r.error);
   };
 
@@ -54,7 +56,7 @@ export default function AuthModal({ open, onClose, initialView = 'login' }) {
     const r = await forgotPassword(email);
     if (r.success) {
       setResetToken(r.resetToken || '');
-      setSuccess(r.message || 'Đã gửi mã đặt lại');
+      setSuccess(r.message || t('auth.msg.code_sent'));
       setView('reset');
     } else setError(r.error);
   };
@@ -63,13 +65,19 @@ export default function AuthModal({ open, onClose, initialView = 'login' }) {
     e.preventDefault();
     setError('');
     const r = await resetPassword(resetToken || verifyCode, newPassword);
-    if (r.success) { addToast('Đặt lại thành công!', 'success'); setView('login'); }
+    if (r.success) { addToast(t('auth.msg.reset_ok'), 'success'); setView('login'); }
     else setError(r.error);
   };
 
   const resetForm = () => { setError(''); setSuccess(''); };
 
-  const titles = { login: 'Đăng Nhập', register: 'Đăng Ký', verify: 'Xác Minh Email', forgot: 'Quên Mật Khẩu', reset: 'Đặt Lại Mật Khẩu' };
+  const titles = {
+    login: t('auth.title.login'),
+    register: t('auth.title.register'),
+    verify: t('auth.title.verify'),
+    forgot: t('auth.title.forgot'),
+    reset: t('auth.title.reset'),
+  };
 
   return (
     <div className="fixed inset-0 z-[200] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
@@ -83,8 +91,8 @@ export default function AuthModal({ open, onClose, initialView = 'login' }) {
             <span className="text-red-500 font-extrabold text-lg">C</span>
           </div>
           <h2 className="text-lg font-extrabold text-white">{titles[view]}</h2>
-          {view === 'login' && <p className="text-[11px] text-slate-500 mt-1">Đăng nhập để đồng bộ dữ liệu</p>}
-          {view === 'register' && <p className="text-[11px] text-slate-500 mt-1">Tạo tài khoản mới miễn phí</p>}
+          {view === 'login' && <p className="text-[11px] text-slate-500 mt-1">{t('auth.login.help')}</p>}
+          {view === 'register' && <p className="text-[11px] text-slate-500 mt-1">{t('auth.register.help')}</p>}
         </div>
 
         <div className="px-5 pb-5">
@@ -96,21 +104,21 @@ export default function AuthModal({ open, onClose, initialView = 'login' }) {
             <form onSubmit={handleLogin} className="space-y-2.5">
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
-                <input type="text" value={loginVal} onChange={e => setLoginVal(e.target.value)} placeholder="Email hoặc Username" required className="w-full pl-10 pr-3 py-2.5 bg-slate-800/60 border border-slate-700/50 rounded-xl text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-red-600/60" />
+                <input type="text" value={loginVal} onChange={e => setLoginVal(e.target.value)} placeholder={t('auth.email_or_username')} required className="w-full pl-10 pr-3 py-2.5 bg-slate-800/60 border border-slate-700/50 rounded-xl text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-red-600/60" />
               </div>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
-                <input type={showPass ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="Mật khẩu" required className="w-full pl-10 pr-10 py-2.5 bg-slate-800/60 border border-slate-700/50 rounded-xl text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-red-600/60" />
+                <input type={showPass ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder={t('auth.password')} required className="w-full pl-10 pr-10 py-2.5 bg-slate-800/60 border border-slate-700/50 rounded-xl text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-red-600/60" />
                 <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5">
                   {showPass ? <EyeOff className="w-4 h-4 text-slate-600" /> : <Eye className="w-4 h-4 text-slate-600" />}
                 </button>
               </div>
               <button type="submit" disabled={loading} className="w-full py-2.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold text-sm rounded-xl transition-all flex items-center justify-center gap-1.5">
-                {loading ? 'Đang đăng nhập...' : <>Đăng nhập <ArrowRight className="w-4 h-4" /></>}
+                {loading ? t('app.loading') : <>{t('auth.btn.login')} <ArrowRight className="w-4 h-4" /></>}
               </button>
               <div className="flex items-center justify-between text-[11px] pt-1">
-                <button type="button" onClick={() => { setView('forgot'); resetForm(); }} className="text-red-400 hover:text-red-300">Quên mật khẩu?</button>
-                <button type="button" onClick={() => { setView('register'); resetForm(); }} className="text-slate-500 hover:text-white">Đăng ký mới</button>
+                <button type="button" onClick={() => { setView('forgot'); resetForm(); }} className="text-red-400 hover:text-red-300">{t('auth.link.forgot')}</button>
+                <button type="button" onClick={() => { setView('register'); resetForm(); }} className="text-slate-500 hover:text-white">{t('auth.link.to_register')}</button>
               </div>
             </form>
           )}
@@ -120,24 +128,24 @@ export default function AuthModal({ open, onClose, initialView = 'login' }) {
             <form onSubmit={handleRegister} className="space-y-2.5">
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
-                <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="Tên hiển thị" required className="w-full pl-10 pr-3 py-2.5 bg-slate-800/60 border border-slate-700/50 rounded-xl text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-red-600/60" />
+                <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder={t('auth.username')} required className="w-full pl-10 pr-3 py-2.5 bg-slate-800/60 border border-slate-700/50 rounded-xl text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-red-600/60" />
               </div>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" required className="w-full pl-10 pr-3 py-2.5 bg-slate-800/60 border border-slate-700/50 rounded-xl text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-red-600/60" />
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder={t('auth.email')} required className="w-full pl-10 pr-3 py-2.5 bg-slate-800/60 border border-slate-700/50 rounded-xl text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-red-600/60" />
               </div>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
-                <input type={showPass ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="Mật khẩu (≥6 ký tự)" required minLength={6} className="w-full pl-10 pr-10 py-2.5 bg-slate-800/60 border border-slate-700/50 rounded-xl text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-red-600/60" />
+                <input type={showPass ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder={t('auth.password_hint')} required minLength={6} className="w-full pl-10 pr-10 py-2.5 bg-slate-800/60 border border-slate-700/50 rounded-xl text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-red-600/60" />
                 <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5">
                   {showPass ? <EyeOff className="w-4 h-4 text-slate-600" /> : <Eye className="w-4 h-4 text-slate-600" />}
                 </button>
               </div>
               <button type="submit" disabled={loading} className="w-full py-2.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold text-sm rounded-xl transition-all flex items-center justify-center gap-1.5">
-                {loading ? 'Đang tạo...' : <>Đăng ký <ArrowRight className="w-4 h-4" /></>}
+                {loading ? t('app.loading') : <>{t('auth.btn.register')} <ArrowRight className="w-4 h-4" /></>}
               </button>
               <button type="button" onClick={() => { setView('login'); resetForm(); }} className="w-full text-center text-[11px] text-slate-500 hover:text-white pt-1">
-                Đã có tài khoản? <span className="text-red-400">Đăng nhập</span>
+                {t('auth.link.to_login')}
               </button>
             </form>
           )}
@@ -145,43 +153,43 @@ export default function AuthModal({ open, onClose, initialView = 'login' }) {
           {/* Verify Email */}
           {view === 'verify' && (
             <form onSubmit={handleVerify} className="space-y-2.5">
-              <p className="text-[11px] text-slate-400 text-center">Nhập mã 6 số đã gửi đến email</p>
-              <input type="text" value={verifyCode} onChange={e => setVerifyCode(e.target.value)} placeholder="Mã xác minh (6 số)" maxLength={6} required className="w-full px-3 py-2.5 bg-slate-800/60 border border-slate-700/50 rounded-xl text-sm text-white text-center tracking-[0.3em] font-mono placeholder:text-slate-600 focus:outline-none focus:border-red-600/60" />
+              <p className="text-[11px] text-slate-400 text-center">{t('auth.verify.help')}</p>
+              <input type="text" value={verifyCode} onChange={e => setVerifyCode(e.target.value)} placeholder={t('auth.verify_code')} maxLength={6} required className="w-full px-3 py-2.5 bg-slate-800/60 border border-slate-700/50 rounded-xl text-sm text-white text-center tracking-[0.3em] font-mono placeholder:text-slate-600 focus:outline-none focus:border-red-600/60" />
               <button type="submit" className="w-full py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold text-sm rounded-xl transition-all flex items-center justify-center gap-1.5">
-                <Check className="w-4 h-4" /> Xác minh
+                <Check className="w-4 h-4" /> {t('auth.btn.verify')}
               </button>
-              <button type="button" onClick={() => setView('login')} className="w-full text-center text-[11px] text-slate-500 hover:text-white">Quay lại đăng nhập</button>
+              <button type="button" onClick={() => setView('login')} className="w-full text-center text-[11px] text-slate-500 hover:text-white">{t('common.back')} {t('auth.title.login')}</button>
             </form>
           )}
 
           {/* Forgot Password */}
           {view === 'forgot' && (
             <form onSubmit={handleForgot} className="space-y-2.5">
-              <p className="text-[11px] text-slate-400 text-center">Nhập email để nhận mã đặt lại mật khẩu</p>
+              <p className="text-[11px] text-slate-400 text-center">{t('auth.forgot.help')}</p>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" required className="w-full pl-10 pr-3 py-2.5 bg-slate-800/60 border border-slate-700/50 rounded-xl text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-red-600/60" />
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder={t('auth.email')} required className="w-full pl-10 pr-3 py-2.5 bg-slate-800/60 border border-slate-700/50 rounded-xl text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-red-600/60" />
               </div>
               <button type="submit" className="w-full py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold text-sm rounded-xl transition-all flex items-center justify-center gap-1.5">
-                <RotateCcw className="w-4 h-4" /> Gửi mã
+                <RotateCcw className="w-4 h-4" /> {t('auth.btn.send_reset')}
               </button>
-              <button type="button" onClick={() => { setView('login'); resetForm(); }} className="w-full text-center text-[11px] text-slate-500 hover:text-white">Quay lại đăng nhập</button>
+              <button type="button" onClick={() => { setView('login'); resetForm(); }} className="w-full text-center text-[11px] text-slate-500 hover:text-white">{t('common.back')} {t('auth.title.login')}</button>
             </form>
           )}
 
           {/* Reset Password */}
           {view === 'reset' && (
             <form onSubmit={handleReset} className="space-y-2.5">
-              <p className="text-[11px] text-slate-400 text-center">Nhập mã và mật khẩu mới</p>
-              <input type="text" value={verifyCode} onChange={e => setVerifyCode(e.target.value)} placeholder="Mã đặt lại" required className="w-full px-3 py-2.5 bg-slate-800/60 border border-slate-700/50 rounded-xl text-sm text-white text-center font-mono placeholder:text-slate-600 focus:outline-none focus:border-red-600/60" />
+              <p className="text-[11px] text-slate-400 text-center">{t('auth.reset.help')}</p>
+              <input type="text" value={verifyCode} onChange={e => setVerifyCode(e.target.value)} placeholder={t('auth.reset_code')} required className="w-full px-3 py-2.5 bg-slate-800/60 border border-slate-700/50 rounded-xl text-sm text-white text-center font-mono placeholder:text-slate-600 focus:outline-none focus:border-red-600/60" />
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
-                <input type={showPass ? 'text' : 'password'} value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Mật khẩu mới (≥6)" required minLength={6} className="w-full pl-10 pr-10 py-2.5 bg-slate-800/60 border border-slate-700/50 rounded-xl text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-red-600/60" />
+                <input type={showPass ? 'text' : 'password'} value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder={t('auth.new_password_hint')} required minLength={6} className="w-full pl-10 pr-10 py-2.5 bg-slate-800/60 border border-slate-700/50 rounded-xl text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-red-600/60" />
                 <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5">
                   {showPass ? <EyeOff className="w-4 h-4 text-slate-600" /> : <Eye className="w-4 h-4 text-slate-600" />}
                 </button>
               </div>
-              <button type="submit" className="w-full py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold text-sm rounded-xl transition-all">Đặt lại</button>
+              <button type="submit" className="w-full py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold text-sm rounded-xl transition-all">{t('auth.btn.reset')}</button>
             </form>
           )}
         </div>

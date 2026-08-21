@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { X, Mail, Lock, User, Eye, EyeOff, Check, ArrowRight, RotateCcw } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { useI18n } from '../contexts/I18nContext';
 import Logo from './Logo';
 
 export default function AuthScreen() {
+  const { t } = useI18n();
   const { login, register, verifyEmail, forgotPassword, resetPassword, loading } = useAuth();
   const { addToast } = useToast();
   const [view, setView] = useState('login'); // login | register | verify | forgot | reset
@@ -23,7 +25,7 @@ export default function AuthScreen() {
     e.preventDefault();
     setError('');
     const r = await login(loginVal, password);
-    if (r.success) addToast('Đăng nhập thành công!', 'success');
+    if (r.success) addToast(t('auth.msg.login_ok'), 'success');
     else setError(r.error);
   };
 
@@ -32,8 +34,8 @@ export default function AuthScreen() {
     setError(''); setSuccess('');
     const r = await register(username, email, password);
     if (r.success) {
-      setSuccess('Đăng ký thành công! Nhập mã xác minh 6 số.');
-      if (r.verifyCode) setSuccess(`Đăng ký thành công! Mã xác minh: ${r.verifyCode}`);
+      setSuccess(t('auth.msg.registered'));
+      if (r.verifyCode) setSuccess(t('auth.msg.verify_code_label') + r.verifyCode);
       setView('verify');
     } else setError(r.error);
   };
@@ -43,7 +45,7 @@ export default function AuthScreen() {
     setError('');
     const r = await verifyEmail(email, verifyCode);
     if (r.success) {
-      addToast('Xác minh email thành công!', 'success');
+      addToast(t('auth.msg.verified'), 'success');
       setView('login');
     } else setError(r.error);
   };
@@ -54,7 +56,7 @@ export default function AuthScreen() {
     const r = await forgotPassword(email);
     if (r.success) {
       setResetToken(r.resetToken || '');
-      setSuccess('Đã gửi mã đặt lại qua email');
+      setSuccess(t('auth.msg.code_sent'));
       setView('reset');
     } else setError(r.error);
   };
@@ -63,16 +65,16 @@ export default function AuthScreen() {
     e.preventDefault();
     setError('');
     const r = await resetPassword(resetToken || verifyCode, newPassword);
-    if (r.success) { addToast('Đặt lại mật khẩu thành công!', 'success'); setView('login'); }
+    if (r.success) { addToast(t('auth.msg.reset_ok'), 'success'); setView('login'); }
     else setError(r.error);
   };
 
   const titles = {
-    login: 'Đăng Nhập',
-    register: 'Đăng Ký',
-    verify: 'Xác Minh Email',
-    forgot: 'Quên Mật Khẩu',
-    reset: 'Đặt Lại Mật Khẩu',
+    login: t('auth.title.login'),
+    register: t('auth.title.register'),
+    verify: t('auth.title.verify'),
+    forgot: t('auth.title.forgot'),
+    reset: t('auth.title.reset'),
   };
 
   // Single-form returns
@@ -85,17 +87,17 @@ export default function AuthScreen() {
         <div className="relative w-full max-w-md">
           <Logo size="lg" className="mb-8 justify-center" />
           <div className="bg-black/70 backdrop-blur-md border border-white/10 rounded-2xl p-6">
-            <h1 className="text-2xl font-black mb-1">Xác Minh Email</h1>
-            <p className="text-xs text-stone-400 mb-5">Nhập 6 số gửi đến {email || 'email của bạn'}</p>
+            <h1 className="text-2xl font-black mb-1">{t('auth.title.verify')}</h1>
+            <p className="text-xs text-stone-400 mb-5">{t('auth.verify.help')}</p>
             <form onSubmit={handleVerify} className="space-y-3">
               {error && <div className="px-3 py-2 bg-red-600/15 border border-red-600/30 rounded-xl text-xs text-red-400">{error}</div>}
               {success && <div className="px-3 py-2 bg-emerald-600/15 border border-emerald-600/30 rounded-xl text-xs text-emerald-400">{success}</div>}
               {(!error && !success && !email) && (
-                <input type="email" placeholder="Email" onChange={e => setEmail(e.target.value)} className="w-full bg-white/10 border border-white/15 rounded-lg px-3 py-2 text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-red-500" />
+                <input type="email" placeholder={t('auth.email')} onChange={e => setEmail(e.target.value)} className="w-full bg-white/10 border border-white/15 rounded-lg px-3 py-2 text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-red-500" />
               )}
               <input type="text" value={verifyCode} onChange={e => setVerifyCode(e.target.value)} placeholder="000000" maxLength={6} className="w-full bg-white/10 border border-white/15 rounded-lg px-3 py-3 text-2xl tracking-[0.5em] font-mono text-center text-white focus:outline-none focus:border-red-500" />
-              <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-lg">Xác Minh</button>
-              <button type="button" onClick={() => setView('login')} className="w-full text-xs text-stone-500 hover:text-white">← Quay lại</button>
+              <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-lg">{t('auth.btn.verify')}</button>
+              <button type="button" onClick={() => setView('login')} className="w-full text-xs text-stone-500 hover:text-white">{t('common.back')} {t('auth.title.login')}</button>
             </form>
           </div>
         </div>
@@ -127,13 +129,13 @@ export default function AuthScreen() {
               onClick={() => { setView('login'); setError(''); setSuccess(''); }}
               className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${view === 'login' || view === 'forgot' || view === 'reset' ? 'bg-white text-black' : 'text-stone-400 hover:text-white'}`}
             >
-              Đăng Nhập
+              {t('auth.title.login')}
             </button>
             <button
               onClick={() => { setView('register'); setError(''); setSuccess(''); }}
               className={`flex-1 py-2 text-xs font-bold rounded-lg transition-colors ${view === 'register' ? 'bg-white text-black' : 'text-stone-400 hover:text-white'}`}
             >
-              Đăng Ký
+              {t('auth.title.register')}
             </button>
           </div>
 
@@ -142,13 +144,13 @@ export default function AuthScreen() {
           {/* Login */}
           {(view === 'login' || view === 'forgot' || view === 'reset') && view !== 'register' && view !== 'verify' && (
             <p className="text-xs text-stone-400 mb-5">
-              {view === 'login' && 'Đăng nhập để đồng bộ danh sách yêu thích, lịch sử và tiếp tục xem'}
-              {view === 'forgot' && 'Nhập email để nhận mã đặt lại mật khẩu'}
-              {view === 'reset' && 'Nhập mã đặt lại và mật khẩu mới'}
+              {view === 'login' && t('auth.login.help')}
+              {view === 'forgot' && t('auth.forgot.help')}
+              {view === 'reset' && t('auth.reset.help')}
             </p>
           )}
           {view === 'register' && (
-            <p className="text-xs text-stone-400 mb-5">Tạo tài khoản miễn phí — đồng bộ và quản lý nhiều hồ sơ</p>
+            <p className="text-xs text-stone-400 mb-5">{t('auth.register.help')}</p>
           )}
 
           {error && <div className="mb-3 px-3 py-2 bg-red-600/15 border border-red-600/30 rounded-xl text-xs text-red-400">{error}</div>}
@@ -159,20 +161,20 @@ export default function AuthScreen() {
             <form onSubmit={handleLogin} className="space-y-3">
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
-                <input type="text" value={loginVal} onChange={e => setLoginVal(e.target.value)} placeholder="Email hoặc Username" required className="w-full pl-10 pr-3 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-red-500 focus:bg-white/10 transition-colors" />
+                <input type="text" value={loginVal} onChange={e => setLoginVal(e.target.value)} placeholder={t('auth.email_or_username')} required className="w-full pl-10 pr-3 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-red-500 focus:bg-white/10 transition-colors" />
               </div>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
-                <input type={showPass ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="Mật khẩu" required className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-red-500 focus:bg-white/10 transition-colors" />
+                <input type={showPass ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder={t('auth.password')} required className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-red-500 focus:bg-white/10 transition-colors" />
                 <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-stone-500 hover:text-stone-300">
                   {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
               <div className="flex items-center justify-between text-[11px]">
-                <button type="button" onClick={() => { setView('forgot'); setError(''); setSuccess(''); }} className="text-red-400 hover:text-red-300">Quên mật khẩu?</button>
+                <button type="button" onClick={() => { setView('forgot'); setError(''); setSuccess(''); }} className="text-red-400 hover:text-red-300">{t('auth.link.forgot')}</button>
               </div>
               <button type="submit" disabled={loading} className="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-bold text-sm rounded-xl shadow-lg shadow-red-600/30 transition-all flex items-center justify-center gap-2 mt-2">
-                {loading ? 'Đang xử lý...' : <>Đăng Nhập <ArrowRight className="w-4 h-4" /></>}
+                {loading ? t('app.loading')} : <>{t('auth.btn.login')} <ArrowRight className="w-4 h-4" /></>}
               </button>
             </form>
           )}
@@ -182,24 +184,24 @@ export default function AuthScreen() {
             <form onSubmit={handleRegister} className="space-y-3">
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
-                <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="Username" required maxLength={20} className="w-full pl-10 pr-3 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-red-500 focus:bg-white/10" />
+                <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder={t('auth.username')} required maxLength={20} className="w-full pl-10 pr-3 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-red-500 focus:bg-white/10" />
               </div>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" required className="w-full pl-10 pr-3 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-red-500 focus:bg-white/10" />
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder={t('auth.email')} required className="w-full pl-10 pr-3 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-red-500 focus:bg-white/10" />
               </div>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
-                <input type={showPass ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="Mật khẩu (≥6 ký tự)" required minLength={6} className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-red-500 focus:bg-white/10" />
+                <input type={showPass ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder={t('auth.password_hint')} required minLength={6} className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-red-500 focus:bg-white/10" />
                 <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-stone-500 hover:text-stone-300">
                   {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
               <button type="submit" disabled={loading} className="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-bold text-sm rounded-xl shadow-lg shadow-red-600/30 transition-all flex items-center justify-center gap-2 mt-2">
-                {loading ? 'Đang tạo...' : <>Tạo Tài Khoản <ArrowRight className="w-4 h-4" /></>}
+                {loading ? t('app.loading')} : <>{t('auth.btn.register')} <ArrowRight className="w-4 h-4" /></>}
               </button>
               <p className="text-[10px] text-stone-500 leading-relaxed text-center pt-2">
-                Bằng việc tạo tài khoản, bạn đồng ý với <a className="text-stone-300 underline">Điều khoản</a>
+                {t('auth.terms_label')} <a className="text-stone-300 underline">{t('auth.terms_link')}</a>
               </p>
             </form>
           )}
@@ -209,27 +211,27 @@ export default function AuthScreen() {
             <form onSubmit={handleForgot} className="space-y-3">
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email của bạn" required className="w-full pl-10 pr-3 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-red-500" />
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder={t('auth.email')} required className="w-full pl-10 pr-3 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-red-500" />
               </div>
               <button type="submit" className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2">
-                <RotateCcw className="w-4 h-4" /> Gửi Mã Đặt Lại
+                <RotateCcw className="w-4 h-4" /> {t('auth.btn.send_reset')}
               </button>
-              <button type="button" onClick={() => { setView('login'); setError(''); setSuccess(''); }} className="w-full text-xs text-stone-500 hover:text-white">← Quay lại đăng nhập</button>
+              <button type="button" onClick={() => { setView('login'); setError(''); setSuccess(''); }} className="w-full text-xs text-stone-500 hover:text-white">{t('common.back')} {t('auth.title.login')}</button>
             </form>
           )}
 
           {/* Reset */}
           {view === 'reset' && (
             <form onSubmit={handleReset} className="space-y-3">
-              <input type="text" value={verifyCode} onChange={e => setVerifyCode(e.target.value)} placeholder="Mã đặt lại (từ email)" required className="w-full px-3 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white text-center font-mono placeholder:text-stone-500 focus:outline-none focus:border-red-500" />
+              <input type="text" value={verifyCode} onChange={e => setVerifyCode(e.target.value)} placeholder={t('auth.reset_code')} required className="w-full px-3 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white text-center font-mono placeholder:text-stone-500 focus:outline-none focus:border-red-500" />
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
-                <input type={showPass ? 'text' : 'password'} value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Mật khẩu mới (≥6)" required minLength={6} className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-red-500" />
+                <input type={showPass ? 'text' : 'password'} value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder={t('auth.new_password_hint')} required minLength={6} className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-red-500" />
                 <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-stone-500 hover:text-stone-300">
                   {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-              <button type="submit" className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-bold text-sm rounded-xl">Đặt Lại</button>
+              <button type="submit" className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-bold text-sm rounded-xl">{t('auth.btn.reset')}</button>
             </form>
           )}
         </div>

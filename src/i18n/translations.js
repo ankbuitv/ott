@@ -64,9 +64,27 @@ const T = {
   'auth.msg.registered': { vi: 'Đăng ký thành công! Nhập mã xác minh từ email.', en: 'Registered! Enter the code sent to your email.', zh: '注册成功！请输入邮件中的验证码。', fil: 'Nakarehistro na! Ilagay ang code sa iyong email.', fr: 'Inscription réussie ! Entrez le code reçu par email.' },
   'auth.msg.code_sent':  { vi: 'Mã đặt lại đã gửi đến email.', en: 'Reset code sent to your email.', zh: '重置代码已发送到您的邮箱。', fil: 'Naipadala na ang reset code sa iyong email.', fr: 'Code de réinitialisation envoyé.' },
   'auth.msg.reset_ok':   { vi: 'Đặt lại thành công!', en: 'Password reset successfully!', zh: '密码重置成功！', fil: 'Matagumpay na na-reset ang password!', fr: 'Mot de passe réinitialisé !' },
+  'auth.msg.login_ok':   { vi: 'Đăng nhập thành công!', en: 'Signed in successfully!', zh: '登录成功！', fil: 'Matagumpay na naka-sign in!', fr: 'Connexion réussie !' },
+  'auth.msg.verified':   { vi: 'Xác minh email thành công!', en: 'Email verified successfully!', zh: '邮箱验证成功！', fil: 'Matagumpay na na-verify ang email!', fr: 'Email vérifié !' },
+  'auth.msg.verify_code_label': { vi: 'Mã xác minh: ', en: 'Verification code: ', zh: '验证码：', fil: 'Code ng verification: ', fr: 'Code de vérification : ' },
+  'auth.password_hint': { vi: 'Mật khẩu (≥6 ký tự)', en: 'Password (≥6 chars)', zh: '密码（至少6个字符）', fil: 'Password (≥6 na karakter)', fr: 'Mot de passe (≥6 caractères)' },
+  'auth.new_password_hint': { vi: 'Mật khẩu mới (≥6)', en: 'New password (≥6)', zh: '新密码（至少6个字符）', fil: 'Bagong password (≥6)', fr: 'Nouveau mot de passe (≥6)' },
+  'auth.forgot.help': { vi: 'Nhập email để nhận mã đặt lại mật khẩu', en: 'Enter your email to receive a reset code', zh: '输入您的邮箱以接收重置代码', fil: 'Ilagay ang iyong email para makatanggap ng reset code', fr: 'Entrez votre email pour recevoir un code de réinitialisation' },
+  'auth.reset.help': { vi: 'Nhập mã và mật khẩu mới', en: 'Enter the code and your new password', zh: '输入代码和新密码', fil: 'Ilagay ang code at bagong password', fr: 'Entrez le code et votre nouveau mot de passe' },
 
+  'auth.terms_label':   { vi: 'Bằng việc tạo tài khoản, bạn đồng ý với ', en: 'By creating an account, you agree to the ', zh: '创建账户即表示您同意', fil: 'Sa pamamagitan ng paggawa ng account, sumasang-ayon ka sa ', fr: 'En créant un compte, vous acceptez les ' },
+  'auth.terms_link':    { vi: 'Điều khoản',               en: 'Terms of Service',   zh: '服务条款',     fil: 'Mga Tuntunin',   fr: "Conditions d'utilisation" },
   'auth.no_access':      { vi: 'Bạn cần tài khoản Admin', en: 'Admin account required', zh: '需要管理员账户', fil: 'Kailangan ng Admin account', fr: 'Compte administrateur requis' },
   'auth.no_access.desc': { vi: 'Đăng nhập bằng tài khoản Admin để truy cập.', en: 'Please sign in with an admin account.', zh: '请使用管理员账户登录。', fil: 'Mag-sign in gamit ang Admin account.', fr: 'Connectez-vous avec un compte admin.' },
+
+  'profile.who_is_watching': { vi: 'Ai đang xem?', en: 'Who is watching?', zh: '谁在看？', fil: 'Sino ang nanonood?', fr: 'Qui regarde ?' },
+  'profile.select_profile': { vi: 'Chọn hồ sơ để tiếp tục', en: 'Select a profile to continue', zh: '选择个人资料继续', fil: 'Pumili ng profile para magpatuloy', fr: 'Choisissez un profil pour continuer' },
+  'profile.add_profile':    { vi: 'Thêm hồ sơ',            en: 'Add profile',             zh: '添加个人资料',      fil: 'Magdagdag ng profile', fr: 'Ajouter un profil' },
+  'profile.name':           { vi: 'Tên hồ sơ',              en: 'Profile name',            zh: '个人资料名称',     fil: 'Pangalan ng profile', fr: 'Nom du profil' },
+  'profile.choose_avatar':  { vi: 'Chọn avatar',            en: 'Choose avatar',           zh: '选择头像',         fil: 'Pumili ng avatar', fr: 'Choisir un avatar' },
+  'profile.edit_profile':   { vi: 'Sửa hồ sơ',              en: 'Edit profile',            zh: '编辑个人资料',     fil: 'I-edit ang profile', fr: 'Modifier le profil' },
+  'profile.delete_profile': { vi: 'Xóa hồ sơ',              en: 'Delete profile',          zh: '删除个人资料',     fil: 'Tanggalin ang profile', fr: 'Supprimer le profil' },
+
 
   // ============== MOVIES ==============
   'movies.title':                  { vi: 'Phim · TV Shows',         en: 'Movies · TV Shows',         zh: '电影 · 电视剧',                fil: 'Mga Pelikula · TV Shows',          fr: 'Films · Séries TV' },
@@ -100,6 +118,24 @@ const T = {
 
   // ============== SETTINGS ==============
   'settings.title':     { vi: 'Cài Đặt',           en: 'Settings',         zh: '设置',          fil: 'Mga Setting',     fr: 'Paramètres' },
+  'settings.appearance': { vi: 'Giao Diện', en: 'Appearance', zh: '外观', fil: 'Itsura', fr: 'Apparence' },
+  'settings.theme': { vi: 'Chế độ nền', en: 'Theme', zh: '主题', fil: 'Tema', fr: 'Thème' },
+  'settings.dark': { vi: 'Tối', en: 'Dark', zh: '深色', fil: 'Madilim', fr: 'Sombre' },
+  'settings.light': { vi: 'Sáng', en: 'Light', zh: '浅色', fil: 'Maliwanag', fr: 'Clair' },
+  'settings.video': { vi: 'Video', en: 'Video', zh: '视频', fil: 'Video', fr: 'Vidéo' },
+  'settings.default_quality': { vi: 'Chất lượng mặc định', en: 'Default quality', zh: '默认画质', fil: 'Default na kalidad', fr: 'Qualité par défaut' },
+  'settings.auto': { vi: 'Tự động', en: 'Auto', zh: '自动', fil: 'Awtomatiko', fr: 'Auto' },
+  'settings.buffer_goal': { vi: 'Buffer goal', en: 'Buffer goal', zh: '缓冲目标', fil: 'Buffer goal', fr: 'Buffer (secondes)' },
+  'settings.auto_next': { vi: 'Tự chuyển kênh khi lỗi', en: 'Auto-next on error', zh: '出错时自动切换频道', fil: 'Auto-next kapag error', fr: 'Chaîne suivante si erreur' },
+  'settings.gesture': { vi: 'Gesture điều khiển', en: 'Gesture control', zh: '手势控制', fil: 'Gesture control', fr: 'Contrôle gestuel' },
+  'settings.parental': { vi: 'Kiểm soát phụ huynh', en: 'Parental Control', zh: '家长控制', fil: 'Parental Control', fr: 'Contrôle parental' },
+  'settings.parental_enable': { vi: 'Bật kiểm soát', en: 'Enable control', zh: '启用控制', fil: 'I-enable ang control', fr: 'Activer' },
+  'settings.pin_placeholder': { vi: 'Nhập PIN', en: 'Enter PIN', zh: '输入 PIN', fil: 'Ilagay ang PIN', fr: 'Entrer le code PIN' },
+  'settings.data_sources': { vi: 'Nguồn dữ liệu', en: 'Data Sources', zh: '数据源', fil: 'Mga Source ng Data', fr: 'Sources de données' },
+  'settings.epg_url': { vi: 'URL EPG tùy chỉnh', en: 'Custom EPG URL', zh: '自定义 EPG 网址', fil: 'Custom EPG URL', fr: 'URL EPG personnalisée' },
+  'settings.confirm_reset': { vi: 'Xác nhận xóa tất cả?', en: 'Confirm reset all?', zh: '确认重置所有？', fil: 'Kumpirmahin ang reset?', fr: 'Confirmer la réinitialisation ?' },
+  'settings.reset_default': { vi: 'Đặt lại mặc định', en: 'Reset to default', zh: '重置为默认', fil: 'I-reset sa default', fr: 'Réinitialiser' },
+
   'settings.language':  { vi: 'Ngôn ngữ',          en: 'Language',         zh: '语言',          fil: 'Wika',            fr: 'Langue' },
   'settings.choose_lang':{ vi: 'Chọn ngôn ngữ',   en: 'Choose language',  zh: '选择语言',      fil: 'Pumili ng wika',  fr: 'Choisir la langue' },
 
@@ -112,6 +148,14 @@ const T = {
 
   // ============== PLAYER ==============
   'player.live':          { vi: 'TRỰC TIẾP',         en: 'LIVE',                  zh: '直播',     fil: 'LIVE',       fr: 'EN DIRECT' },
+  'video.backup_stream': { vi: 'Luồng dự phòng', en: 'Backup stream', zh: '备用流', fil: 'Backup stream', fr: 'Flux de secours' },
+
+  'epg.title':           { vi: 'EPG & Xem Lại',         en: 'EPG & Replay',      zh: '电子节目单与回看',         fil: 'EPG & Replay',    fr: 'EPG & Replay' },
+  'epg.today':           { vi: 'Hôm Nay',                en: 'Today',             zh: '今天',                    fil: 'Ngayon',          fr: "Aujourd'hui" },
+  'epg.yesterday':       { vi: 'Hôm Qua',                en: 'Yesterday',         zh: '昨天',                    fil: 'Kahapon',         fr: 'Hier' },
+  'epg.no_channel_found':{ vi: 'Không tìm thấy kênh.',   en: 'No channel found.', zh: '未找到频道。',            fil: 'Walang nahanap na channel.', fr: 'Aucune chaîne trouvée.' },
+  'epg.back':            { vi: 'Xem lại',                en: 'Replay',            zh: '回看',                    fil: 'Replay',          fr: 'Replay' },
+
   'player.replay':        { vi: 'Xem lại',            en: 'Replay',                zh: '回看',     fil: 'Replay',     fr: 'Replay' },
   'player.pause':         { vi: 'Tạm dừng',           en: 'Pause',                 zh: '暂停',     fil: 'I-pause',    fr: 'Pause' },
   'player.play':          { vi: 'Phát',               en: 'Play',                  zh: '播放',     fil: 'I-play',     fr: 'Lecture' },

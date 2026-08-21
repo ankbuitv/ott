@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { Settings, RotateCcw, Eye, EyeOff, Globe, Database, Shield, Monitor, Trash2 } from 'lucide-react';
 import { useSettings } from '../contexts/SettingsContext';
 import { useDevice } from '../contexts/DeviceContext';
+import { useI18n } from '../contexts/I18nContext';
 import { removeStorage } from '../hooks/useStorage';
 
 export default function SettingsPage({ onClose }) {
+  const { t } = useI18n();
   const { settings, updateSetting, resetSettings } = useSettings();
   const device = useDevice();
   const [pin, setPin] = useState('');
@@ -30,32 +32,32 @@ export default function SettingsPage({ onClose }) {
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-1.5 text-red-500 font-bold uppercase tracking-wider text-[10px] mb-0.5">
-            <Settings className="w-3.5 h-3.5" /> CÀI ĐẶT
+            <Settings className="w-3.5 h-3.5" /> {t('settings.title')}
           </div>
-          <h1 className="text-xl font-extrabold text-white">Thiết Lập</h1>
+          <h1 className="text-xl font-extrabold text-white">{t('settings.title')}</h1>
         </div>
         {onClose && (
           <button onClick={onClose} className="px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors">
-            Đóng
+            {t('common.close')}
           </button>
         )}
       </div>
 
       {/* Theme */}
       <div className="bg-[#13151c] border border-slate-800/40 rounded-xl p-4 space-y-3">
-        <h3 className="text-sm font-bold text-white">Giao Diện</h3>
+        <h3 className="text-sm font-bold text-white">{t('settings.appearance')}</h3>
         <div className="flex items-center justify-between">
-          <span className="text-xs text-slate-400">Chế độ nền</span>
+          <span className="text-xs text-slate-400">{t('settings.theme')}</span>
           <div className="flex gap-1">
-            {['dark', 'light'].map(t => (
+            {['dark', 'light'].map(t_opt => (
               <button
-                key={t}
-                onClick={() => updateSetting('theme', t)}
+                key={t_opt}
+                onClick={() => updateSetting('theme', t_opt)}
                 className={`px-3 py-1 text-xs rounded-lg font-medium transition-all ${
-                  settings.theme === t ? 'bg-red-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
+                  settings.theme === t_opt ? 'bg-red-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
                 }`}
               >
-                {t === 'dark' ? 'Tối' : 'Sáng'}
+                {t_opt === 'dark' ? t('settings.dark') : t('settings.light')}
               </button>
             ))}
           </div>
@@ -64,15 +66,15 @@ export default function SettingsPage({ onClose }) {
 
       {/* Video Quality */}
       <div className="bg-[#13151c] border border-slate-800/40 rounded-xl p-4 space-y-3">
-        <h3 className="text-sm font-bold text-white flex items-center gap-1.5"><Monitor className="w-4 h-4 text-blue-400" /> Video</h3>
+        <h3 className="text-sm font-bold text-white flex items-center gap-1.5"><Monitor className="w-4 h-4 text-blue-400" /> {t('settings.video')}</h3>
         <div className="flex items-center justify-between">
-          <span className="text-xs text-slate-400">Chất lượng mặc định</span>
+          <span className="text-xs text-slate-400">{t('settings.default_quality')}</span>
           <select
             value={settings.defaultQuality}
             onChange={e => updateSetting('defaultQuality', e.target.value)}
             className="bg-slate-800 text-xs text-slate-200 px-2 py-1 rounded-lg border border-slate-700"
           >
-            <option value="auto">Tự động</option>
+            <option value="auto">{t('settings.auto')}</option>
             <option value="1080">1080p</option>
             <option value="720">720p</option>
             <option value="480">480p</option>
@@ -80,7 +82,7 @@ export default function SettingsPage({ onClose }) {
           </select>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-xs text-slate-400">Buffer goal (giây)</span>
+          <span className="text-xs text-slate-400">{t('settings.buffer_goal')}</span>
           <input
             type="number"
             value={settings.bufferGoal}
@@ -90,7 +92,7 @@ export default function SettingsPage({ onClose }) {
           />
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-xs text-slate-400">Tự chuyển kênh khi lỗi</span>
+          <span className="text-xs text-slate-400">{t('settings.auto_next')}</span>
           <button
             onClick={() => updateSetting('autoNextOn', !settings.autoNextOn)}
             className={`w-10 h-5 rounded-full transition-all ${settings.autoNextOn ? 'bg-red-600' : 'bg-slate-700'}`}
@@ -100,7 +102,7 @@ export default function SettingsPage({ onClose }) {
         </div>
         {device.isMobile && (
           <div className="flex items-center justify-between">
-            <span className="text-xs text-slate-400">Gesture điều khiển</span>
+            <span className="text-xs text-slate-400">{t('settings.gesture')}</span>
             <button
               onClick={() => updateSetting('gestureEnabled', !settings.gestureEnabled)}
               className={`w-10 h-5 rounded-full transition-all ${settings.gestureEnabled ? 'bg-red-600' : 'bg-slate-700'}`}
@@ -113,9 +115,9 @@ export default function SettingsPage({ onClose }) {
 
       {/* Parental Control */}
       <div className="bg-[#13151c] border border-slate-800/40 rounded-xl p-4 space-y-3">
-        <h3 className="text-sm font-bold text-white flex items-center gap-1.5"><Shield className="w-4 h-4 text-amber-400" /> Kiểm soát phụ huynh</h3>
+        <h3 className="text-sm font-bold text-white flex items-center gap-1.5"><Shield className="w-4 h-4 text-amber-400" /> {t('settings.parental')}</h3>
         <div className="flex items-center justify-between">
-          <span className="text-xs text-slate-400">Bật kiểm soát</span>
+          <span className="text-xs text-slate-400">{t('settings.parental_enable')}</span>
           <button
             onClick={() => updateSetting('parentalEnabled', !settings.parentalEnabled)}
             className={`w-10 h-5 rounded-full transition-all ${settings.parentalEnabled ? 'bg-red-600' : 'bg-slate-700'}`}
@@ -132,7 +134,7 @@ export default function SettingsPage({ onClose }) {
                 value={pin || settings.parentalPin}
                 onChange={e => { setPin(e.target.value); updateSetting('parentalPin', e.target.value); }}
                 maxLength={6}
-                placeholder="Nhập PIN"
+                placeholder={t('settings.pin_placeholder')}
                 className="bg-slate-800 text-xs text-slate-200 w-28 px-2 py-1 rounded-lg border border-slate-700 pr-7"
               />
               <button onClick={() => setShowPin(!showPin)} className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5">
@@ -145,9 +147,9 @@ export default function SettingsPage({ onClose }) {
 
       {/* EPG & Sources */}
       <div className="bg-[#13151c] border border-slate-800/40 rounded-xl p-4 space-y-3">
-        <h3 className="text-sm font-bold text-white flex items-center gap-1.5"><Globe className="w-4 h-4 text-emerald-400" /> Nguồn dữ liệu</h3>
+        <h3 className="text-sm font-bold text-white flex items-center gap-1.5"><Globe className="w-4 h-4 text-emerald-400" /> {t('settings.data_sources')}</h3>
         <div className="space-y-2">
-          <label className="text-xs text-slate-400 block">URL EPG tùy chỉnh</label>
+          <label className="text-xs text-slate-400 block">{t('settings.epg_url')}</label>
           <input
             type="url"
             value={settings.epgSource}
@@ -166,11 +168,11 @@ export default function SettingsPage({ onClose }) {
             showConfirm ? 'bg-red-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
           }`}
         >
-          {showConfirm ? <><Trash2 className="w-4 h-4" /> Xác nhận xóa tất cả?</> : <><RotateCcw className="w-4 h-4" /> Đặt lại mặc định</>}
+          {showConfirm ? <><Trash2 className="w-4 h-4" /> {t('settings.confirm_reset')}</> : <><RotateCcw className="w-4 h-4" /> {t('settings.reset_default')}</>}
         </button>
         {showConfirm && (
           <button onClick={() => setShowConfirm(false)} className="w-full mt-2 px-4 py-1.5 text-xs text-slate-500 hover:text-slate-300 rounded-lg">
-            Hủy
+            {t('common.cancel')}
           </button>
         )}
       </div>

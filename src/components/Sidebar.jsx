@@ -1,13 +1,6 @@
 import React from 'react';
 import { useProfile } from '../contexts/ProfileContext';
-
-const navItems = [
-  { id: 'channels', label: 'TRANG CHỦ', icon: HomeIcon },
-  { id: 'epg', label: 'LỊCH EPG', icon: CalendarIcon },
-  { id: 'movies', label: 'PHIM ẢNH', icon: FilmIcon },
-  { id: 'favorites', label: 'YÊU THÍCH', icon: HeartIcon },
-  { id: 'history', label: 'LỊCH SỬ', icon: ClockIcon },
-];
+import { useI18n } from '../contexts/I18nContext';
 
 function HomeIcon() { return <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><path d="m9 9 5 12 1.774-5.226L21 14 9 3l-2 5.226z"/></svg>; }
 function CalendarIcon() { return <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>; }
@@ -18,6 +11,16 @@ function SettingsIcon() { return <svg className="w-4 h-4" fill="none" stroke="cu
 
 export default function Sidebar({ activeTab, setActiveTab, onShowSettings, onShowAdmin }) {
   const { currentProfile } = useProfile();
+  const { t } = useI18n();
+
+  // Tạo navItems bên trong component để dùng được t()
+  const navItems = [
+    { id: 'channels', label: t('nav.home').toUpperCase(), icon: HomeIcon },
+    { id: 'epg', label: 'EPG', icon: CalendarIcon },
+    { id: 'movies', label: t('nav.movies').toUpperCase(), icon: FilmIcon },
+    { id: 'favorites', label: '♥', icon: HeartIcon },
+    { id: 'history', label: t('nav.live') === 'Truyền Hình' ? 'L.SỬ' : 'HIST', icon: ClockIcon },
+  ];
 
   return (
     <>
@@ -35,6 +38,7 @@ export default function Sidebar({ activeTab, setActiveTab, onShowSettings, onSho
                   ? 'bg-white/[0.08] text-white'
                   : 'text-stone-500 hover:text-white hover:bg-white/5'
               }`}
+              title={item.label}
             >
               <Icon />
               <span className="text-[8px] font-bold tracking-tight">{item.label}</span>
@@ -46,6 +50,7 @@ export default function Sidebar({ activeTab, setActiveTab, onShowSettings, onSho
           <button
             onClick={onShowSettings}
             className="nav-btn w-10 h-10 mt-auto hover:bg-white/5 rounded-full flex items-center justify-center text-stone-500 hover:text-white transition-all"
+            title={t('nav.settings')}
           >
             <SettingsIcon />
           </button>
@@ -54,6 +59,7 @@ export default function Sidebar({ activeTab, setActiveTab, onShowSettings, onSho
           <button
             onClick={onShowAdmin}
             className="nav-btn w-10 h-10 hover:bg-white/5 rounded-full flex items-center justify-center text-stone-500 hover:text-white transition-all"
+            title={t('nav.admin')}
           >
             <span className="text-[10px]">⚙️</span>
           </button>

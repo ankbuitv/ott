@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Logo from './Logo';
 import { useAuth } from '../contexts/AuthContext';
+import { useI18n } from '../contexts/I18nContext';
 import { MovieAPI, imgPath } from '../services/tmdb';
 
-export default function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, setActiveTab, activeTab, onSelectChannel, onSelectMovie }) {
+export default function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, setActiveTab, activeTab, onSelectChannel, onSelectMovie, onShowAuth }) {
   const { isAuthenticated, logout } = useAuth();
+  const { t } = useI18n();
   const [searchFocused, setSearchFocused] = useState(false);
   const [movieResults, setMovieResults] = useState([]);
   const [searchingMovies, setSearchingMovies] = useState(false);
@@ -63,7 +65,7 @@ export default function TopNav({ channels, searchQuery, setSearchQuery, user, cu
             <svg className="w-4 h-4 text-stone-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
             <input
               className="bg-transparent text-sm text-white placeholder:text-stone-500 focus:outline-none flex-1"
-              placeholder="Tìm kênh, phim, chương trình..."
+              placeholder={t('app.search.placeholder')}
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               onFocus={() => setSearchFocused(true)}
@@ -82,7 +84,7 @@ export default function TopNav({ channels, searchQuery, setSearchQuery, user, cu
               {/* Kênh */}
               {channelMatches.length > 0 && (
                 <div className="p-2">
-                  <p className="px-2 pt-1 pb-1.5 text-[9px] font-bold uppercase tracking-widest text-stone-500">Kênh truyền hình</p>
+                  <p className="px-2 pt-1 pb-1.5 text-[9px] font-bold uppercase tracking-widest text-stone-500">{t('nav.live')}</p>
                   {channelMatches.map(ch => (
                     <button
                       key={ch.channel_id}
@@ -96,7 +98,7 @@ export default function TopNav({ channels, searchQuery, setSearchQuery, user, cu
                         <span className="block text-xs font-bold text-white truncate">{ch.name}</span>
                         <span className="block text-[10px] text-stone-500">{ch.group_title}</span>
                       </span>
-                      <span className="px-1.5 py-0.5 text-[8px] font-bold rounded bg-red-600 text-white shrink-0">LIVE</span>
+                        <span className="px-1.5 py-0.5 text-[8px] font-bold rounded bg-red-600 text-white shrink-0">{t('player.live')}</span>
                     </button>
                   ))}
                 </div>
@@ -105,9 +107,9 @@ export default function TopNav({ channels, searchQuery, setSearchQuery, user, cu
               {/* Phim */}
               {(movieResults.length > 0 || searchingMovies) && (
                 <div className="p-2 border-t border-white/5">
-                  <p className="px-2 pt-1 pb-1.5 text-[9px] font-bold uppercase tracking-widest text-stone-500">Phim & TV Shows</p>
+                  <p className="px-2 pt-1 pb-1.5 text-[9px] font-bold uppercase tracking-widest text-stone-500">{t('movies.title')}</p>
                   {searchingMovies && movieResults.length === 0 ? (
-                    <p className="px-2 py-2 text-[11px] text-stone-500">Đang tìm trên TMDB…</p>
+                    <p className="px-2 py-2 text-[11px] text-stone-500">{t('app.loading')}</p>
                   ) : (
                     movieResults.map(m => (
                       <button
@@ -121,7 +123,7 @@ export default function TopNav({ channels, searchQuery, setSearchQuery, user, cu
                         <span className="min-w-0 flex-1">
                           <span className="block text-xs font-bold text-white truncate">{m.title || m.name}</span>
                           <span className="block text-[10px] text-stone-500">
-                            {m.media_type === 'tv' ? 'TV Show' : 'Phim'}
+                            {m.media_type === 'tv' ? (t('movies.row.popular_tv').includes('TV') ? 'TV' : 'TV') : (t('movies.title').split(' ')[0] || 'Phim')}
                             {m.vote_average > 0 ? ` · ★ ${m.vote_average.toFixed(1)}` : ''}
                             {m.release_date ? ` · ${m.release_date.substring(0, 4)}` : ''}
                           </span>
@@ -148,10 +150,10 @@ export default function TopNav({ channels, searchQuery, setSearchQuery, user, cu
               {currentProfile.name[0].toUpperCase()}
             </div>
             <span className="text-xs text-stone-300 hidden md:inline">{currentProfile.name}</span>
-            <button onClick={logout} className="text-[10px] text-stone-500 hover:text-red-400 ml-1">Đăng xuất</button>
+            <button onClick={logout} className="text-[10px] text-stone-500 hover:text-red-400 ml-1">{t('nav.logout')}</button>
           </div>
         ) : (
-          <button className="px-4 py-2 bg-white text-black text-sm font-bold rounded-xl hover:bg-stone-200 transition">Đăng nhập</button>
+          <button onClick={() => onShowAuth?.() || (setActiveTab && setActiveTab('movies'))} className="px-4 py-2 bg-white text-black text-sm font-bold rounded-xl hover:bg-stone-200 transition">{t('nav.login')}</button>
         )}
       </div>
     </nav>

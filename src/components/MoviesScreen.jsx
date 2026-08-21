@@ -5,8 +5,9 @@ import MoviePlayerModal from './MoviePlayerModal';
 import { useDevice } from '../contexts/DeviceContext';
 import { useToast } from '../contexts/ToastContext';
 import { useProfile } from '../contexts/ProfileContext';
+import { useI18n } from '../contexts/I18nContext';
 
-const CATALOG_PAGE = 30; // số phim hiển thị mỗi lần "Xem thêm" (5 hàng x 6)
+const CATALOG_PAGE = 30;
 
 // Skeleton poster với hiệu ứng shimmer
 function MovieSkeleton() {
@@ -21,6 +22,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
   const device = useDevice();
   const { addToast } = useToast();
   const { currentProfile } = useProfile();
+  const { t } = useI18n();
 
   const [hero, setHero] = useState(null);
   const [rows, setRows] = useState({ trending: [], nowPlaying: [], topRated: [], popularTV: [], upcoming: [] });
@@ -47,7 +49,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
 
   // Block kid profiles
   useEffect(() => {
-    if (currentProfile?.is_child) addToast('Hồ sơ trẻ em — bị giới hạn nội dung', 'info');
+    if (currentProfile?.is_child) addToast(t('toast.kid_blocked'), 'info');
   }, [currentProfile]);
 
   // Mở phim được chọn từ thanh tìm kiếm trên TopNav
@@ -143,7 +145,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
       setShowKeyBox(false);
       setKeyMsg({ ok: true, text: '✅ Key hợp lệ! Đã lưu — tìm kiếm toàn bộ TMDB ngay bây giờ.' });
       setSearchNonce(n => n + 1); // ép tìm lại với key mới
-      addToast('Đã lưu TMDB API key — kho phim mở rộng toàn bộ TMDB', 'success');
+      addToast(t('toast.tmdb_ok'), 'success');
     } else {
       setKeyMsg({ ok: false, text: `❌ Key không hợp lệ (HTTP ${v.status || '?'}): ${v.status_message || v.error || 'thử key khác'}` });
     }
@@ -223,13 +225,13 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
                   onClick={() => setPlayMovie(hero)}
                   className="flex items-center gap-2 bg-white text-black px-7 py-3 rounded-xl font-bold text-sm hover:bg-stone-200 transition shadow-xl shadow-white/10"
                 >
-                  <Play className="w-5 h-5 fill-current" /> Xem phim
+                  <Play className="w-5 h-5 fill-current" /> {t('movies.btn.play')}
                 </button>
                 <button
                   onClick={() => openDetail(hero)}
                   className="flex items-center gap-2 bg-white/15 backdrop-blur text-white px-6 py-3 rounded-xl font-bold text-sm hover:bg-white/25 transition border border-white/10"
                 >
-                  <Info className="w-5 h-5" /> Thông tin
+                  <Info className="w-5 h-5" /> {t('movies.btn.info')}
                 </button>
               </div>
             </div>
@@ -240,12 +242,12 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
       {/* Search bar — sticky */}
       <div className="sticky top-0 z-30 bg-black/85 glass border-b border-white/5 px-6 md:px-8 py-3">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center gap-3">
-          <h2 className="text-lg md:text-xl font-black tracking-tight hidden md:block shrink-0">Movies · TV Shows</h2>
+          <h2 className="text-lg md:text-xl font-black tracking-tight hidden md:block shrink-0">{t('movies.title')}</h2>
           <div className="flex-1 md:max-w-xl relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
             <input
               type="text" value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Tìm phim, TV show, diễn viên..."
+              placeholder={t('movies.search.placeholder')}
               className="w-full pl-10 pr-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-red-500 focus:bg-white/10 transition"
             />
             {searching && (
@@ -305,7 +307,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
                 selectedGenre === 'all' ? 'bg-red-600 text-white shadow-lg shadow-red-600/25' : 'bg-white/5 hover:bg-white/10 text-stone-400 hover:text-white border border-white/10'
               }`}
             >
-              Tất cả
+              {t('movies.genre.all')}
             </button>
             {genres.slice(0, 14).map(g => (
               <button
@@ -325,7 +327,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
       {/* Search results */}
       {search.trim() ? (
         <div className="px-6 md:px-8 py-6 max-w-7xl mx-auto">
-          <h3 className="text-sm font-semibold text-stone-400 mb-4">Kết quả: "{search}" ({searchResults.length})</h3>
+          <h3 className="text-sm font-semibold text-stone-400 mb-4">{t('movies.results')}: "{search}" ({searchResults.length})</h3>
           {searchResults.length === 0 ? (
             <div className="text-center py-16">
               <Film className="w-12 h-12 text-stone-700 mx-auto mb-3" />
@@ -348,11 +350,11 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
       ) : (
         <div className="pb-20 space-y-10 pt-6">
           {/* Rows */}
-          <MovieRow title="🔥 Xu Hướng Tuần" items={rows.trending} gridCls={gridCls} onClick={openDetail} loading={loading} />
-          <MovieRow title="🎬 Đang Chiếu Rạp" items={rows.nowPlaying} gridCls={gridCls} onClick={openDetail} loading={loading} />
-          <MovieRow title="⭐ Đánh Giá Cao Nhất" items={rows.topRated} gridCls={gridCls} onClick={openDetail} loading={loading} />
-          <MovieRow title="📅 Sắp Chiếu" items={rows.upcoming} gridCls={gridCls} onClick={openDetail} loading={loading} />
-          <MovieRow title="📺 TV Shows Phổ Biến" items={rows.popularTV} gridCls={gridCls} onClick={openDetail} loading={loading} />
+          <MovieRow title={t('movies.row.trending')} items={rows.trending} gridCls={gridCls} onClick={openDetail} loading={loading} />
+          <MovieRow title={t('movies.row.now_playing')} items={rows.nowPlaying} gridCls={gridCls} onClick={openDetail} loading={loading} />
+          <MovieRow title={t('movies.row.top_rated')} items={rows.topRated} gridCls={gridCls} onClick={openDetail} loading={loading} />
+          <MovieRow title={t('movies.row.upcoming')} items={rows.upcoming} gridCls={gridCls} onClick={openDetail} loading={loading} />
+          <MovieRow title={t('movies.row.popular_tv')} items={rows.popularTV} gridCls={gridCls} onClick={openDetail} loading={loading} />
 
           {/* Full catalog */}
           <section className="px-6 md:px-8">
@@ -373,7 +375,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
             ) : filteredCatalog.length === 0 ? (
               <div className="text-center py-16">
                 <Tv className="w-12 h-12 text-stone-700 mx-auto mb-3" />
-                <p className="text-stone-500 text-sm">Chưa có phim ở thể loại này.</p>
+                <p className="text-stone-500 text-sm">{t('movies.no_results')}</p>
               </div>
             ) : (
               <>
@@ -386,7 +388,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
                       onClick={() => setVisibleCount(c => c + CATALOG_PAGE)}
                       className="px-8 py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-white text-sm font-bold rounded-xl transition flex items-center gap-2"
                     >
-                      <Play className="w-4 h-4 rotate-90" /> Xem thêm ({filteredCatalog.length - visibleCount} còn lại)
+                      <Play className="w-4 h-4 rotate-90" /> {t('movies.load_more')} ({filteredCatalog.length - visibleCount})
                     </button>
                   </div>
                 )}
@@ -458,7 +460,7 @@ function MovieCard({ movie, onClick }) {
         <p className="text-[11px] font-bold leading-tight line-clamp-2">{movie.title || movie.name}</p>
         <div className="flex items-center gap-2 mt-1.5">
           <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-red-600 text-[9px] font-bold">
-            <Play className="w-2.5 h-2.5 fill-current" /> Xem ngay
+              <Play className="w-2.5 h-2.5 fill-current" /> {t('movies.btn.play')}
           </span>
           <span className="text-[9px] text-stone-400">{(movie.release_date || movie.first_air_date || '').substring(0, 4)}</span>
         </div>

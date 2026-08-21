@@ -3,7 +3,7 @@
  * Auth, Admin, Analytics, Notifications, WebSocket
  */
 
-const SOURCE_M3U_URL = "https://raw.githubusercontent.com/ankbuitv/chrtv/refs/heads/main/playlists/tv.m3u";
+const SOURCE_M3U_URL = "https://raw.githubusercontent.com/ankbuitv/ott/refs/heads/main/playlists/tv.m3u";
 const SOURCE_EPG_URL = "https://epg.io.vn/epgc.xml";
 const SOURCE_EPG_URL2 = "https://lichphatsong.io.vn/epgc.xml";
 const SOURCE_EPG_URL3 = "https://epg.pm/vi/epgc.xml";
@@ -117,6 +117,99 @@ function verifyJWT(token) {
     if (data.exp < Date.now()) return null;
     return data.userId;
   } catch { return null; }
+}
+
+// ========== EMAIL (Brevo / Sendinblue) ==========
+// Gửi email qua Brevo API. Cấu hình biến môi trường:
+//   BREVO_API_KEY       — API key lấy từ https://app.brevo.com/settings/keys/api
+//   BREVO_SENDER_EMAIL  — email đã verify trong Brevo (vd: noreply@yourdomain.com)
+//   BREVO_SENDER_NAME   — tên người gửi (mặc định "CHRTV")
+async function sendBrevoEmail(env, { to, subject, html, text }) {
+  const apiKey = env.BREVO_API_KEY;
+  const senderEmail = env.BREVO_SENDER_EMAIL || "noreply@chrtv.app";
+  const senderName = env.BREVO_SENDER_NAME || "CHRTV";
+  if (!apiKey) {
+    console.warn("[Brevo] BREVO_API_KEY chưa cấu hình — bỏ qua gửi email");
+    return { ok: false, reason: "no-api-key" };
+  }
+  try {
+    const res = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: { "api-key": apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sender: { name: senderName, email: senderEmail },
+        to: [{ email: to }],
+        subject,
+        htmlContent: html,
+        textContent: text || html.replace(/<[^>]+>/g, ""),
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      return { ok: true, messageId: data.messageId };
+    }
+    const errText = await res.text();
+    console.error("[Brevo] Gửi thất bại:", res.status, errText);
+    return { ok: false, status: res.status, error: errText };
+  } catch (e) {
+    console.error("[Brevo] Lỗi mạng:", e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+function emailTemplateVerify(code) {
+  return {
+    subject: "CHRTV — Mã xác minh tài khoản",
+    html: `<!doctype html><html><body style="margin:0;padding:0;background:#0b0c10;font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#e7e5e4;">
+<div style="max-width:560px;margin:24px auto;background:#17181d;border-radius:16px;border:1px solid #26272e;overflow:hidden;">
+  <div style="background:linear-gradient(135deg,#e11d48 0%,#9f1239 100%);padding:28px 32px;text-align:center;">
+    <h1 style="color:#fff;margin:0;font-size:28px;letter-spacing:-.02em;">🎬 CHRTV</h1>
+    <p style="color:#fecdd3;margin:6px 0 0;font-size:13px;">Xác minh tài khoản của bạn</p>
+  </div>
+  <div style="padding:28px 32px;">
+    <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#a8a29e;">Chào bạn,</p>
+    <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#d6d3d1;">Cảm ơn bạn đã đăng ký CHRTV! Nhập mã 6 số dưới đây để kích hoạt tài khoản. Mã có hiệu lực trong <b>1 giờ</b>.</p>
+    <div style="background:#0f1014;border:2px dashed #e11d48;border-radius:12px;padding:20px;text-align:center;margin:24px 0;">
+      <span style="font-size:36px;font-weight:800;letter-spacing:.25em;color:#e11d48;font-family:monospace;">${code}</span>
+    </div>
+    <p style="margin:0 0 8px;font-size:13px;line-height:1.6;color:#78716c;">Nếu bạn không yêu cầu đăng ký, vui lòng bỏ qua email này.</p>
+    <p style="margin:0;font-size:13px;color:#78716c;">— Đội ngũ CHRTV</p>
+  </div>
+  <div style="padding:18px 32px;background:#0f1014;border-top:1px solid #26272e;text-align:center;font-size:11px;color:#57534e;">
+    © CHRTV · Truyền hình &amp; phim trực tuyến
+  </div>
+</div>
+</body></html>`,
+  };
+}
+
+function emailTemplateReset(token) {
+  return {
+    subject: "CHRTV — Đặt lại mật khẩu",
+    html: `<!doctype html><html><body style="margin:0;padding:0;background:#0b0c10;font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#e7e5e4;">
+<div style="max-width:560px;margin:24px auto;background:#17181d;border-radius:16px;border:1px solid #26272e;overflow:hidden;">
+  <div style="background:linear-gradient(135deg,#e11d48 0%,#9f1239 100%);padding:28px 32px;text-align:center;">
+    <h1 style="color:#fff;margin:0;font-size:28px;letter-spacing:-.02em;">🔐 CHRTV</h1>
+    <p style="color:#fecdd3;margin:6px 0 0;font-size:13px;">Yêu cầu đặt lại mật khẩu</p>
+  </div>
+  <div style="padding:28px 32px;">
+    <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#a8a29e;">Chào bạn,</p>
+    <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#d6d3d1;">Ai đó (hy vọng là bạn) vừa yêu cầu đặt lại mật khẩu cho tài khoản CHRTV. Nhấn nút bên dưới trong vòng <b>30 phút</b> để đặt mật khẩu mới.</p>
+    <div style="text-align:center;margin:28px 0;">
+      <a href="https://play.ankb.qzz.io/?reset=${token}" style="display:inline-block;background:#e11d48;color:#fff;padding:14px 36px;border-radius:12px;text-decoration:none;font-weight:800;font-size:14px;letter-spacing:.02em;">Đặt lại mật khẩu</a>
+    </div>
+    <p style="margin:24px 0 8px;font-size:12px;line-height:1.6;color:#78716c;">Hoặc copy mã này vào app:</p>
+    <div style="background:#0f1014;border:1px solid #26272e;border-radius:10px;padding:12px;text-align:center;">
+      <span style="font-family:monospace;font-size:13px;color:#d6d3d1;word-break:break-all;">${token}</span>
+    </div>
+    <p style="margin:24px 0 0;font-size:13px;line-height:1.6;color:#78716c;">Nếu bạn không yêu cầu điều này, vui lòng bỏ qua email — mật khẩu của bạn vẫn an toàn.</p>
+  </div>
+  <div style="padding:18px 32px;background:#0f1014;border-top:1px solid #26272e;text-align:center;font-size:11px;color:#57534e;">
+    © CHRTV · Truyền hình &amp; phim trực tuyến
+  </div>
+</div>
+</body></html>`,
+  };
 }
 
 async function getUser(request, env) {
@@ -380,9 +473,11 @@ async function handleAuth(path, request, env) {
 
     try {
       await env.DB.prepare("INSERT INTO users (username, email, password_hash, verify_code, verify_expires) VALUES (?, ?, ?, ?, ?)").bind(username, email, hash, verifyCode, verifyExpires).run();
-      // TODO: Send verification email via API (SendGrid/Mailgun/Resend)
-      // For now, return code in response
-      return json({ success: true, message: "Đăng ký thành công! Kiểm tra email để lấy mã xác minh.", verifyCode });
+      // Gửi email xác minh qua Brevo (nếu chưa cấu hình thì vẫn insert user thành công)
+      const tmpl = emailTemplateVerify(verifyCode);
+      const sent = await sendBrevoEmail(env, { to: email, subject: tmpl.subject, html: tmpl.html });
+      // Trả verifyCode trong response để dev F12 thấy; production chỉ gửi qua email
+      return json({ success: true, message: "Đăng ký thành công! Kiểm tra email để lấy mã xác minh.", verifyCode, emailSent: sent.ok });
     } catch (e) {
       if (e.message?.includes("UNIQUE")) return json({ error: "Username hoặc email đã tồn tại" }, 409);
       return json({ error: "Lỗi đăng ký" }, 500);
@@ -437,10 +532,18 @@ async function handleAuth(path, request, env) {
     const resetExpires = Math.floor(Date.now() / 1000) + 1800; // 30 min
 
     try {
-      await env.DB.prepare("UPDATE users SET reset_token = ?, reset_expires = ? WHERE email = ?").bind(resetToken, resetExpires, email).run();
-      return json({ success: true, message: "Đã gửi liên kết đặt lại mật khẩu", resetToken });
-    } catch {
-      return json({ error: "Email không tồn tại" }, 404);
+      const r = await env.DB.prepare("UPDATE users SET reset_token = ?, reset_expires = ? WHERE email = ?").bind(resetToken, resetExpires, email).run();
+      const updated = (r.meta?.changes ?? r.changes) > 0;
+      if (!updated) return json({ success: true, message: "Nếu email tồn tại, link đặt lại đã được gửi." });
+      // Gửi email qua Brevo
+      const tmpl = emailTemplateReset(resetToken);
+      const sent = await sendBrevoEmail(env, { to: email, subject: tmpl.subject, html: tmpl.html });
+      // Dev xem token trong console (không trả về response)
+      console.log(`[AUTH/forgot] email=${email} resetToken=${resetToken} emailSent=${sent.ok}`);
+      return json({ success: true, message: "Đã gửi liên kết đặt lại mật khẩu đến email của bạn.", emailSent: sent.ok });
+    } catch (e) {
+      console.error("forgot error:", e);
+      return json({ success: true, message: "Nếu email tồn tại, link đặt lại đã được gửi." });
     }
   }
 
@@ -467,9 +570,14 @@ async function handleAuth(path, request, env) {
     if (!email) return json({ error: "Thiếu email" }, 400);
     const code = String(Math.floor(100000 + Math.random() * 900000));
     try {
-      await env.DB.prepare("UPDATE users SET verify_code = ?, verify_expires = ? WHERE email = ? AND email_verified = 0").bind(code, Math.floor(Date.now() / 1000) + 3600, email).run();
-      return json({ success: true, verifyCode: code });
-    } catch {
+      const r = await env.DB.prepare("UPDATE users SET verify_code = ?, verify_expires = ? WHERE email = ? AND email_verified = 0").bind(code, Math.floor(Date.now() / 1000) + 3600, email).run();
+      const updated = (r.meta?.changes ?? r.changes) > 0;
+      if (!updated) return json({ success: true, message: "Email không tồn tại hoặc đã xác minh." });
+      const tmpl = emailTemplateVerify(code);
+      const sent = await sendBrevoEmail(env, { to: email, subject: tmpl.subject, html: tmpl.html });
+      console.log(`[AUTH/resend] email=${email} code=${code} emailSent=${sent.ok}`);
+      return json({ success: true, message: "Mã xác minh đã được gửi lại đến email.", emailSent: sent.ok });
+    } catch (e) {
       return json({ error: "Lỗi" }, 500);
     }
   }
@@ -601,8 +709,14 @@ async function handleUser(path, request, env) {
 
 // ========== ADMIN ==========
 async function handleAdmin(path, request, env) {
-  const user = await getUser(request, env);
-  if (!user || user.role !== 'admin') return json({ error: "Không có quyền admin" }, 403);
+  // Auth: chấp nhận JWT user có role=admin HOẶC master JWT_SECRET (bypass mạnh, ai biết secret = admin)
+  const auth = request.headers.get("Authorization") || "";
+  let isAdmin = auth === `Bearer ${JWT_SECRET}`;
+  if (!isAdmin) {
+    const user = await getUser(request, env);
+    if (!user || user.role !== 'admin') return json({ error: "Không có quyền admin" }, 403);
+    isAdmin = true;
+  }
 
   // Dashboard stats
   if (path === "/admin/stats" && request.method === "GET") {

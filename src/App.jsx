@@ -27,6 +27,7 @@ import { ProfileProvider, useProfile } from './contexts/ProfileContext';
 
 import { fetchChannels, fetchEPGData, fetchFavorites, toggleFavoriteApi, recordWatchHistory, DEFAULT_FALLBACK_STREAM } from './services/api';
 import { getFavorites, setFavorites as saveFavs, getHistory, setHistory as saveHistory } from './hooks/useStorage';
+import { findEpgForChannel } from './utils/epgMatch';
 
 initNavigation({ debug: false, visualDebug: false });
 
@@ -157,17 +158,11 @@ function AppContent() {
   }, [currentChannel, channels, handleSelectChannel]);
 
   const getEpgForChannel = useCallback((channelId) => {
-    if (!epgData?.programmes) return { now: null, next: null };
-    const now = new Date();
-    const progs = epgData.programmes.filter(p => p.channel === channelId);
-    let epgNow = null, epgNext = null;
-    for (let i = 0; i < progs.length; i++) {
-      const p = progs[i];
-      const start = new Date(p.start), stop = new Date(p.stop);
-      if (start <= now && stop >= now) { epgNow = p; if (i + 1 < progs.length) epgNext = progs[i + 1]; break; }
-    }
-    return { now: epgNow, next: epgNext };
-  }, [epgData]);
+    if (!epgData?.programmes || !channelId) return { now: null, next: null };
+    const ch = channels.find(c => c.channel_id === channelId);
+    if (!ch) return { now: null, next: null };
+    return findEpgForChannel(epgData.programmes, ch);
+  }, [epgData, channels]);
 
   useEffect(() => {
     window.__chrtv_select_channel = (ch) => handleSelectChannel(ch);

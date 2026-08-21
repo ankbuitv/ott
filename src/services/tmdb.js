@@ -3,6 +3,11 @@ const TMDB_IMG = 'https://image.tmdb.org/t/p';
 // Default fallback key — get free one at https://www.themoviedb.org/settings/api
 const TMDB_KEY = import.meta.env.VITE_TMDB_KEY || '1b3b8c6a4c1f2a0f5b8e6e2a7c8d4e1f';
 
+// Warn if no real key configured so the Movies section uses fallback data
+if (!import.meta.env.VITE_TMDB_KEY) {
+  console.warn('[TMDB] Chua cau hinh VITE_TMDB_KEY - Movies se dung du lieu du phong. Xem TMDB.md de lay key mien phi.');
+}
+
 const cache = new Map();
 const cacheTMDB = (key, data, ttl = 600) => cache.set(key, { data, ts: Date.now(), ttl });
 const fromCache = (k) => {

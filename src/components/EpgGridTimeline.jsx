@@ -42,15 +42,29 @@ export default function EpgGridTimeline({
     });
   }, [channels, selectedCategory, searchQuery]);
 
-  const getProgramsForChannelAndDay = (channelId) => {
-    if (!epgData || !epgData.programmes) return [];
+  const getProgramsForChannelAndDay = (channel) => {
+    if (!epgData || !epgData.programmes || !channel) return [];
     const targetDate = dateTabs.find(t => t.offset === selectedDayOffset)?.date || new Date();
     const startOfDay = new Date(targetDate); startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(targetDate); endOfDay.setHours(23, 59, 59, 999);
 
-    return epgData.programmes
+    // Resolve the EPG channel id(s) for this channel: exact, then normalized, then by name
+    const chId = String(channel.channel_id || '');
+    const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+    const chNorm = norm(chId);
+    const chName = norm(channel.name);
+
+    let pool = epgData.programmes.filter(p => p.channel === chId);
+    if (pool.length === 0) pool = epgData.programmes.filter(p => norm(p.channel) === chNorm);
+    if (pool.length === 0 && chName) {
+      pool = epgData.programmes.filter(p => {
+        const pn = norm(p.display_name || p.channel);
+        return pn && (pn === chName || pn.includes(chName) || chName.includes(pn));
+      });
+    }
+
+    return pool
       .filter(p => {
-        if (p.channel !== channelId) return false;
         const pStart = parseEpgDate(p.start);
         return pStart >= startOfDay && pStart <= endOfDay;
       })
@@ -126,7 +140,7 @@ export default function EpgGridTimeline({
           </div>
         ) : (
           filteredChannels.map((channel) => {
-            const programs = getProgramsForChannelAndDay(channel.channel_id);
+            const programs = getProgramsForChannelAndDay(channel);
             return (
               <div
                 key={channel.channel_id}

@@ -5,6 +5,8 @@
 
 const SOURCE_M3U_URL = "https://raw.githubusercontent.com/ankbuitv/chrtv/refs/heads/main/playlists/tv.m3u";
 const SOURCE_EPG_URL = "https://epg.io.vn/epgc.xml";
+const SOURCE_EPG_URL2 = "https://lichphatsong.io.vn/epgc.xml";
+const SOURCE_EPG_URL3 = "https://epg.pm/vi/epgc.xml";
 const FALLBACK_STREAM_URL = "http://bore.pub:30113/hls/index.m3u8";
 const JWT_SECRET = "chrtv_ott_secret_2026";
 const CORS = {
@@ -211,19 +213,35 @@ async function handleEPG(env) {
       if (results.length > 0) return json({ success: true, source: "cache", data: JSON.parse(results[0].data) });
     } catch {}
   }
-  try {
-    const resp = await fetch(SOURCE_EPG_URL, { headers: { "User-Agent": "CHRTV-OTT/2.0" }, signal: AbortSignal.timeout(10000) });
-    if (resp.ok) {
-      const data = parseEPGXml(await resp.text());
-      if (env && env.DB) {
-        try {
-          await env.DB.prepare("INSERT OR REPLACE INTO epg_cache (key, data, expires_at) VALUES ('epg_main', ?, ?)").bind(JSON.stringify(data), Math.floor(Date.now() / 1000) + 3600).run();
-        } catch {}
+
+  // Try multiple EPG sources in order
+  const sources = [SOURCE_EPG_URL, SOURCE_EPG_URL2, SOURCE_EPG_URL3];
+  for (const src of sources) {
+    try {
+      const resp = await fetch(src, { headers: { "User-Agent": "CHRTV-OTT/2.0", "Accept-Encoding": "gzip, deflate" }, signal: AbortSignal.timeout(10000) });
+      if (resp.ok) {
+        const data = parseEPGXml(await resp.text());
+        if (data.programmes && data.programmes.length > 0) {
+          if (env && env.DB) {
+            try {
+              await env.DB.prepare("INSERT OR REPLACE INTO epg_cache (key, data, expires_at) VALUES ('epg_main', ?, ?)").bind(JSON.stringify(data), Math.floor(Date.now() / 1000) + 3600).run();
+            } catch {}
+          }
+          return json({ success: true, source: "xml", data });
+        }
       }
-      return json({ success: true, source: "xml", data });
-    }
-  } catch {}
-  return json({ success: true, source: "mock", data: generateMockEPG() });
+    } catch {}
+  }
+
+  // All sources failed — generate mock for ALL channels in D1 so EPG shows everywhere
+  let channelIds = [];
+  if (env && env.DB) {
+    try {
+      const { results } = await env.DB.prepare("SELECT channel_id, name FROM channels").all();
+      channelIds = results || [];
+    } catch {}
+  }
+  return json({ success: true, source: "mock", data: generateMockEPG(channelIds) });
 }
 
 function parseEPGXml(xml) {
@@ -231,28 +249,65 @@ function parseEPGXml(xml) {
   const chR = /<channel\s+id="([^"]+)">[\s\S]*?<display-name[^>]*>([^<]+)<\/display-name>/g;
   let m;
   while ((m = chR.exec(xml))) channels[m[1]] = { id: m[1], name: m[2] };
-  const pR = /<programme\s+start="([^"]+)"\s+stop="([^"]+)"\s+channel="([^"]+)">[\s\S]*?<title[^>]*>([^<]+)<\/title>(?:[\s\S]*?<desc[^>]*>([^<]*)<\/desc>)?/g;
-  while ((m = pR.exec(xml))) {
-    programmes.push({ start: m[1], stop: m[2], channel: m[3], title: m[4], desc: m[5] || "" });
+
+  // Match programme blocks, then extract attributes regardless of order
+  const pBlockR = /<programme\b([^>]*)>([\s\S]*?)<\/programme>/g;
+  while ((m = pBlockR.exec(xml))) {
+    const attrs = m[1];
+    const inner = m[2];
+    const getAttr = (name) => {
+      const am = attrs.match(new RegExp(name + '="([^"]*)"'));
+      return am ? am[1] : '';
+    };
+    const start = getAttr('start');
+    const stop = getAttr('stop');
+    const channel = getAttr('channel');
+    if (!start || !channel) continue;
+    const tR = inner.match(/<title[^>]*>([^<]+)<\/title>/);
+    const dR = inner.match(/<desc[^>]*>([^<]*)<\/desc>/);
+    const title = tR ? tR[1] : 'Chương trình';
+    const desc = dR ? dR[1] : '';
+    programmes.push({ start, stop, channel, title, desc });
   }
   return { channels, programmes };
 }
 
-function generateMockEPG() {
-  const ids = ["VTV1.vn", "VTV3.vn"];
+function generateMockEPG(channelList = []) {
+  // If no channels passed in, use a sensible default set
+  const ids = channelList.length > 0
+    ? channelList.map(ch => ch.channel_id || ch)
+    : ["VTV1.vn", "VTV3.vn", "HTV7.vn", "HTV9.vn", "ON_SPORTS.vn"];
+  const nameMap = {};
+  channelList.forEach(ch => { nameMap[ch.channel_id || ch] = ch.name || ch.channel_id || ch; });
+
   const progs = []; const now = new Date();
+  const titles = [
+    { title: "Thời sự", desc: "Bản tin thời sự trong ngày" },
+    { title: "Phim truyện Việt Nam", desc: "Phim truyện hình sự, gia đình" },
+    { title: "Tin tức quốc tế", desc: "Cập nhật tin tức thế giới" },
+    { title: "Thể thao 24h", desc: "Tin nóng thể thao trong nước và quốc tế" },
+    { title: "Ca nhạc", desc: "Chương trình ca nhạc giải trí" },
+    { title: "Phim Hàn Quốc", desc: "Phim truyền hình Hàn Quốc lồng tiếng" },
+    { title: "Khoa học & khám phá", desc: "Khám phá khoa học tự nhiên" },
+    { title: "Kinh tế tài chính", desc: "Phân tích kinh tế, chứng khoán" },
+    { title: "Thiếu nhi & hoạt hình", desc: "Chương trình dành cho thiếu nhi" },
+    { title: "Talk show giải trí", desc: "Giao lưu, trò chuyện cùng nghệ sĩ" },
+    { title: "Phim tài liệu", desc: "Phim tài liệu văn hóa - xã hội" },
+    { title: "Âm nhạc quốc tế", desc: "Video âm nhạc nước ngoài" },
+  ];
   for (let d = -6; d <= 1; d++) {
     const bd = new Date(now.getTime() + d * 86400000);
-    ids.forEach(id => {
+    ids.forEach((id, idx) => {
       for (let h = 0; h < 24; h += 2) {
         const s = new Date(bd); s.setHours(h, 0, 0, 0);
         const e = new Date(bd); e.setHours(h + 2, 0, 0, 0);
         const fmt = (dt) => `${dt.getFullYear()}${String(dt.getMonth()+1).padStart(2,'0')}${String(dt.getDate()).padStart(2,'0')}${String(dt.getHours()).padStart(2,'0')}${String(dt.getMinutes()).padStart(2,'0')}${String(dt.getSeconds()).padStart(2,'0')} +0700`;
-        progs.push({ channel: id, start: fmt(s), stop: fmt(e), title: `Chương trình ${h}:00`, desc: "Mô tả chương trình" });
+        const prog = titles[(h / 2 + idx) % titles.length];
+        progs.push({ channel: id, start: fmt(s), stop: fmt(e), title: prog.title, desc: prog.desc });
       }
     });
   }
-  return { channels: ids.reduce((a, id) => { a[id] = { id, name: id }; return a; }, {}), programmes: progs };
+  return { channels: ids.reduce((a, id) => { a[id] = { id, name: nameMap[id] || id }; return a; }, {}), programmes: progs };
 }
 
 // ========== PROXY ==========
@@ -392,6 +447,7 @@ async function handleAuth(path, request, env) {
 async function ensureTables(env) {
   try {
     await env.DB.prepare("CREATE TABLE IF NOT EXISTS user_profiles (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, name TEXT NOT NULL, avatar_url TEXT DEFAULT '', is_child INTEGER DEFAULT 0, pin_hash TEXT DEFAULT '', active INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)").run();
+    await env.DB.prepare("CREATE TABLE IF NOT EXISTS epg_cache (key TEXT PRIMARY KEY, data TEXT NOT NULL, expires_at INTEGER NOT NULL)").run();
   } catch (e) {
     console.error('ensureTables error:', e.message || e);
   }

@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { findEpgForChannel } from '../utils/epgMatch';
 
 const LOGO_FALLBACK = "https://i.ibb.co/HDmcxzMK/Gemini-Generated-Image-v7i9yav7i9yav7i9-removebg-preview.png";
 
@@ -9,14 +10,13 @@ export default function HomePage({
 }) {
   const [activeFilter, setActiveFilter] = useState('all');
 
-  const getEpgNow = (chId) => {
-    if (!epgData?.programmes) return null;
-    const now = new Date();
-    return epgData.programmes.find(p => p.channel === chId && new Date(p.start) <= now && new Date(p.stop) >= now);
+  const getEpgNow = (ch) => {
+    if (!epgData?.programmes || !ch) return null;
+    return findEpgForChannel(epgData.programmes, ch).now;
   };
 
   const fCh = useMemo(() =>
-    channels.slice(0, 1).map(ch => ({ ...ch, epg: getEpgNow(ch.channel_id) }))[0],
+    channels.slice(0, 1).map(ch => ({ ...ch, epg: getEpgNow(ch) }))[0],
   [channels, epgData]);
 
   const groupedChannels = useMemo(() => {
@@ -242,7 +242,7 @@ export default function HomePage({
                         <p className="font-bold text-base">{ch.name}</p>
                         <span className="text-[10px] text-amber-400 font-bold">★</span>
                       </div>
-                      <p className="text-[11px] text-stone-500 line-clamp-1">{getEpgNow(ch.channel_id)?.title || 'Dang phat'}</p>
+                      <p className="text-[11px] text-stone-500 line-clamp-1">{getEpgNow(ch)?.title || 'Dang phat'}</p>
                       <div className="flex items-center gap-2 mt-3">
                         <button onClick={() => onSelectChannel(ch)} className="flex-1 py-1.5 bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold rounded-lg transition">Xem</button>
                         <button onClick={() => onToggleFavorite(ch.channel_id)} className="px-2 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg transition">

@@ -8,6 +8,15 @@ import { useProfile } from '../contexts/ProfileContext';
 
 const CATALOG_PAGE = 30; // số phim hiển thị mỗi lần "Xem thêm" (5 hàng x 6)
 
+// Skeleton poster với hiệu ứng shimmer
+function MovieSkeleton() {
+  return (
+    <div className="aspect-[2/3] rounded-xl overflow-hidden skeleton-shimmer border border-white/5">
+      <div className="absolute bottom-0 inset-x-0 h-1/3 bg-gradient-to-t from-black/40 to-transparent"></div>
+    </div>
+  );
+}
+
 export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = {}) {
   const device = useDevice();
   const { addToast } = useToast();
@@ -277,9 +286,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
 
             {catalogLoading && filteredCatalog.length === 0 ? (
               <div className={`grid gap-2.5 ${gridCls}`}>
-                {Array.from({ length: 12 }).map((_, i) => (
-                  <div key={i} className="aspect-[2/3] bg-stone-800/40 rounded-xl animate-pulse"></div>
-                ))}
+                {Array.from({ length: 18 }).map((_, i) => <MovieSkeleton key={i} />)}
               </div>
             ) : filteredCatalog.length === 0 ? (
               <div className="text-center py-16">
@@ -330,9 +337,7 @@ function MovieRow({ title, items, cols, onClick, loading }) {
       <h3 className="text-base md:text-xl font-bold mb-3 tracking-tight">{title}</h3>
       <div className={`grid gap-2.5 ${gridCls}`}>
         {loading
-          ? Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="aspect-[2/3] bg-stone-800/40 rounded-xl animate-pulse"></div>
-            ))
+          ? Array.from({ length: 12 }).map((_, i) => <MovieSkeleton key={i} />)
           : items.filter(m => m.poster_path).slice(0, 12).map(m => (
               <MovieCard key={`${m.media_type}-${m.id}`} movie={m} onClick={onClick} />
             ))}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Search, Star, Play, X, Info, Calendar, Clock, Tv, Film, SlidersHorizontal, TrendingUp } from 'lucide-react';
-import { MovieAPI, imgPath, bgPath, getUpcoming, getMovieGenres } from '../services/tmdb';
+import { MovieAPI, imgPath, bgPath, getUpcoming, getMovieGenres, getTMDBKey, setTMDBKey, isDefaultTMDBKey } from '../services/tmdb';
 import MoviePlayerModal from './MoviePlayerModal';
 import { useDevice } from '../contexts/DeviceContext';
 import { useToast } from '../contexts/ToastContext';
@@ -34,6 +34,11 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
+  const [searchNonce, setSearchNonce] = useState(0); // để ép tìm lại sau khi lưu key
+  const [keyInput, setKeyInput] = useState('');
+  const [showKeyBox, setShowKeyBox] = useState(false);
+  const [keyChecking, setKeyChecking] = useState(false);
+  const [keyMsg, setKeyMsg] = useState(null); // { ok, text }
 
   const [selected, setSelected] = useState(null);
   const [playMovie, setPlayMovie] = useState(null);
@@ -122,7 +127,27 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
       setSearching(false);
     }, 350);
     return () => clearTimeout(t);
-  }, [search, catalog]);
+  }, [search, catalog, searchNonce]);
+
+  // Lưu TMDB API key người dùng dán vào (lưu localStorage, dùng ngay)
+  const saveTMDBKey = async () => {
+    const k = keyInput.trim();
+    if (!k) { setKeyMsg({ ok: false, text: 'Chưa nhập key.' }); return; }
+    setKeyChecking(true);
+    setKeyMsg(null);
+    const v = await MovieAPI.verifyKey(k).catch(() => ({ ok: false, error: 'Lỗi mạng' }));
+    setKeyChecking(false);
+    if (v.ok) {
+      setTMDBKey(k);
+      setKeyInput('');
+      setShowKeyBox(false);
+      setKeyMsg({ ok: true, text: '✅ Key hợp lệ! Đã lưu — tìm kiếm toàn bộ TMDB ngay bây giờ.' });
+      setSearchNonce(n => n + 1); // ép tìm lại với key mới
+      addToast('Đã lưu TMDB API key — kho phim mở rộng toàn bộ TMDB', 'success');
+    } else {
+      setKeyMsg({ ok: false, text: `❌ Key không hợp lệ (HTTP ${v.status || '?'}): ${v.status_message || v.error || 'thử key khác'}` });
+    }
+  };
 
   const openDetail = useCallback(async (movie) => {
     setSelected(movie);
@@ -230,8 +255,46 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
           <div className="flex items-center gap-2 text-[11px] text-stone-500 shrink-0">
             <SlidersHorizontal className="w-3.5 h-3.5" />
             <span>{catalog.length > 0 ? `${catalog.length.toLocaleString('vi-VN')} phim & TV show` : 'Đang nạp kho phim…'}</span>
+            <button
+              onClick={() => setShowKeyBox(s => !s)}
+              className={`ml-1 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-all ${isDefaultTMDBKey() ? 'border-amber-500/40 text-amber-400 hover:bg-amber-500/10' : 'border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10'}`}
+              title="Dán TMDB API key của bạn để tìm toàn bộ phim trên TMDB"
+            >
+              🔑 {isDefaultTMDBKey() ? 'Cài TMDB key' : 'Key TMDB ✓'}
+            </button>
           </div>
         </div>
+
+        {/* Hộp nhập TMDB API key */}
+        {showKeyBox && (
+          <div className="max-w-7xl mx-auto mt-3">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 bg-amber-500/5 border border-amber-500/25 rounded-xl p-3">
+              <div className="flex-1">
+                <div className="text-[11px] font-bold text-amber-400 mb-1">
+                  {isDefaultTMDBKey() ? '⚠️ Bạn đang dùng key mặc định — chỉ tìm được trong 68 phim có sẵn. Dán key TMDB thật để tìm TOÀN BỘ phim:' : 'Thay đổi TMDB API key (lưu trên trình duyệt này):'}
+                </div>
+                <input
+                  type="text" value={keyInput}
+                  onChange={e => { setKeyInput(e.target.value); setKeyMsg(null); }}
+                  onKeyDown={e => { if (e.key === 'Enter') saveTMDBKey(); }}
+                  placeholder="Dán key TMDB vào đây (vd: 1a2b3c4d...)" 
+                  className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-lg text-xs text-white placeholder:text-stone-600 focus:outline-none focus:border-amber-500"
+                />
+              </div>
+              <button
+                onClick={saveTMDBKey}
+                disabled={keyChecking}
+                className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-black text-xs font-black disabled:opacity-50 whitespace-nowrap"
+              >
+                {keyChecking ? 'Đang kiểm tra…' : 'Lưu key & tìm lại'}
+              </button>
+            </div>
+            {keyMsg && (
+              <p className={`text-[11px] mt-1.5 ${keyMsg.ok ? 'text-emerald-400' : 'text-red-400'}`}>{keyMsg.text}</p>
+            )}
+            <p className="text-[10px] text-stone-600 mt-1">Key miễn phí tại <span className="text-stone-500">themoviedb.org/settings/api</span> — dán vào đây, app lưu ngay trên trình duyệt bạn.</p>
+          </div>
+        )}
 
         {/* Genre chips */}
         {!search.trim() && genres.length > 0 && (
@@ -267,6 +330,14 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
             <div className="text-center py-16">
               <Film className="w-12 h-12 text-stone-700 mx-auto mb-3" />
               <p className="text-stone-500 text-sm">Không tìm thấy phim nào. Thử từ khóa khác.</p>
+              {isDefaultTMDBKey() && !showKeyBox && (
+                <button
+                  onClick={() => setShowKeyBox(true)}
+                  className="mt-4 px-4 py-2 rounded-lg bg-amber-500/15 border border-amber-500/40 text-amber-400 text-xs font-bold hover:bg-amber-500/25 transition"
+                >
+                  🔑 Dán TMDB API key để tìm toàn bộ phim trên TMDB
+                </button>
+              )}
             </div>
           ) : (
             <div className={`grid gap-2.5 ${gridCls}`}>

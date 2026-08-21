@@ -431,6 +431,7 @@ function MovieRow({ title, items, gridCls = 'grid-cols-2 sm:grid-cols-3 md:grid-
 }
 
 function MovieCard({ movie, onClick }) {
+  const { t } = useI18n();
   const rating = movie.vote_average || 0;
   return (
     <button

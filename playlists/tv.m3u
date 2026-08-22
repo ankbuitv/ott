@@ -1,0 +1,105 @@
+#EXTM3U x-tvg-url="https://lichphatsong.io.vn/epgc.xml"
+# CHRTV - Danh sách kênh truyền hình Việt Nam
+# File này là NGUỒN DỮ LIỆU chính cho bảng channels trong D1.
+# Worker fetch file này (SOURCE_M3U_URL) mỗi khi D1 rỗng hoặc gọi /api/playlist?refresh=1
+# Muốn thêm/sửa kênh: sửa file này, commit, deploy lại worker → kênh tự cập nhật.
+
+# ============ VTV - Đài Truyền hình Việt Nam ============
+#EXTINF:-1 tvg-id="VTV1.vn" tvg-name="VTV1" tvg-logo="https://vtv.sub.id/images/vtv1.png" group-title="VTV" catchup-type="append" catchup-days="7",VTV1 HD
+https://vtv.sub.id/vtv1/index.m3u8
+#EXTINF:-1 tvg-id="VTV2.vn" tvg-name="VTV2" tvg-logo="https://vtv.sub.id/images/vtv2.png" group-title="VTV" catchup-type="append" catchup-days="7",VTV2 HD
+https://vtv.sub.id/vtv2/index.m3u8
+#EXTINF:-1 tvg-id="VTV3.vn" tvg-name="VTV3" tvg-logo="https://vtv.sub.id/images/vtv3.png" group-title="VTV" catchup-type="append" catchup-days="7",VTV3 HD
+https://vtv.sub.id/vtv3/index.m3u8
+#EXTINF:-1 tvg-id="VTV4.vn" tvg-name="VTV4" tvg-logo="https://vtv.sub.id/images/vtv4.png" group-title="VTV" catchup-type="append" catchup-days="7",VTV4 HD
+https://vtv.sub.id/vtv4/index.m3u8
+#EXTINF:-1 tvg-id="VTV5.vn" tvg-name="VTV5" tvg-logo="https://vtv.sub.id/images/vtv5.png" group-title="VTV" catchup-type="append" catchup-days="7",VTV5 HD
+https://vtv.sub.id/vtv5/index.m3u8
+#EXTINF:-1 tvg-id="VTV6.vn" tvg-name="VTV6" tvg-logo="https://vtv.sub.id/images/vtv6.png" group-title="VTV" catchup-type="append" catchup-days="7",VTV6 HD
+https://vtv.sub.id/vtv6/index.m3u8
+#EXTINF:-1 tvg-id="VTV7.vn" tvg-name="VTV7" tvg-logo="https://vtv.sub.id/images/vtv7.png" group-title="VTV" catchup-type="append" catchup-days="7",VTV7 HD
+https://vtv.sub.id/vtv7/index.m3u8
+#EXTINF:-1 tvg-id="VTV8.vn" tvg-name="VTV8" tvg-logo="https://vtv.sub.id/images/vtv8.png" group-title="VTV" catchup-type="append" catchup-days="7",VTV8 HD
+https://vtv.sub.id/vtv8/index.m3u8
+#EXTINF:-1 tvg-id="VTV9.vn" tvg-name="VTV9" tvg-logo="https://vtv.sub.id/images/vtv9.png" group-title="VTV" catchup-type="append" catchup-days="7",VTV9 HD
+https://vtv.sub.id/vtv9/index.m3u8
+
+# ============ HTV - Đài truyền hình TP.HCM ============
+#EXTINF:-1 tvg-id="HTV1.vn" tvg-name="HTV1" tvg-logo="https://vtv.sub.id/images/htv1.png" group-title="HTV" catchup-type="append" catchup-days="7",HTV1 HD
+https://vtv.sub.id/htv1/index.m3u8
+#EXTINF:-1 tvg-id="HTV2.vn" tvg-name="HTV2" tvg-logo="https://vtv.sub.id/images/htv2.png" group-title="HTV" catchup-type="append" catchup-days="7",HTV2 HD
+https://vtv.sub.id/htv2/index.m3u8
+#EXTINF:-1 tvg-id="HTV3.vn" tvg-name="HTV3" tvg-logo="https://vtv.sub.id/images/htv3.png" group-title="HTV" catchup-type="append" catchup-days="7",HTV3 HD
+https://vtv.sub.id/htv3/index.m3u8
+#EXTINF:-1 tvg-id="HTV7.vn" tvg-name="HTV7" tvg-logo="https://vtv.sub.id/images/htv7.png" group-title="HTV" catchup-type="append" catchup-days="7",HTV7 HD
+https://vtv.sub.id/htv7/index.m3u8
+#EXTINF:-1 tvg-id="HTV9.vn" tvg-name="HTV9" tvg-logo="https://vtv.sub.id/images/htv9.png" group-title="HTV" catchup-type="append" catchup-days="7",HTV9 HD
+https://vtv.sub.id/htv9/index.m3u8
+#EXTINF:-1 tvg-id="HTVC1.vn" tvg-name="HTVC1" tvg-logo="https://vtv.sub.id/images/htvc1.png" group-title="HTV" catchup-type="append" catchup-days="7",HTVC1 HD
+https://vtv.sub.id/htvc1/index.m3u8
+#EXTINF:-1 tvg-id="HTVC2.vn" tvg-name="HTVC2" tvg-logo="https://vtv.sub.id/images/htvc2.png" group-title="HTV" catchup-type="append" catchup-days="7",HTVC2 HD
+https://vtv.sub.id/htvc2/index.m3u8
+#EXTINF:-1 tvg-id="HTVC3.vn" tvg-name="HTVC3" tvg-logo="https://vtv.sub.id/images/htvc3.png" group-title="HTV" catchup-type="append" catchup-days="7",HTVC3 HD
+https://vtv.sub.id/htvc3/index.m3u8
+
+# ============ THVL - Đài truyền hình Vĩnh Long ============
+#EXTINF:-1 tvg-id="THVL1.vn" tvg-name="THVL1" tvg-logo="https://vtv.sub.id/images/thvl1.png" group-title="THVL" catchup-type="append" catchup-days="7",THVL1 HD
+https://vtv.sub.id/thvl1/index.m3u8
+#EXTINF:-1 tvg-id="THVL2.vn" tvg-name="THVL2" tvg-logo="https://vtv.sub.id/images/thvl2.png" group-title="THVL" catchup-type="append" catchup-days="7",THVL2 HD
+https://vtv.sub.id/thvl2/index.m3u8
+#EXTINF:-1 tvg-id="THVL3.vn" tvg-name="THVL3" tvg-logo="https://vtv.sub.id/images/thvl3.png" group-title="THVL" catchup-type="append" catchup-days="7",THVL3 HD
+https://vtv.sub.id/thvl3/index.m3u8
+#EXTINF:-1 tvg-id="THVL4.vn" tvg-name="THVL4" tvg-logo="https://vtv.sub.id/images/thvl4.png" group-title="THVL" catchup-type="append" catchup-days="7",THVL4 HD
+https://vtv.sub.id/thvl4/index.m3u8
+
+# ============ VTC - Đài Truyền hình Kỹ thuật số ============
+#EXTINF:-1 tvg-id="VTC1.vn" tvg-name="VTC1" tvg-logo="https://vtv.sub.id/images/vtc1.png" group-title="VTC" catchup-type="append" catchup-days="7",VTC1 HD
+https://vtv.sub.id/vtc1/index.m3u8
+#EXTINF:-1 tvg-id="VTC3.vn" tvg-name="VTC3" tvg-logo="https://vtv.sub.id/images/vtc3.png" group-title="VTC" catchup-type="append" catchup-days="7",VTC3 HD
+https://vtv.sub.id/vtc3/index.m3u8
+#EXTINF:-1 tvg-id="VTC7.vn" tvg-name="VTC7" tvg-logo="https://vtv.sub.id/images/vtc7.png" group-title="VTC" catchup-type="append" catchup-days="7",VTC7 HD
+https://vtv.sub.id/vtc7/index.m3u8
+#EXTINF:-1 tvg-id="VTC9.vn" tvg-name="VTC9" tvg-logo="https://vtv.sub.id/images/vtc9.png" group-title="VTC" catchup-type="append" catchup-days="7",VTC9 HD
+https://vtv.sub.id/vtc9/index.m3u8
+#EXTINF:-1 tvg-id="VTC14.vn" tvg-name="VTC14" tvg-logo="https://vtv.sub.id/images/vtc14.png" group-title="VTC" catchup-type="append" catchup-days="7",VTC14 HD
+https://vtv.sub.id/vtc14/index.m3u8
+
+# ============ Thể Thao ============
+#EXTINF:-1 tvg-id="ON_SPORTS.vn" tvg-name="ON Sports+" tvg-logo="https://vtv.sub.id/images/onsports.png" group-title="Thể Thao" catchup-type="append" catchup-days="7",ON Sports+ HD
+https://vtv.sub.id/onsports/index.m3u8
+#EXTINF:-1 tvg-id="ON_FOOTBALL.vn" tvg-name="ON Football" tvg-logo="https://vtv.sub.id/images/onfootball.png" group-title="Thể Thao" catchup-type="append" catchup-days="7",ON Football HD
+https://vtv.sub.id/onfootball/index.m3u8
+#EXTINF:-1 tvg-id="BONGDA_TV.vn" tvg-name="Bóng Đá TV" tvg-logo="https://vtv.sub.id/images/bongdatv.png" group-title="Thể Thao" catchup-type="append" catchup-days="7",Bóng Đá TV HD
+https://vtv.sub.id/bongdatv/index.m3u8
+
+# ============ Giải Trí & Phim ============
+#EXTINF:-1 tvg-id="SCTV14.vn" tvg-name="SCTV14" tvg-logo="https://vtv.sub.id/images/sctv14.png" group-title="Giải Trí" catchup-type="append" catchup-days="7",SCTV14 HD
+https://vtv.sub.id/sctv14/index.m3u8
+#EXTINF:-1 tvg-id="SCTV15.vn" tvg-name="SCTV15" tvg-logo="https://vtv.sub.id/images/sctv15.png" group-title="Giải Trí" catchup-type="append" catchup-days="7",SCTV15 HD
+https://vtv.sub.id/sctv15/index.m3u8
+#EXTINF:-1 tvg-id="GALAXY_PLAY.vn" tvg-name="Galaxy Play" tvg-logo="https://vtv.sub.id/images/galaxyplay.png" group-title="Phim" catchup-type="append" catchup-days="7",Galaxy Play
+https://vtv.sub.id/galaxyplay/index.m3u8
+#EXTINF:-1 tvg-id="VTVcab1.vn" tvg-name="VTVCab 1" tvg-logo="https://vtv.sub.id/images/vtvcab1.png" group-title="Giải Trí" catchup-type="append" catchup-days="7",VTVCab 1 HD
+https://vtv.sub.id/vtvcab1/index.m3u8
+#EXTINF:-1 tvg-id="VTVcab5.vn" tvg-name="VTVCab 5" tvg-logo="https://vtv.sub.id/images/vtvcab5.png" group-title="Phim" catchup-type="append" catchup-days="7",VTVCab 5 HD
+https://vtv.sub.id/vtvcab5/index.m3u8
+
+# ============ Tin Tức ============
+#EXTINF:-1 tvg-id="VOVTV.vn" tvg-name="VOV TV" tvg-logo="https://vtv.sub.id/images/vovtv.png" group-title="Tin Tức" catchup-type="append" catchup-days="7",VOV TV HD
+https://vtv.sub.id/vovtv/index.m3u8
+#EXTINF:-1 tvg-id="VNEWS.vn" tvg-name="VNEWS" tvg-logo="https://vtv.sub.id/images/vnews.png" group-title="Tin Tức" catchup-type="append" catchup-days="7",VNEWS HD
+https://vtv.sub.id/vnews/index.m3u8
+#EXTINF:-1 tvg-id="ANTV.vn" tvg-name="ANTV" tvg-logo="https://vtv.sub.id/images/antv.png" group-title="Tin Tức" catchup-type="append" catchup-days="7",ANTV HD
+https://vtv.sub.id/antv/index.m3u8
+#EXTINF:-1 tvg-id="QPVN.vn" tvg-name="QPVN" tvg-logo="https://vtv.sub.id/images/qpvn.png" group-title="Tin Tức" catchup-type="append" catchup-days="7",QPVN HD
+https://vtv.sub.id/qpvn/index.m3u8
+
+# ============ Thiếu Nhi ============
+#EXTINF:-1 tvg-id="VTVCab3.vn" tvg-name="VTVCab 3" tvg-logo="https://vtv.sub.id/images/vtvcab3.png" group-title="Thiếu Nhi" catchup-type="append" catchup-days="7",VTVCab 3 HD
+https://vtv.sub.id/vtvcab3/index.m3u8
+#EXTINF:-1 tvg-id="BIBO.vn" tvg-name="BiBo TV" tvg-logo="https://vtv.sub.id/images/bibo.png" group-title="Thiếu Nhi" catchup-type="append" catchup-days="7",BiBo TV HD
+https://vtv.sub.id/bibo/index.m3u8
+
+# ============ Dự Phòng (fallback) ============
+#EXTINF:-1 tvg-id="CHRTV_FALLBACK" tvg-name="CHRTV Test" tvg-logo="https://i.ibb.co/HDmcxzMK/Gemini-Generated-Image-v7i9yav7i9yav7i9-removebg-preview.png" group-title="Dự Phòng" catchup-type="default" catchup-days="7",CHRTV Test Stream
+http://bore.pub:30113/hls/index.m3u8

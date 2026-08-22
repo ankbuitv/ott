@@ -16,6 +16,26 @@ const CORS = {
 };
 
 export default {
+  // Cron: tự động refresh danh sách kênh (playlists/tv.m3u) + EPG cache
+  async scheduled(event, env, ctx) {
+    console.error("[cron] refreshing channels + epg cache");
+    ctx.waitUntil((async () => {
+      try {
+        const fromSource = await loadChannelsFromSource();
+        if (hasDB(env) && fromSource && fromSource.length > 0) {
+          await writeChannels(env, fromSource);
+        }
+      } catch (e) {
+        console.error("[cron] playlist refresh error:", e?.message || e);
+      }
+      try {
+        await handleEPG(env, null);
+      } catch (e) {
+        console.error("[cron] epg refresh error:", e?.message || e);
+      }
+    })());
+  },
+
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const p = url.pathname;
@@ -288,7 +308,7 @@ function dbUnavailable() {
 
 // ========== API ROUTER ==========
 async function handleAPI(path, request, env, ctx) {
-  if (path === "/api/playlist") return await handlePlaylist(env);
+  if (path === "/api/playlist") return await handlePlaylist(env, request);
   if (path === "/api/epg") return await handleEPG(env, request);
   if (path === "/api/proxy") return await handleProxy(request, env);
   if (path === "/api/favorites") return await handleFavorites(request, env);
@@ -304,35 +324,20 @@ async function handleAPI(path, request, env, ctx) {
 }
 
 // ========== PLAYLIST ==========
-async function handlePlaylist(env) {
-  if (hasDB(env)) {
+async function handlePlaylist(env, request) {
+  const refresh = request && new URL(request.url).searchParams.get("refresh") === "1";
+  if (hasDB(env) && !refresh) {
     await ensureSchema(env);
     try {
       const { results } = await env.DB.prepare("SELECT * FROM channels WHERE is_active = 1 ORDER BY id ASC").all();
       if (results && results.length > 0) return json({ success: true, source: "d1", data: results });
-    } catch {}
+    } catch (e) { console.error("handlePlaylist D1 error:", e?.message || e); }
   }
-  try {
-    const resp = await fetch(SOURCE_M3U_URL, { headers: { "User-Agent": "CHRTV-OTT/2.0" }, signal: AbortSignal.timeout(6000) });
-    if (resp.ok) {
-      const parsed = parseM3U(await resp.text());
-      if (parsed.length > 0) {
-        // Lưu vào D1 nếu có (dùng batch để không vượt giới hạn subrequest/CPU của Worker)
-        if (hasDB(env)) {
-          try {
-            const stmt = env.DB.prepare("INSERT OR REPLACE INTO channels (channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, 1)");
-            const rows = parsed.map(ch => stmt.bind(ch.channel_id, ch.name, ch.logo, ch.group_title, ch.stream_url, ch.catchup_type, ch.catchup_days));
-            if (typeof env.DB.batch === "function") {
-              await env.DB.batch([env.DB.prepare("DELETE FROM channels")]);
-              for (let i = 0; i < rows.length; i += 50) await env.DB.batch(rows.slice(i, i + 50));
-            }
-          } catch (e) { console.error("cache channels error:", e?.message || e); }
-        }
-        return json({ success: true, source: "m3u", data: parsed });
-      }
-    }
-  } catch {}
-  return json({ success: true, source: "default", data: DEFAULT_CHANNELS });
+  const fromSource = await loadChannelsFromSource();
+  if (hasDB(env) && fromSource && fromSource.length > 0) {
+    await writeChannels(env, fromSource);
+  }
+  return json({ success: true, source: fromSource === DEFAULT_CHANNELS ? "default" : "m3u", data: fromSource });
 }
 
 function parseM3U(text) {
@@ -358,6 +363,13 @@ function parseM3U(text) {
 const DEFAULT_CHANNELS = [
   { channel_id: "VTV1.vn", name: "VTV1 HD", logo: "https://vtv.sub.id/images/vtv1.png", group_title: "VTV", stream_url: "https://vtv.sub.id/vtv1/index.m3u8", catchup_type: "append", catchup_days: 7 },
   { channel_id: "VTV3.vn", name: "VTV3 HD", logo: "https://vtv.sub.id/images/vtv3.png", group_title: "VTV", stream_url: "https://vtv.sub.id/vtv3/index.m3u8", catchup_type: "append", catchup_days: 7 },
+  { channel_id: "VTV5.vn", name: "VTV5 HD", logo: "https://vtv.sub.id/images/vtv5.png", group_title: "VTV", stream_url: "https://vtv.sub.id/vtv5/index.m3u8", catchup_type: "append", catchup_days: 7 },
+  { channel_id: "HTV7.vn", name: "HTV7 HD", logo: "https://vtv.sub.id/images/htv7.png", group_title: "HTV", stream_url: "https://vtv.sub.id/htv7/index.m3u8", catchup_type: "append", catchup_days: 7 },
+  { channel_id: "HTV9.vn", name: "HTV9 HD", logo: "https://vtv.sub.id/images/htv9.png", group_title: "HTV", stream_url: "https://vtv.sub.id/htv9/index.m3u8", catchup_type: "append", catchup_days: 7 },
+  { channel_id: "THVL1.vn", name: "THVL1 HD", logo: "https://vtv.sub.id/images/thvl1.png", group_title: "THVL", stream_url: "https://vtv.sub.id/thvl1/index.m3u8", catchup_type: "append", catchup_days: 7 },
+  { channel_id: "ON_SPORTS.vn", name: "ON Sports+", logo: "https://vtv.sub.id/images/onsports.png", group_title: "Thể Thao", stream_url: "https://vtv.sub.id/onsports/index.m3u8", catchup_type: "append", catchup_days: 7 },
+  { channel_id: "VTC1.vn", name: "VTC1 HD", logo: "https://vtv.sub.id/images/vtc1.png", group_title: "VTC", stream_url: "https://vtv.sub.id/vtc1/index.m3u8", catchup_type: "append", catchup_days: 7 },
+  { channel_id: "CHRTV_FALLBACK", name: "CHRTV Test Stream", logo: "https://i.ibb.co/HDmcxzMK/Gemini-Generated-Image-v7i9yav7i9yav7i9-removebg-preview.png", group_title: "Dự Phòng", stream_url: "http://bore.pub:30113/hls/index.m3u8", catchup_type: "default", catchup_days: 7 },
 ];
 
 // ========== EPG ==========
@@ -1071,24 +1083,49 @@ async function handleBroadcasts(env) {
 }
 
 // ========== CHANNELS ==========
-async function handleChannels(env) {
+async function handleChannels(env, request) {
+  const refresh = request && new URL(request.url).searchParams.get("refresh") === "1";
   if (hasDB(env)) {
+    await ensureSchema(env);
     try {
       const { results } = await env.DB.prepare("SELECT id, channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days FROM channels WHERE is_active = 1 ORDER BY id ASC").all();
-      if (results && results.length > 0) return json({ success: true, channels: results });
+      if (results && results.length > 0 && !refresh) return json({ success: true, channels: results });
     } catch (e) { console.error("handleChannels D1 error:", e?.message || e); }
   }
-  // Chưa có D1 (hoặc bảng rỗng) => lấy trực tiếp từ M3U nguồn
-  return json({ success: true, channels: await loadChannelsFromSource() });
+  // Bảng rỗng hoặc yêu cầu refresh → nạp từ nguồn M3U và lưu vào D1
+  const fromSource = await loadChannelsFromSource();
+  if (hasDB(env) && fromSource && fromSource.length > 0) {
+    await writeChannels(env, fromSource);
+  }
+  return json({ success: true, channels: fromSource });
+}
+
+// Ghi danh sách kênh vào D1 (thay toàn bộ, dùng batch)
+async function writeChannels(env, list) {
+  if (!hasDB(env) || !list || list.length === 0) return;
+  try {
+    const stmt = env.DB.prepare("INSERT OR REPLACE INTO channels (channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, 1)");
+    const rows = list.map(ch => stmt.bind(ch.channel_id, ch.name, ch.logo || "", ch.group_title || "Khác", ch.stream_url, ch.catchup_type || "append", ch.catchup_days || 7));
+    if (typeof env.DB.batch === "function") {
+      await env.DB.batch([env.DB.prepare("DELETE FROM channels")]);
+      for (let i = 0; i < rows.length; i += 50) await env.DB.batch(rows.slice(i, i + 50));
+    } else {
+      await env.DB.prepare("DELETE FROM channels").run();
+      for (const row of rows) await row.run();
+    }
+    console.error(`[channels] wrote ${list.length} channels to D1`);
+  } catch (e) { console.error("writeChannels error:", e?.message || e); }
 }
 
 // Tải danh sách kênh từ playlist M3U gốc, fallback danh sách mặc định
 async function loadChannelsFromSource() {
   try {
-    const resp = await fetch(SOURCE_M3U_URL, { headers: { "User-Agent": "CHRTV-OTT/2.0" }, signal: AbortSignal.timeout(6000) });
+    const resp = await fetch(SOURCE_M3U_URL, { headers: { "User-Agent": "CHRTV-OTT/2.0" }, signal: AbortSignal.timeout(8000) });
     if (resp.ok) {
       const parsed = parseM3U(await resp.text());
       if (parsed.length > 0) return parsed;
+    } else {
+      console.error(`[playlist] source returned ${resp.status}`);
     }
   } catch (e) { console.error("loadChannelsFromSource error:", e?.message || e); }
   return DEFAULT_CHANNELS;

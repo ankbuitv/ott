@@ -7,6 +7,10 @@ name = "chrtv-backend"
 main = "worker/worker.js"
 compatibility_date = "2024-01-01"
 
+# Cron: tự động refresh danh sách kênh (playlists/tv.m3u) + EPG cache mỗi 6 giờ.
+[triggers]
+crons = ["0 */6 * * *"]
+
 # Serve the built frontend from dist/ as static assets.
 # Requests that do NOT match an asset (e.g. /api/*) fall through to worker.js.
 # NOTE: keep this BEFORE the [build] table (TOML table ordering).

@@ -8,15 +8,16 @@ import { buildEmbedSources, openExternalSearch } from '../services/embeds';
  * chuyển server nếu 1 server lỗi.
  *
  * Chống quảng cáo:
- * - iframe được sandbox (không allow-popups / allow-top-navigation / allow-modals
- *   / allow-downloads) => chặn pop-up, pop-under, redirect cướp trang.
+ * - Nút "Chặn QC" bật sandbox cho iframe (không allow-popups / allow-top-navigation*
+ *   / allow-modals / allow-downloads) => chặn pop-up, pop-under, redirect cướp trang.
+ *   NHƯNG mặc định TẮT (sandbox để trống): nhiều server phát hiện iframe bị sandbox
+ *   là hiện thông báo "please disable sandbox" và từ chối phát. Chỉ bật sandbox khi
+ *   người xem chủ động bật "Chặn QC". Trạng thái lưu localStorage ('1' = bật).
  * - referrerPolicy="no-referrer" để không lộ trang cha cho script quảng cáo.
- * - Nút "Chặn QC" trên header cho phép tắt sandbox nếu server nào không chịu
- *   phát khi bị sandbox (lưu localStorage, mặc định BẬT).
  * - Chặn luôn window.open ở trang cha trong lúc modal đang mở (khôi phục khi đóng).
  */
 
-const ADBLOCK_KEY = 'chrtv_movie_adblock'; // localStorage: '0' = tắt, mặc định bật
+const ADBLOCK_KEY = 'chrtv_movie_adblock'; // localStorage: '1' = bật sandbox chặn QC; mặc định tắt
 
 // Quyền sandbox tối thiểu để player chạy được nhưng KHÔNG mở được pop-up/redirect.
 // Tuyệt đối không thêm: allow-popups, allow-top-navigation*, allow-modals, allow-downloads.
@@ -30,8 +31,10 @@ export default function MoviePlayerModal({ movie, onClose }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [reloadKey, setReloadKey] = useState(0); // tăng dần để ép iframe mount lại
+  // Chặn quảng cáo (sandbox iframe) — mặc định TẮT vì nhiều server báo
+  // "please disable sandbox" và không phát khi iframe bị sandbox.
   const [adBlock, setAdBlock] = useState(() => {
-    try { return localStorage.getItem(ADBLOCK_KEY) !== '0'; } catch { return true; }
+    try { return localStorage.getItem(ADBLOCK_KEY) === '1'; } catch { return false; }
   });
 
   const sources = useMemo(() => buildEmbedSources(movie, isTV ? season : null, isTV ? episode : null), [movie, isTV, season, episode]);
@@ -120,7 +123,7 @@ export default function MoviePlayerModal({ movie, onClose }) {
           {/* Nút bật/tắt chặn quảng cáo (sandbox iframe) */}
           <button
             onClick={toggleAdBlock}
-            title={adBlock ? 'Đang chặn quảng cáo (sandbox). Bấm để tắt nếu server không phát được.' : 'Đã tắt chặn quảng cáo — có thể bị pop-up. Bấm để bật lại.'}
+            title={adBlock ? 'Đang bật sandbox chặn QC — nếu server báo "disable sandbox" hoặc không phát, hãy tắt.' : 'Bật sandbox để chặn pop-up quảng cáo. Mặc định tắt vì nhiều server yêu cầu tắt sandbox.'}
             className={`px-3 py-1.5 rounded-full text-[11px] font-bold flex items-center gap-1.5 transition-all border ${
               adBlock
                 ? 'bg-emerald-600/20 text-emerald-400 border-emerald-500/40 hover:bg-emerald-600/30'
@@ -192,7 +195,9 @@ export default function MoviePlayerModal({ movie, onClose }) {
               <h3 className="text-base font-bold text-white mb-1">Server {current?.name} không phát được</h3>
               <p className="text-xs text-stone-500 mb-4 max-w-sm">
                 Nguồn này có thể đang lỗi hoặc hết phim.
-                {adBlock && ' Nếu nghi do chặn quảng cáo, thử tắt "Chặn QC" ở góc trên.'}
+                {adBlock
+                  ? ' Nếu server báo "please disable sandbox" hoặc không phát, hãy tắt "Chặn QC" ở góc trên.'
+                  : ' Thử chuyển server khác bên dưới, hoặc bấm "Mở tab mới" để xem trực tiếp trên trang nguồn.'}
               </p>
               <div className="flex items-center gap-2 flex-wrap justify-center">
                 <button onClick={nextSource} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5">
@@ -201,6 +206,16 @@ export default function MoviePlayerModal({ movie, onClose }) {
                 <button onClick={reload} className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl flex items-center gap-1.5">
                   <RefreshCw className="w-3.5 h-3.5" /> Tải lại
                 </button>
+                {current?.url && (
+                  <a
+                    href={current.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl flex items-center gap-1.5"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" /> Mở tab mới
+                  </a>
+                )}
                 <button onClick={() => openExternalSearch(movie)} className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl flex items-center gap-1.5">
                   <ExternalLink className="w-3.5 h-3.5" /> Tìm nguồn khác
                 </button>
@@ -238,7 +253,7 @@ export default function MoviePlayerModal({ movie, onClose }) {
               <RefreshCw className="w-3 h-3" /> Reload
             </button>
           </div>
-          <p className="text-[9px] text-stone-600 mt-1.5">Nguồn thứ 3 (embed API) — nguồn gắn nhãn "sạch" ít/không quảng cáo, nên thử trước. Nếu 1 server lỗi, bấm số khác để chuyển.</p>
+          <p className="text-[9px] text-stone-600 mt-1.5">Nguồn thứ 3 (embed API) — nguồn gắn nhãn "sạch" ít/không quảng cáo, nên thử trước. Nếu 1 server lỗi hoặc báo "disable sandbox", bấm số khác để chuyển, hoặc bật/tắt "Chặn QC" ở góc trên.</p>
         </div>
       </div>
     </div>

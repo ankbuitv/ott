@@ -73,8 +73,9 @@ export async function getPopularMovies() {
 export async function getTopRated() {
   return tmdbFetch('/movie/top_rated');
 }
-export async function getNowPlaying() {
-  return tmdbFetch('/movie/now_playing');
+export async function getNowPlaying(region) {
+  const q = region ? { region } : {};
+  return tmdbFetch('/movie/now_playing', q);
 }
 export async function getPopularTV() {
   return tmdbFetch('/tv/popular');
@@ -199,10 +200,35 @@ async function safe(name, fn, fb) {
   return { results: fb };
 }
 
+// ====== Phát hiện khu vực cho banner phim ======
+export const COUNTRY_INFO = {
+  VN: { flag: '🇻🇳', name: 'Việt Nam', region: 'VN' },
+  PH: { flag: '🇵🇭', name: 'Philippines', region: 'PH' },
+  CN: { flag: '🇨🇳', name: '中国', region: 'CN' },
+  FR: { flag: '🇫🇷', name: 'France', region: 'FR' },
+  US: { flag: '🌍', name: 'International', region: 'US' },
+};
+
+// Fallback theo khu vực khi TMDB fail/hết quota (dùng phim thật có trong FALLBACK_FEATURED)
+const REGION_FALLBACKS = {
+  VN: [FALLBACK_FEATURED[0], FALLBACK_FEATURED[3], FALLBACK_FEATURED[8], FALLBACK_FEATURED[4], FALLBACK_FEATURED[20], FALLBACK_FEATURED[9], FALLBACK_FEATURED[13], FALLBACK_FEATURED[22]],
+  PH: [FALLBACK_FEATURED[0], FALLBACK_FEATURED[3], FALLBACK_FEATURED[4], FALLBACK_FEATURED[13], FALLBACK_FEATURED[10], FALLBACK_FEATURED[5], FALLBACK_FEATURED[22], FALLBACK_FEATURED[8]],
+  CN: [FALLBACK_FEATURED[0], FALLBACK_FEATURED[2], FALLBACK_FEATURED[22], FALLBACK_FEATURED[24], FALLBACK_FEATURED[26], FALLBACK_FEATURED[31], FALLBACK_FEATURED[32], FALLBACK_FEATURED[33]],
+  FR: [FALLBACK_FEATURED[12], FALLBACK_FEATURED[10], FALLBACK_FEATURED[11], FALLBACK_FEATURED[20], FALLBACK_FEATURED[21], FALLBACK_FEATURED[9], FALLBACK_FEATURED[15], FALLBACK_FEATURED[30]],
+  US: FALLBACK_TRENDING,
+};
+
 export const MovieAPI = {
-  hero: () => safe('hero', () => getTrending('week'), FALLBACK_FEATURED.slice(0, 1)),
+  // Hero theo quốc gia: TMDB /movie/now_playing?region=XX trả phim đang chiếu tại nước đó
+  hero: (country) => {
+    const info = COUNTRY_INFO[country] || COUNTRY_INFO.US;
+    if (info.region !== 'US') {
+      return safe('hero_' + info.region, () => getNowPlaying(info.region), REGION_FALLBACKS[info.region] || REGION_FALLBACKS.US);
+    }
+    return safe('hero', () => getTrending('week'), REGION_FALLBACKS.US);
+  },
   trending: () => safe('tr', () => getTrending('week'), FALLBACK_TRENDING),
-  nowPlaying: () => safe('np', () => getNowPlaying(), FALLBACK_NOW_PLAYING),
+  nowPlaying: (region) => safe('np' + (region || ''), () => getNowPlaying(region || undefined), FALLBACK_NOW_PLAYING),
   topRated: () => safe('tr2', () => getTopRated(), FALLBACK_TOP_RATED),
   popularTV: () => safe('tv', () => getPopularTV(), FALLBACK_TV),
   search: async (q) => {

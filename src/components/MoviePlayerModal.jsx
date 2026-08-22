@@ -3,7 +3,7 @@ import { X, RefreshCw, ExternalLink, AlertTriangle, ChevronLeft, ChevronRight, P
 import { buildEmbedSources, openExternalSearch } from '../services/embeds';
 
 /**
- * CHRTV - Trình phát phim (nguồn thứ 3)
+ * CHRTV - Trình phát phim (multi-server embed)
  * Nhúng player từ các embed API — tất cả chỉ cần TMDB ID. Có selector để
  * chuyển server nếu 1 server lỗi.
  *
@@ -253,7 +253,7 @@ export default function MoviePlayerModal({ movie, onClose }) {
               <RefreshCw className="w-3 h-3" /> Reload
             </button>
           </div>
-          <p className="text-[9px] text-stone-600 mt-1.5">Nguồn thứ 3 (embed API) — nguồn gắn nhãn "sạch" ít/không quảng cáo, nên thử trước. Nếu 1 server lỗi hoặc báo "disable sandbox", bấm số khác để chuyển, hoặc bật/tắt "Chặn QC" ở góc trên.</p>
+          <p className="text-[9px] text-stone-600 mt-1.5">Nguồn gắn nhãn "sạch" ít/không quảng cáo, nên thử trước. Nếu 1 server lỗi hoặc báo "disable sandbox", bấm số khác để chuyển, hoặc bật/tắt "Chặn QC" ở góc trên.</p>
         </div>
       </div>
     </div>

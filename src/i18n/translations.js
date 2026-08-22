@@ -102,6 +102,7 @@ const T = {
   'movies.loading_catalog':        { vi: 'Đang nạp kho phim…',      en: 'Loading catalog…',        zh: '正在加载电影库…',            fil: 'Naglo-load ng catalog…',           fr: 'Chargement du catalogue…' },
   'movies.count_label':            { vi: 'phim & TV show',          en: 'movies & TV shows',       zh: '电影与电视剧',                fil: 'pelikula at TV show',              fr: 'films & séries' },
   'movies.btn.play':               { vi: 'Xem phim',                en: 'Watch now',               zh: '立即观看',                   fil: 'Panoorin',                        fr: 'Regarder' },
+  'movies.hero.featured':          { vi: 'NỔI BẬT',                 en: 'FEATURED',                zh: '精选',                       fil: 'ITINATAMPOK',                     fr: 'À LA UNE' },
   'movies.btn.info':               { vi: 'Thông tin',               en: 'Info',                    zh: '详情',                       fil: 'Impormasyon',                      fr: 'Info' },
   'movies.tmdb_key_btn.label':     { vi: '🔑 Cài TMDB key',         en: '🔑 Set TMDB key',         zh: '🔑 设置 TMDB 密钥',          fil: '🔑 I-set ang TMDB key',           fr: '🔑 Définir clé TMDB' },
   'movies.tmdb_key_btn.ok':        { vi: '🔑 Key TMDB ✓',           en: '🔑 TMDB Key ✓',           zh: '🔑 TMDB 密钥 ✓',             fil: '🔑 TMDB Key ✓',                   fr: '🔑 Clé TMDB ✓' },
@@ -135,9 +136,25 @@ const T = {
   'settings.epg_url': { vi: 'URL EPG tùy chỉnh', en: 'Custom EPG URL', zh: '自定义 EPG 网址', fil: 'Custom EPG URL', fr: 'URL EPG personnalisée' },
   'settings.confirm_reset': { vi: 'Xác nhận xóa tất cả?', en: 'Confirm reset all?', zh: '确认重置所有？', fil: 'Kumpirmahin ang reset?', fr: 'Confirmer la réinitialisation ?' },
   'settings.reset_default': { vi: 'Đặt lại mặc định', en: 'Reset to default', zh: '重置为默认', fil: 'I-reset sa default', fr: 'Réinitialiser' },
+  'settings.current_lang':   { vi: 'Ngôn ngữ hiện tại',    en: 'Current language',   zh: '当前语言',     fil: 'Kasalukuyang wika', fr: 'Langue actuelle' },
+  'settings.auto':           { vi: 'Tự động',              en: 'Auto',               zh: '自动',         fil: 'Awtomatiko',       fr: 'Auto' },
+  'settings.detected':       { vi: 'Tự động phát hiện',    en: 'Auto-detected',      zh: '自动检测',     fil: 'Awtomatikong na-detect', fr: 'Détection auto' },
+  'settings.region_label':   { vi: 'Khu vực phát hiện',    en: 'Detected region',    zh: '检测到的地区', fil: 'Na-detect na region', fr: 'Région détectée' },
+  'settings.show_stats':     { vi: 'Hiện thông số kỹ thuật khi xem', en: 'Show tech stats while watching', zh: '观看时显示技术参数', fil: 'Ipakita ang tech stats habang nanonood', fr: 'Afficher les stats techniques' },
+  'settings.rebuffering_goal': { vi: 'Mục tiêu giảm lag (giây)', en: 'Rebuffering goal (sec)', zh: '减少缓冲目标（秒）', fil: 'Rebuffering goal (seg)', fr: 'Objectif anti-lag (s)' },
+  'settings.buffer_behind':  { vi: 'Đệm phía sau (giây)',  en: 'Buffer behind (sec)', zh: '后方缓冲（秒）', fil: 'Buffer sa likod (seg)', fr: 'Buffer arrière (s)' },
+  'settings.sleep_timer':    { vi: 'Hẹn giờ tắt',          en: 'Sleep timer',        zh: '定时关闭',     fil: 'Sleep timer',      fr: 'Minuterie d\'arrêt' },
+  'settings.off':            { vi: 'Tắt',                  en: 'Off',                zh: '关闭',         fil: 'Naka-off',         fr: 'Désactivé' },
+  'settings.about':          { vi: 'Về ứng dụng',          en: 'About',              zh: '关于',         fil: 'Tungkol sa',       fr: 'À propos' },
+  'settings.version':        { vi: 'Phiên bản',            en: 'Version',            zh: '版本',         fil: 'Bersyon',          fr: 'Version' },
 
   'settings.language':  { vi: 'Ngôn ngữ',          en: 'Language',         zh: '语言',          fil: 'Wika',            fr: 'Langue' },
   'settings.choose_lang':{ vi: 'Chọn ngôn ngữ',   en: 'Choose language',  zh: '选择语言',      fil: 'Pumili ng wika',  fr: 'Choisir la langue' },
+  'settings.parental_desc': { vi: 'Nhập mã PIN 4-6 số để khóa nội dung người lớn. Khi bật, các nội dung nhạy cảm sẽ yêu cầu nhập PIN trước khi phát.', en: 'Set a 4-6 digit PIN to lock adult content. When enabled, sensitive content requires PIN before playing.', zh: '设置4-6位数字 PIN 锁定成人内容。启用后，敏感内容需要输入 PIN 才能播放。', fil: 'Magtakda ng 4-6 digit PIN para i-lock ang adult content. Kapag naka-enable, nangangailangan ng PIN ang sensitibong content bago i-play.', fr: 'Définissez un code PIN à 4-6 chiffres pour verrouiller le contenu adulte. Une fois activé, le contenu sensible nécessite un code PIN avant la lecture.' },
+  'settings.sleep_desc': { vi: 'Tự động tắt phát sau khoảng thời gian chọn. Hữu ích khi xem trước khi ngủ.', en: 'Automatically stop playback after the selected time. Useful for watching before sleep.', zh: '在选定时间后自动停止播放。适合睡前观看。', fil: 'Awtomatikong ihinto ang playback pagkatapos ng napiling oras. Kapaki-pakinabang kapag nanonood bago matulog.', fr: 'Arrête automatiquement la lecture après le temps sélectionné. Utile pour regarder avant de dormir.' },
+  'settings.minutes': { vi: 'phút', en: 'min', zh: '分钟', fil: 'minuto', fr: 'min' },
+  'settings.database_status': { vi: 'Trạng thái dữ liệu', en: 'Database status', zh: '数据库状态', fil: 'Status ng database', fr: 'État de la base de données' },
+  'settings.database_desc': { vi: 'Dữ liệu TV channels được lưu trên Cloudflare D1, đồng bộ từ playlist M3U gốc. Dùng ?refresh=1 để cập nhật.', en: 'TV channel data is stored on Cloudflare D1, synced from the original M3U playlist. Use ?refresh=1 to update.', zh: '电视频道数据存储在 Cloudflare D1 上，从原始 M3U 播放列表同步。使用 ?refresh=1 更新。', fil: 'Ang data ng TV channel ay naka-imbak sa Cloudflare D1, naka-sync mula sa orihinal na M3U playlist. Gamitin ang ?refresh=1 para i-update.', fr: 'Les données des chaînes TV sont stockées sur Cloudflare D1, synchronisées à partir de la playlist M3U d\'origine. Utilisez ?refresh=1 pour mettre à jour.' },
 
   // ============== COMMON ==============
   'common.back':   { vi: 'Quay lại',  en: 'Back',    zh: '返回',  fil: 'Bumalik',  fr: 'Retour' },
@@ -195,3 +212,22 @@ export function detectLang() {
     return 'en';
   } catch { return 'en'; }
 }
+
+// ========== GEO-DETECT: mã quốc gia từ timezone/browser (dùng cho banner phim theo vùng) ==========
+export function detectCountry() {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+    const locale = (navigator.language || 'en').toLowerCase();
+    // Việt Nam
+    if (['Asia/Ho_Chi_Minh','Asia/Saigon','Asia/Hanoi'].includes(tz) || locale.startsWith('vi')) return 'VN';
+    // Philippines
+    if (['Asia/Manila'].includes(tz) || locale.startsWith('fil') || locale.startsWith('tl')) return 'PH';
+    // Trung Quốc / Đài Loan / HK
+    if (['Asia/Shanghai','Asia/Hong_Kong','Asia/Taipei','Asia/Chongqing','Asia/Harbin'].includes(tz) || locale.startsWith('zh')) return 'CN';
+    // Pháp / Bỉ / Thuỵ Sĩ / Canada (Pháp ngữ)
+    if (['Europe/Paris','Europe/Brussels','Europe/Zurich','America/Montreal'].includes(tz) || locale.startsWith('fr')) return 'FR';
+    // Mặc định: quốc tế
+    return 'US';
+  } catch { return 'US'; }
+}
+

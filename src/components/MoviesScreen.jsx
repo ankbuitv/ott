@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Search, Star, Play, X, Info, Calendar, Clock, Tv, Film, SlidersHorizontal, TrendingUp } from 'lucide-react';
-import { MovieAPI, imgPath, bgPath, getUpcoming, getMovieGenres, getTMDBKey, setTMDBKey, isDefaultTMDBKey } from '../services/tmdb';
+import { MovieAPI, imgPath, bgPath, COUNTRY_INFO, getUpcoming, getMovieGenres, getTMDBKey, setTMDBKey, isDefaultTMDBKey } from '../services/tmdb';
 import MoviePlayerModal from './MoviePlayerModal';
 import { useDevice } from '../contexts/DeviceContext';
 import { useToast } from '../contexts/ToastContext';
 import { useProfile } from '../contexts/ProfileContext';
 import { useI18n } from '../contexts/I18nContext';
+import { detectCountry } from '../i18n/translations';
 
 const CATALOG_PAGE = 30;
 
@@ -23,6 +24,10 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
   const { addToast } = useToast();
   const { currentProfile } = useProfile();
   const { t } = useI18n();
+
+  // Tự phát hiện quốc gia (timezone/browser) → banner phim theo nước đó
+  const country = useMemo(() => detectCountry(), []);
+  const countryInfo = COUNTRY_INFO[country] || COUNTRY_INFO.US;
 
   const [hero, setHero] = useState(null);
   const [rows, setRows] = useState({ trending: [], nowPlaying: [], topRated: [], popularTV: [], upcoming: [] });
@@ -67,9 +72,9 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
     (async () => {
       setLoading(true);
       const [heroR, trR, npR, tR, tvR, upR, gR] = await Promise.all([
-        MovieAPI.hero(),
+        MovieAPI.hero(country),
         MovieAPI.trending(),
-        MovieAPI.nowPlaying(),
+        MovieAPI.nowPlaying(country),
         MovieAPI.topRated(),
         MovieAPI.popularTV(),
         getUpcoming().catch(() => ({ results: [] })),
@@ -82,7 +87,8 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
       setLoading(false);
     })();
     return () => { mounted = false; };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [country]);
 
   // Load full catalog (background, không chặn UI)
   useEffect(() => {
@@ -200,9 +206,12 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
 
           <div className="relative h-full flex items-end pb-14 px-8 md:px-12 max-w-4xl">
             <div>
-              <div className="flex items-center gap-2 mb-3">
+              <div className="flex items-center gap-2 mb-3 flex-wrap">
                 <span className="px-2 py-0.5 bg-red-600 text-[10px] font-bold rounded flex items-center gap-1">
-                  <TrendingUp className="w-3 h-3" /> NỔI BẬT
+                  <TrendingUp className="w-3 h-3" /> {t('movies.hero.featured')}
+                </span>
+                <span className="px-2 py-0.5 bg-white/10 border border-white/15 backdrop-blur text-[10px] font-bold rounded flex items-center gap-1">
+                  {countryInfo.flag} {countryInfo.name}
                 </span>
                 {hero.media_type && <span className="text-[10px] text-stone-300 uppercase tracking-widest font-bold">{hero.media_type === 'movie' ? 'PHIM' : 'TV SHOW'}</span>}
               </div>
@@ -521,7 +530,7 @@ function MovieDetailModal({ movie, trailer, trailerLoading, onClose, onPlay }) {
               className="w-full px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition"
             >
               <Play className="w-4 h-4 fill-current" />
-              ▶ Xem phim (nguồn thứ 3)
+              ▶ {t('movies.btn.play')}
             </button>
             {!trailer && !trailerLoading && (
               <button

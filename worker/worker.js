@@ -290,6 +290,13 @@ async function ensureSchema(env) {
     } else {
       for (const sql of SCHEMA_STATEMENTS) await env.DB.prepare(sql).run();
     }
+    // MIGRATION: bảng channels cũ (tạo trước khi có cột is_active) → tự thêm cột.
+    // Nếu cột đã tồn tại, lệnh này fail và bị bỏ qua — không sao.
+    try {
+      await env.DB.prepare("ALTER TABLE channels ADD COLUMN is_active INTEGER DEFAULT 1").run();
+    } catch (e) {
+      // cột đã tồn tại hoặc lỗi khác — bỏ qua
+    }
     schemaReady = true;
     return true;
   } catch (e) {
@@ -326,18 +333,21 @@ async function handleAPI(path, request, env, ctx) {
 // ========== PLAYLIST ==========
 async function handlePlaylist(env, request) {
   const refresh = request && new URL(request.url).searchParams.get("refresh") === "1";
-  if (hasDB(env) && !refresh) {
+  let d1_count = 0;
+  if (hasDB(env)) {
     await ensureSchema(env);
-    try {
-      const { results } = await env.DB.prepare("SELECT * FROM channels WHERE is_active = 1 ORDER BY id ASC").all();
-      if (results && results.length > 0) return json({ success: true, source: "d1", data: results });
-    } catch (e) { console.error("handlePlaylist D1 error:", e?.message || e); }
+    if (!refresh) {
+      try {
+        const { results } = await env.DB.prepare("SELECT * FROM channels WHERE is_active = 1 ORDER BY id ASC").all();
+        if (results && results.length > 0) return json({ success: true, source: "d1", data: results, d1_count: results.length });
+      } catch (e) { console.error("handlePlaylist D1 error:", e?.message || e); }
+    }
   }
   const fromSource = await loadChannelsFromSource();
   if (hasDB(env) && fromSource && fromSource.length > 0) {
-    await writeChannels(env, fromSource);
+    d1_count = await writeChannels(env, fromSource);
   }
-  return json({ success: true, source: fromSource === DEFAULT_CHANNELS ? "default" : "m3u", data: fromSource });
+  return json({ success: true, source: fromSource === DEFAULT_CHANNELS ? "default" : "m3u", data: fromSource, d1_count });
 }
 
 function parseM3U(text) {
@@ -1100,21 +1110,43 @@ async function handleChannels(env, request) {
   return json({ success: true, channels: fromSource });
 }
 
-// Ghi danh sách kênh vào D1 (thay toàn bộ, dùng batch)
+// Ghi danh sách kênh vào D1 (thay toàn bộ, dùng batch). Trả số kênh đã ghi (0 nếu không có DB).
 async function writeChannels(env, list) {
-  if (!hasDB(env) || !list || list.length === 0) return;
+  if (!hasDB(env) || !list || list.length === 0) return 0;
   try {
-    const stmt = env.DB.prepare("INSERT OR REPLACE INTO channels (channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, 1)");
-    const rows = list.map(ch => stmt.bind(ch.channel_id, ch.name, ch.logo || "", ch.group_title || "Khác", ch.stream_url, ch.catchup_type || "append", ch.catchup_days || 7));
-    if (typeof env.DB.batch === "function") {
-      await env.DB.batch([env.DB.prepare("DELETE FROM channels")]);
-      for (let i = 0; i < rows.length; i += 50) await env.DB.batch(rows.slice(i, i + 50));
-    } else {
-      await env.DB.prepare("DELETE FROM channels").run();
-      for (const row of rows) await row.run();
+    await ensureSchema(env);
+    const values = list.map(ch => [ch.channel_id, ch.name, ch.logo || "", ch.group_title || "Khác", ch.stream_url, ch.catchup_type || "append", ch.catchup_days || 7]);
+    let ok = false;
+    // Thử INSERT có cột is_active (schema mới)
+    try {
+      const stmt = env.DB.prepare("INSERT OR REPLACE INTO channels (channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, 1)");
+      const rows = values.map(v => stmt.bind(...v));
+      if (typeof env.DB.batch === "function") {
+        await env.DB.batch([env.DB.prepare("DELETE FROM channels")]);
+        for (let i = 0; i < rows.length; i += 50) await env.DB.batch(rows.slice(i, i + 50));
+      } else {
+        await env.DB.prepare("DELETE FROM channels").run();
+        for (const row of rows) await row.run();
+      }
+      ok = true;
+    } catch (e) {
+      console.error("[channels] INSERT with is_active failed, retry without:", e?.message || e);
+    }
+    // DB quá cũ (thiếu cột is_active) → fallback INSERT không có cột này
+    if (!ok) {
+      const stmt = env.DB.prepare("INSERT OR REPLACE INTO channels (channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days) VALUES (?, ?, ?, ?, ?, ?, ?)");
+      const rows = values.map(v => stmt.bind(...v));
+      if (typeof env.DB.batch === "function") {
+        await env.DB.batch([env.DB.prepare("DELETE FROM channels")]);
+        for (let i = 0; i < rows.length; i += 50) await env.DB.batch(rows.slice(i, i + 50));
+      } else {
+        await env.DB.prepare("DELETE FROM channels").run();
+        for (const row of rows) await row.run();
+      }
     }
     console.error(`[channels] wrote ${list.length} channels to D1`);
-  } catch (e) { console.error("writeChannels error:", e?.message || e); }
+    return list.length;
+  } catch (e) { console.error("writeChannels error:", e?.message || e); return 0; }
 }
 
 // Tải danh sách kênh từ playlist M3U gốc, fallback danh sách mặc định

@@ -3,18 +3,28 @@
 # can find the entry point. It deploys:
 #   - worker/worker.js  -> the backend API (/api/*)
 #   - dist/             -> the built Vite frontend (static assets)
-name = "chrtv-backend"
+name = "chrtv-ott"
 main = "worker/worker.js"
 compatibility_date = "2024-01-01"
-
-# Cron: tự động refresh danh sách kênh (playlists/tv.m3u) + EPG cache mỗi 6 giờ.
-[triggers]
-crons = ["0 */6 * * *"]
 
 # Serve the built frontend from dist/ as static assets.
 # Requests that do NOT match an asset (e.g. /api/*) fall through to worker.js.
 # NOTE: keep this BEFORE the [build] table (TOML table ordering).
+# NOTE: phải ở root level — nếu đặt sau [triggers]/[build], TOML coi nó là field
+# của table đó và wrangler sẽ cảnh báo "Unexpected fields found in ... field: assets".
 assets = { directory = "./dist" }
+
+# ---------------------------------------------------------------------------
+# Cron triggers: TẮT vì tài khoản Workers Free bị giới hạn 5 cron triggers/account
+# (deploy fail với lỗi "reached the Workers Free limit of 5 cron triggers").
+# Kênh vẫn tự nạp mà không cần cron:
+#   - D1 rỗng  -> /api/playlist hoặc /api/channels tự fetch playlists/tv.m3u
+#                 rồi ghi vào D1 (writeChannels) ngay lần gọi đầu tiên
+#   - Refresh  -> gọi /api/playlist?refresh=1 bất cứ lúc nào
+# Nếu nâng lên Workers Paid, bỏ comment dòng dưới để bật cron 6h/lần:
+# [triggers]
+# crons = ["0 */6 * * *"]
+# ---------------------------------------------------------------------------
 
 # Custom build step: build the Vite frontend into dist/ before every deploy
 # (runs automatically on `wrangler deploy` / `wrangler versions upload`).

@@ -171,7 +171,7 @@ export default function MoviePlayerModal({ movie, onClose }) {
               className="absolute inset-0 w-full h-full border-0"
               allow="autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write"
               allowFullScreen
-              referrerPolicy="no-referrer"
+              referrerPolicy="origin"
               // sandbox KHÔNG cấp allow-popups / allow-top-navigation* / allow-modals
               // / allow-downloads => chặn pop-up, pop-under, redirect cướp trang
               {...(adBlock ? { sandbox: SANDBOX_PERMS } : {})}

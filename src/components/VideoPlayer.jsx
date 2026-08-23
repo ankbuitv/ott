@@ -143,21 +143,43 @@ export default function VideoPlayer({
     };
   }, [resetOverlayTimer]);
 
-  // Parse ClearKey t? stream URL (MPD key)
+  // Parse ClearKey t? stream URL (MPD key) — query params + hash fragment JSON
   const parseClearKey = useCallback((url) => {
     if (!url) return null;
     try {
       const u = new URL(url);
-      const keyId = u.searchParams.get('key-id') || u.searchParams.get('kid') || '';
-      const key = u.searchParams.get('key') || u.searchParams.get('k') || '';
+      let keyId = '', key = '';
+      // ?key-id=...&key=... ho?c ?kid=...&k=...
+      keyId = u.searchParams.get('key-id') || u.searchParams.get('kid') || '';
+      key = u.searchParams.get('key') || u.searchParams.get('k') || '';
+      // #{"key-id":"...","key":"..."} ho?c #{"kid":"...","k":"..."}
+      if (!keyId && !key && u.hash && u.hash.length > 1) {
+        try {
+          const h = JSON.parse(decodeURIComponent(u.hash.substring(1)));
+          keyId = h['key-id'] || h.kid || h.keyId || '';
+          key = h.key || h.k || '';
+        } catch {}
+      }
       if (keyId && key) {
         const kid = keyId.replace(/[^a-fA-F0-9]/g, '');
         const k = key.replace(/[^a-fA-F0-9]/g, '');
         if (kid.length === 32 && k.length === 32)
           return { keyId: hexToUint8(kid), key: hexToUint8(k) };
       }
+      // N?u ch? có keyId mà không có key, ?? l?i Shaka ??c t? MPD manifest
     } catch {}
     return null;
+  }, []);
+
+  // Ki?m tra URL có ph?i MPD không
+  const isMpdUrl = useCallback((url) => {
+    if (!url) return false;
+    try {
+      const u = new URL(url);
+      return u.pathname.endsWith('.mpd') || u.searchParams.has('mpd') || url.includes('.mpd');
+    } catch {
+      return url.includes('.mpd');
+    }
   }, []);
   function hexToUint8(hex) {
     const arr = new Uint8Array(hex.length / 2);
@@ -181,10 +203,10 @@ export default function VideoPlayer({
       const net = player.getNetworkingEngine();
       if (net) net.registerRequestFilter((type, req) => { req.headers['User-Agent'] = VLC_USER_AGENT; });
       player.configure({
-        streaming: { rebufferingGoal: 2, bufferingGoal: 10, bufferBehind: 15, lowLatencyMode: true, autoLowLatencyMode: true, jumpLargeGaps: true, inaccurateManifestTimestampsInSegments: false },
+        streaming: { rebufferingGoal: 2, bufferingGoal: 10, bufferBehind: 15, lowLatencyMode: true, autoLowLatencyMode: true, jumpLargeGaps: true, inaccurateManifestTimestampsInSegments: false, alwaysStreamText: false, startAtSegmentBoundary: true },
         abr: { enabled: true, defaultBandwidthEstimate: 2000000 },
-        manifest: { retryParameters: { maxAttempts: 3, baseDelay: 1000, backoffFactor: 2 }, dash: { ignoreDrmInfo: false, disableXlinkProcessing: true, xlinkFailGracefully: true, ignoreMinBufferTime: true } },
-        drm: { clearKeys: {}, retryParameters: { maxAttempts: 3, baseDelay: 500, backoffFactor: 2 }, servers: { 'org.w3.clearkey': 'data:,' } },
+        manifest: { retryParameters: { maxAttempts: 3, baseDelay: 1000, backoffFactor: 2 }, dash: { ignoreDrmInfo: false, disableXlinkProcessing: true, xlinkFailGracefully: true, ignoreMinBufferTime: true, clockSyncUri: '', defaultPresentationDelay: 3 } },
+        drm: { clearKeys: {}, retryParameters: { maxAttempts: 3, baseDelay: 500, backoffFactor: 2 }, servers: { 'org.w3.clearkey': 'data:,', 'com.widevine.alpha': '' } },
       });
     }
 
@@ -221,14 +243,49 @@ export default function VideoPlayer({
           setTextTracks(texts.map((lang, i) => ({ id: i, label: lang || `CC ${i + 1}` })));
         } catch {}
       } catch (err) {
-        if (!isFallback) {
-          setIsFallbackActive(true);
-          setErrorMessage("Luồng chính gián đoạn, chuyển dự phòng...");
-          try { await player.load(FALLBACK_STREAM_URL); videoEl.play().catch(() => {}); setIsBuffering(false); }
-          catch { setErrorMessage("Không thể kết nối."); setIsBuffering(false); }
-        } else { setErrorMessage("Lỗi kết nối."); setIsBuffering(false); }
+        // Th? l?i v?i ignoreDrmInfo=true n?u l?i DRM
+        if (err && err.code === 6010) {
+          try {
+            player.configure({ manifest: { dash: { ignoreDrmInfo: true } } });
+            await player.load(url);
+            videoEl.play().catch(() => setIsPlaying(false));
+            setIsBuffering(false);
+          } catch (e) {
+            if (isMpdUrl(url) && !url.startsWith('http://bore.pub')) {
+              await tryMpdWithProxy(url, player, videoEl);
+            } else if (!isFallback) {
+              await doFallback(player, videoEl);
+            } else {
+              setErrorMessage("Không thể kết nối."); setIsBuffering(false);
+            }
+          } finally {
+            try { player.configure({ manifest: { dash: { ignoreDrmInfo: false } } }); } catch (e) {}
+          }
+        } else if (isMpdUrl(url) && !url.startsWith('http://bore.pub') && !url.includes('/api/proxy')) {
+          try { await tryMpdWithProxy(url, player, videoEl); }
+          catch { if (!isFallback) await doFallback(player, videoEl); else { setErrorMessage("Lỗi kết nối."); setIsBuffering(false); } }
+        } else if (!isFallback) {
+          await doFallback(player, videoEl);
+        } else {
+          setErrorMessage("Lỗi kết nối."); setIsBuffering(false);
+        }
       }
     };
+
+    async function tryMpdWithProxy(url, player, videoEl) {
+      const proxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
+      setErrorMessage("Đang thử proxy MPD...");
+      await player.load(proxyUrl);
+      videoEl.play().catch(() => setIsPlaying(false));
+      setIsBuffering(false);
+    }
+
+    async function doFallback(player, videoEl) {
+      setIsFallbackActive(true);
+      setErrorMessage("Luồng chính gián đoạn, chuyển dự phòng...");
+      try { await player.load(FALLBACK_STREAM_URL); videoEl.play().catch(() => {}); setIsBuffering(false); }
+      catch { setErrorMessage("Không thể kết nối."); setIsBuffering(false); }
+    }
 
     loadStream(targetUrl);
 

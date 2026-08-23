@@ -3,14 +3,28 @@
 # can find the entry point. It deploys:
 #   - worker/worker.js  -> the backend API (/api/*)
 #   - dist/             -> the built Vite frontend (static assets)
-name = "chrtv-backend"
+name = "chrtv-ott"
 main = "worker/worker.js"
 compatibility_date = "2024-01-01"
 
 # Serve the built frontend from dist/ as static assets.
 # Requests that do NOT match an asset (e.g. /api/*) fall through to worker.js.
 # NOTE: keep this BEFORE the [build] table (TOML table ordering).
+# NOTE: phải ở root level — nếu đặt sau [triggers]/[build], TOML coi nó là field
+# của table đó và wrangler sẽ cảnh báo "Unexpected fields found in ... field: assets".
 assets = { directory = "./dist" }
+
+# ---------------------------------------------------------------------------
+# Cron triggers: TẮT vì tài khoản Workers Free bị giới hạn 5 cron triggers/account
+# (deploy fail với lỗi "reached the Workers Free limit of 5 cron triggers").
+# Kênh vẫn tự nạp mà không cần cron:
+#   - D1 rỗng  -> /api/playlist hoặc /api/channels tự fetch playlists/tv.m3u
+#                 rồi ghi vào D1 (writeChannels) ngay lần gọi đầu tiên
+#   - Refresh  -> gọi /api/playlist?refresh=1 bất cứ lúc nào
+# Nếu nâng lên Workers Paid, bỏ comment dòng dưới để bật cron 6h/lần:
+# [triggers]
+# crons = ["0 */6 * * *"]
+# ---------------------------------------------------------------------------
 
 # Custom build step: build the Vite frontend into dist/ before every deploy
 # (runs automatically on `wrangler deploy` / `wrangler versions upload`).
@@ -18,19 +32,15 @@ assets = { directory = "./dist" }
 command = "npm run build"
 
 # ---------------------------------------------------------------------------
-# Cloudflare D1 Database (channels, user_favorites, watch_history)
+# Cloudflare D1 Database (users, sessions, channels, user_favorites, watch_history)
 #
-# Uncomment this block and replace database_id with the REAL D1 database ID
-# from your Cloudflare dashboard (Workers -> D1 -> your database -> ID) after
-# creating the database and applying schema.sql:
-#
-#   npx wrangler d1 create chrtv-db
-#   npx wrangler d1 execute chrtv-db --remote --file=./schema.sql
-#
-# [[d1_databases]]
-# binding = "DB"
-# database_name = "chrtv-db"
-# database_id = "REPLACE_WITH_REAL_D1_ID"
+# QUAN TRỌNG: `wrangler deploy` đồng bộ bindings theo file này — binding thêm
+# tay trên Dashboard sẽ bị XOÁ nếu không khai báo ở đây. Bắt buộc giữ block này.
+# worker/worker.js có ensureSchema() tự tạo bảng nên không cần chạy schema.sql.
+[[d1_databases]]
+binding = "DB"
+database_name = "chrtv-db"
+database_id = "6beab015-333c-45a2-8062-41d1fd3f066f"
 
 # ---------------------------------------------------------------------------
 # Cloudflare KV Namespace (EPG XML/JSON cache, TTL 3600s)

@@ -4,47 +4,98 @@
 
 @layer base {
   body {
-    background-color: #0d0e12;
-    color: #f8fafc;
+    background-color: #0a0b0f;
+    color: #f1f5f9;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 }
 
-/* Tùy chỉnh thanh cuộn Scrollbar cho giao diện Dark Mode TV */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #222; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #dc2626; }
 
-::-webkit-scrollbar-track {
-  background: #16181f;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #334155;
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #dc2626;
-}
-
-/* Spatial Navigation Active Focus State cho TV / Remote */
+/* TV Remote Focus */
 .tv-focused {
   outline: none !important;
   border-color: #dc2626 !important;
-  background-color: rgba(220, 38, 38, 0.25) !important;
-  box-shadow: 0 0 20px rgba(220, 38, 38, 0.6) !important;
-  transform: scale(1.05);
-  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  background-color: rgba(220, 38, 38, 0.15) !important;
+  box-shadow: 0 0 12px rgba(220, 38, 38, 0.4) !important;
+  transform: scale(1.03);
+  transition: all 0.15s ease-out;
   z-index: 30;
 }
 
-/* Hiệu ứng mượt cho Video Player Overlay */
+/* Player Overlay Gradients */
 .overlay-gradient-top {
-  background: linear-gradient(180deg, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 60%, rgba(0,0,0,0) 100%);
+  background: linear-gradient(180deg, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.25) 65%, transparent 100%);
+}
+.overlay-gradient-bottom {
+  background: linear-gradient(0deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.45) 70%, transparent 100%);
 }
 
-.overlay-gradient-bottom {
-  background: linear-gradient(0deg, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.6) 70%, rgba(0,0,0,0) 100%);
+/* Scrollbar utilities */
+.scrollbar-none::-webkit-scrollbar { display: none; }
+.scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+.scrollbar-thin::-webkit-scrollbar { width: 2px; height: 2px; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
+
+/* Toast slide */
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+/* Range input */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 3px;
+  background: #334155;
+  border-radius: 2px;
+  outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #dc2626;
+  cursor: pointer;
+  border: 2px solid #fff;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #dc2626;
+  cursor: pointer;
+  border: 2px solid #fff;
+}
+
+/* Selection */
+::selection { background-color: rgba(220, 38, 38, 0.25); color: #fff; }
+
+/* Safe area for mobile */
+.safe-area-bottom { padding-bottom: env(safe-area-inset-bottom, 0); }
+
+/* ===== Skeleton shimmer (movies) ===== */
+.skeleton-shimmer {
+  position: relative;
+  overflow: hidden;
+  background: #1c1d24;
+}
+.skeleton-shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+  animation: shimmer 1.6s infinite;
+}
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
 }

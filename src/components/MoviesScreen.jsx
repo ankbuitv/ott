@@ -481,6 +481,7 @@ function MovieCard({ movie, onClick }) {
 }
 
 function MovieDetailModal({ movie, trailer, trailerLoading, onClose, onPlay }) {
+  const { t } = useI18n();
   return (
     <div className="fixed inset-0 z-[200] bg-black/85 backdrop-blur-sm overflow-y-auto" onClick={onClose}>
       <div className="relative max-w-4xl mx-auto my-8 bg-stone-900 rounded-2xl overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>

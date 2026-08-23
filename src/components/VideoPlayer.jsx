@@ -143,9 +143,34 @@ export default function VideoPlayer({
     };
   }, [resetOverlayTimer]);
 
+  // Parse ClearKey t? stream URL (MPD key)
+  const parseClearKey = useCallback((url) => {
+    if (!url) return null;
+    try {
+      const u = new URL(url);
+      const keyId = u.searchParams.get('key-id') || u.searchParams.get('kid') || '';
+      const key = u.searchParams.get('key') || u.searchParams.get('k') || '';
+      if (keyId && key) {
+        const kid = keyId.replace(/[^a-fA-F0-9]/g, '');
+        const k = key.replace(/[^a-fA-F0-9]/g, '');
+        if (kid.length === 32 && k.length === 32)
+          return { keyId: hexToUint8(kid), key: hexToUint8(k) };
+      }
+    } catch {}
+    return null;
+  }, []);
+  function hexToUint8(hex) {
+    const arr = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < hex.length; i += 2) arr[i / 2] = parseInt(hex.substring(i, i + 2), 16);
+    return arr;
+  }
+  function ab2hex(buf) {
+    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
   useEffect(() => { shaka.polyfill.installAll(); }, []);
 
-  // Initialize Shaka Player with VLC UA
+  // Initialize Shaka Player with VLC UA + MPD/ClearKey
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
@@ -156,9 +181,10 @@ export default function VideoPlayer({
       const net = player.getNetworkingEngine();
       if (net) net.registerRequestFilter((type, req) => { req.headers['User-Agent'] = VLC_USER_AGENT; });
       player.configure({
-        streaming: { rebufferingGoal: 2, bufferingGoal: 10, bufferBehind: 15, lowLatencyMode: true, autoLowLatencyMode: true, jumpLargeGaps: true },
+        streaming: { rebufferingGoal: 2, bufferingGoal: 10, bufferBehind: 15, lowLatencyMode: true, autoLowLatencyMode: true, jumpLargeGaps: true, inaccurateManifestTimestampsInSegments: false },
         abr: { enabled: true, defaultBandwidthEstimate: 2000000 },
-        manifest: { retryParameters: { maxAttempts: 3, baseDelay: 1000, backoffFactor: 2 } }
+        manifest: { retryParameters: { maxAttempts: 3, baseDelay: 1000, backoffFactor: 2 }, dash: { ignoreDrmInfo: false, disableXlinkProcessing: true, xlinkFailGracefully: true, ignoreMinBufferTime: true } },
+        drm: { clearKeys: {}, retryParameters: { maxAttempts: 3, baseDelay: 500, backoffFactor: 2 }, servers: { 'org.w3.clearkey': 'data:,' } },
       });
     }
 
@@ -170,6 +196,15 @@ export default function VideoPlayer({
 
     const loadStream = async (url, isFallback = false) => {
       try {
+        // Cấu hình ClearKey nếu stream URL có kèm key (MPD)
+        const clearKey = parseClearKey(url);
+        if (clearKey) {
+          try {
+            player.configure({ drm: { clearKeys: { [ab2hex(clearKey.keyId)]: ab2hex(clearKey.key) } } });
+          } catch (e) {}
+        } else {
+          try { player.configure({ drm: { clearKeys: {} } }); } catch (e) {}
+        }
         await player.load(url);
         videoEl.play().catch(() => setIsPlaying(false));
         setIsBuffering(false);
@@ -210,7 +245,7 @@ export default function VideoPlayer({
       player.removeEventListener('buffering', onBuf);
       player.removeEventListener('trackschanged', onTracks);
     };
-  }, [streamUrl]);
+  }, [streamUrl, parseClearKey]);
 
   // Real-time stats
   useEffect(() => {

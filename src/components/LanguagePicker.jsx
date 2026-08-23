@@ -8,10 +8,6 @@ const languages = [
   { code: 'zh', name: '中文', country: '中国', flag: '🇨🇳' },
   { code: 'en', name: 'English', country: 'International', flag: '🇬🇧' },
   { code: 'fr', name: 'Français', country: 'France', flag: '🇫🇷' },
-  { code: 'ja', name: '日本語', country: '日本', flag: '🇯🇵' },
-  { code: 'ko', name: '한국어', country: '한국', flag: '🇰🇷' },
-  { code: 'th', name: 'ไทย', country: 'ประเทศไทย', flag: '🇹🇭' },
-  { code: 'es', name: 'Español', country: 'España', flag: '🇪🇸' },
 ];
 
 export default function LanguagePicker({ onClose }) {
@@ -23,7 +19,7 @@ export default function LanguagePicker({ onClose }) {
   }, [setLang, onClose]);
 
   const suggested = languages.slice(0, 4);
-  const others = languages.slice(4);
+  const auto = languages.slice(4, 5);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0a0b0f] via-[#0d0e12] to-[#111318] flex items-center justify-center p-4">
@@ -32,16 +28,15 @@ export default function LanguagePicker({ onClose }) {
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-red-600 to-red-800 flex items-center justify-center mx-auto mb-5 shadow-2xl shadow-red-600/30">
             <Globe className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-3xl font-black text-white mb-1">Choose your language</h1>
+          <h1 className="text-3xl md:text-4xl font-black text-white mb-1">Choose your language</h1>
           <p className="text-slate-400 text-sm">You can change this anytime</p>
         </div>
 
-        {/* Suggested for your region */}
         <div className="mb-6">
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
             🌍 Suggested for your region
           </p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             {suggested.map((l) => (
               <button
                 key={l.code}
@@ -69,11 +64,10 @@ export default function LanguagePicker({ onClose }) {
           </div>
         </div>
 
-        {/* AUTO */}
         <div className="mb-6">
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">AUTO</p>
-          <div className="flex gap-3 overflow-x-auto pb-2">
-            {others.slice(0, 1).map((l) => (
+          <div className="flex gap-3">
+            {auto.map((l) => (
               <button
                 key={l.code}
                 onClick={() => handleSelect(l.code)}
@@ -95,7 +89,6 @@ export default function LanguagePicker({ onClose }) {
           </div>
         </div>
 
-        {/* Continue button */}
         <button
           onClick={() => handleSelect(lang)}
           className="w-full py-3.5 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-bold rounded-xl transition-all shadow-xl shadow-red-600/20 hover:shadow-red-600/30 flex items-center justify-center gap-2"

@@ -219,14 +219,25 @@ export default function VideoPlayer({
 
     const loadStream = async (url, isFallback = false) => {
       try {
-        // Cấu hình ClearKey nếu stream URL có kèm key (MPD)
-        const clearKey = parseClearKey(url);
+        // Cấu hình ClearKey nếu stream URL có kèm key (MPD) ho?c t? channel
+        let clearKey = parseClearKey(url);
+        // N?u URL không có key, th? l?y t? channel (t? #KODIPROP trong M3U)
+        if (!clearKey && channel?.clearKeyId && channel?.clearKey) {
+          clearKey = {
+            keyId: hexToUint8(channel.clearKeyId),
+            key: hexToUint8(channel.clearKey),
+          };
+        }
         if (clearKey) {
           try {
             player.configure({ drm: { clearKeys: { [ab2hex(clearKey.keyId)]: ab2hex(clearKey.key) } } });
           } catch (e) {}
         } else {
           try { player.configure({ drm: { clearKeys: {} } }); } catch (e) {}
+        }
+        // N?u là MPD, c?u hình manifest thích h?p
+        if (isMpdUrl(url) || channel?.manifest_type === 'mpd') {
+          try { player.configure({ manifest: { dash: { disableXlinkProcessing: true, xlinkFailGracefully: true } } }); } catch (e) {}
         }
         await player.load(url);
         videoEl.play().catch(() => setIsPlaying(false));
@@ -290,6 +301,15 @@ export default function VideoPlayer({
 
     loadStream(targetUrl);
 
+    // N?u channel có user-agent riêng (t? #EXTVLCOPT), c?p nh?t filter
+    const ua = channel?.user_agent;
+    if (ua) {
+      try {
+        const ne = player.getNetworkingEngine();
+        if (ne) { ne.clearRequestFilters(); ne.registerRequestFilter((type, req) => { req.headers['User-Agent'] = ua; }); }
+      } catch (e) {}
+    }
+
     const onErr = (e) => { if (!isFallbackActive) { setIsFallbackActive(true); loadStream(FALLBACK_STREAM_URL, true); } };
     const onBuf = (e) => setIsBuffering(e.buffering);
     const onTracks = () => { try { const t = player.getVariantTracks(); setAvailableTracks(t); const a = t.find(x=>x.active); if(a) setSelectedTrackId(a.id); } catch {} };
@@ -303,7 +323,7 @@ export default function VideoPlayer({
       player.removeEventListener('buffering', onBuf);
       player.removeEventListener('trackschanged', onTracks);
     };
-  }, [streamUrl, parseClearKey]);
+  }, [streamUrl, parseClearKey, channel?.clearKeyId, channel?.clearKey]);
 
   // Real-time stats
   useEffect(() => {

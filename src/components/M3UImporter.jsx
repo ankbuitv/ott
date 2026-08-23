@@ -60,6 +60,30 @@ export default function M3UImporter({ onImport, onClose }) {
         current.group_title = grpM ? grpM[1] : 'Import';
         current.catchup_type = 'append';
         current.catchup_days = 7;
+      } else if (line.startsWith('#KODIPROP:')) {
+        if (!current) continue;
+        const prop = line.substring('#KODIPROP:'.length).trim();
+        const licKeyM = prop.match(/license_key=(.*)/);
+        if (licKeyM) {
+          try {
+            const obj = JSON.parse(licKeyM[1]);
+            if (obj?.keys?.[0]) {
+              const { kid, k } = obj.keys[0];
+              if (kid && k) {
+                // base64 -> hex
+                const rawKid = atob(kid.replace(/-/g,'+').replace(/_/g,'/'));
+                const rawK = atob(k.replace(/-/g,'+').replace(/_/g,'/'));
+                let hexKid = '', hexK = '';
+                for (let j = 0; j < rawKid.length; j++) hexKid += rawKid.charCodeAt(j).toString(16).padStart(2,'0');
+                for (let j = 0; j < rawK.length; j++) hexK += rawK.charCodeAt(j).toString(16).padStart(2,'0');
+                if (hexKid.length === 32 && hexK.length === 32) {
+                  current.clearKeyId = hexKid;
+                  current.clearKey = hexK;
+                }
+              }
+            }
+          } catch {}
+        }
       } else if (line && !line.startsWith('#') && current) {
         current.stream_url = line;
         channels.push(current);

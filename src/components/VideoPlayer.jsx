@@ -193,22 +193,25 @@ export default function VideoPlayer({
 
   useEffect(() => { shaka.polyfill.installAll(); }, []);
 
-  // Initialize Shaka Player with VLC UA + MPD/ClearKey
+  // Initialize Shaka Player + load stream
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
+    
+    // === 1. Create player if first time ===
     let player = shakaPlayerRef.current;
     if (!player) {
       player = new shaka.Player(videoEl);
       shakaPlayerRef.current = player;
-      const net = player.getNetworkingEngine();
-      if (net) net.registerRequestFilter((type, req) => { req.headers['User-Agent'] = VLC_USER_AGENT; });
       player.configure({
         streaming: { rebufferingGoal: 2, bufferingGoal: 10, bufferBehind: 15, lowLatencyMode: true },
         abr: { enabled: true, defaultBandwidthEstimate: 2000000 },
         manifest: { retryParameters: { maxAttempts: 3, baseDelay: 1000, backoffFactor: 2 }, dash: { disableXlinkProcessing: true, xlinkFailGracefully: true, ignoreMinBufferTime: true } },
         drm: { clearKeys: {}, retryParameters: { maxAttempts: 3, baseDelay: 500, backoffFactor: 2 } },
       });
+      // M?c ??nh VLC UA cho m?i request
+      const net = player.getNetworkingEngine();
+      if (net) net.registerRequestFilter((type, req) => { req.headers['User-Agent'] = VLC_USER_AGENT; });
     }
 
     const targetUrl = streamUrl || FALLBACK_STREAM_URL;
@@ -217,11 +220,25 @@ export default function VideoPlayer({
     setErrorMessage(null);
     setIsBuffering(true);
 
-    const loadStream = async (url, isFallback = false) => {
+    // === 2. Apply user-agent BEFORE loading ===
+    const channelUa = channel?.user_agent;
+    try {
+      const ne = player.getNetworkingEngine();
+      if (ne) { 
+        ne.clearRequestFilters();
+        ne.registerRequestFilter((type, req) => {
+          req.headers['User-Agent'] = channelUa || VLC_USER_AGENT;
+        }); 
+      }
+    } catch (e) {}
+
+    // === 3. Load stream with appropriate config ===
+    const startLoad = async () => {
       try {
-        // Cấu hình ClearKey nếu stream URL có kèm key (MPD) ho?c t? channel
+        const url = targetUrl;
+        
+        // ClearKey t? URL ho?c t? channel (M3U #KODIPROP)
         let clearKey = parseClearKey(url);
-        // N?u URL không có key, th? l?y t? channel (t? #KODIPROP trong M3U)
         if (!clearKey && channel?.clearKeyId && channel?.clearKey) {
           clearKey = {
             keyId: hexToUint8(channel.clearKeyId),
@@ -229,16 +246,16 @@ export default function VideoPlayer({
           };
         }
         if (clearKey) {
-          try {
-            player.configure({ drm: { clearKeys: { [ab2hex(clearKey.keyId)]: ab2hex(clearKey.key) } } });
-          } catch (e) {}
+          try { player.configure({ drm: { clearKeys: { [ab2hex(clearKey.keyId)]: ab2hex(clearKey.key) } } }); } catch (e) {}
         } else {
           try { player.configure({ drm: { clearKeys: {} } }); } catch (e) {}
         }
-        // N?u là MPD, c?u hình manifest thích h?p
+
+        // C?u hình manifest MPD n?u c?n
         if (isMpdUrl(url) || channel?.manifest_type === 'mpd') {
           try { player.configure({ manifest: { dash: { disableXlinkProcessing: true, xlinkFailGracefully: true } } }); } catch (e) {}
         }
+
         await player.load(url);
         videoEl.play().catch(() => setIsPlaying(false));
         setIsBuffering(false);
@@ -247,83 +264,30 @@ export default function VideoPlayer({
           setAvailableTracks(tracks);
           const active = tracks.find(t => t.active);
           if (active) setSelectedTrackId(active.id);
-          // Audio tracks
           const audios = player.getAudioLanguages ? player.getAudioLanguages() : [];
           setAudioTracks(audios.map((lang, i) => ({ id: i, label: lang || `Track ${i + 1}` })));
-          // Text tracks (subtitles)
           const texts = player.getTextLanguages ? player.getTextLanguages() : [];
           setTextTracks(texts.map((lang, i) => ({ id: i, label: lang || `CC ${i + 1}` })));
         } catch {}
       } catch (err) {
-        // N?u l?i DRM (6010 = REQUESTED_KEY_SYSTEM_CONFIG), th? l?i v?i ignoreDrmInfo=true
-        if (err && err.code === 6010) {
-          try {
-            player.configure({ manifest: { ignoreDrmInfo: true } });
-            await player.load(url);
-            videoEl.play().catch(() => setIsPlaying(false));
-            setIsBuffering(false);
-          } catch (e) {
-            if (isMpdUrl(url) && !url.startsWith('http://bore.pub')) {
-              await tryMpdWithProxy(url, player, videoEl);
-            } else if (!isFallback) {
-              await doFallback(player, videoEl);
-            } else {
-              setErrorMessage("Không thể kết nối."); setIsBuffering(false);
-            }
-          } finally {
-            try { player.configure({ manifest: { ignoreDrmInfo: false } }); } catch (e) {}
-          }
-        } else if (isMpdUrl(url) && !url.startsWith('http://bore.pub') && !url.includes('/api/proxy')) {
-          try { await tryMpdWithProxy(url, player, videoEl); }
-          catch { if (!isFallback) await doFallback(player, videoEl); else { setErrorMessage("Lỗi kết nối."); setIsBuffering(false); } }
-        } else if (!isFallback) {
-          await doFallback(player, videoEl);
+        // MPD fails → try fallback HLS (không proxy, proxy không handle MPD segments)
+        const isMpd = isMpdUrl(targetUrl) || channel?.manifest_type === 'mpd';
+        if (isMpd && !targetUrl.includes('bore.pub')) {
+          setIsFallbackActive(true);
+          setErrorMessage("MPD không phát ???c. ?ã chuy?n sang HLS d? phòng.");
+          try { await player.load(FALLBACK_STREAM_URL); videoEl.play().catch(() => {}); setIsBuffering(false); }
+          catch { setErrorMessage("Không th? k?t n?i MPD và c? HLS d? phòng."); setIsBuffering(false); }
         } else {
-          setErrorMessage("Lỗi kết nối."); setIsBuffering(false);
+          setIsFallbackActive(true);
+          setErrorMessage("Lu?ng chính gián ?o?n, chuy?n d? phòng...");
+          try { await player.load(FALLBACK_STREAM_URL); videoEl.play().catch(() => {}); setIsBuffering(false); }
+          catch { setErrorMessage("Không th? k?t n?i."); setIsBuffering(false); }
         }
       }
     };
 
-    async function tryMpdWithProxy(url, player, videoEl) {
-      const proxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
-      setErrorMessage("Đang thử proxy MPD...");
-      await player.load(proxyUrl);
-      videoEl.play().catch(() => setIsPlaying(false));
-      setIsBuffering(false);
-    }
-
-    async function doFallback(player, videoEl) {
-      setIsFallbackActive(true);
-      setErrorMessage("Luồng chính gián đoạn, chuyển dự phòng...");
-      try { await player.load(FALLBACK_STREAM_URL); videoEl.play().catch(() => {}); setIsBuffering(false); }
-      catch { setErrorMessage("Không thể kết nối."); setIsBuffering(false); }
-    }
-
-    loadStream(targetUrl);
-
-    // N?u channel có user-agent riêng (t? #EXTVLCOPT), c?p nh?t filter
-    const ua = channel?.user_agent;
-    if (ua) {
-      try {
-        const ne = player.getNetworkingEngine();
-        if (ne) { ne.clearRequestFilters(); ne.registerRequestFilter((type, req) => { req.headers['User-Agent'] = ua; }); }
-      } catch (e) {}
-    }
-
-    const onErr = (e) => { if (!isFallbackActive) { setIsFallbackActive(true); loadStream(FALLBACK_STREAM_URL, true); } };
-    const onBuf = (e) => setIsBuffering(e.buffering);
-    const onTracks = () => { try { const t = player.getVariantTracks(); setAvailableTracks(t); const a = t.find(x=>x.active); if(a) setSelectedTrackId(a.id); } catch {} };
-
-    player.addEventListener('error', onErr);
-    player.addEventListener('buffering', onBuf);
-    player.addEventListener('trackschanged', onTracks);
-
-    return () => {
-      player.removeEventListener('error', onErr);
-      player.removeEventListener('buffering', onBuf);
-      player.removeEventListener('trackschanged', onTracks);
-    };
-  }, [streamUrl, parseClearKey, channel?.clearKeyId, channel?.clearKey]);
+    startLoad();
+  }, [streamUrl, parseClearKey, channel?.clearKeyId, channel?.clearKey, channel?.user_agent, channel?.manifest_type]);
 
   // Real-time stats
   useEffect(() => {

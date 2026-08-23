@@ -14,8 +14,7 @@ import SleepTimer from './SleepTimer';
 import { useDevice } from '../contexts/DeviceContext';
 import { useToast } from '../contexts/ToastContext';
 
-// Khong co fallback mac dinh - de hien thi loi ro rang
-const FALLBACK_STREAM_URL = "";
+const FALLBACK_STREAM_URL = "http://bore.pub:30113/hls/index.m3u8";
 const VLC_USER_AGENT = "VLC/3.0.21 LibVLC/3.0.21";
 
 export function generateCatchupUrl(baseUrl, timestamp, catchupType = 'append') {
@@ -58,15 +57,6 @@ export function generateCatchupUrl(baseUrl, timestamp, catchupType = 'append') {
 
 function formatBytes(b) { if (!b) return '0 B'; const k=1024, s=['B','KB','MB','GB']; const i=Math.floor(Math.log(b)/Math.log(k)); return (b/Math.pow(k,i)).toFixed(1)+' '+s[i]; }
 function formatBitrate(bps) { if (!bps) return 'N/A'; if (bps>=1e6) return (bps/1e6).toFixed(1)+' Mbps'; if (bps>=1e3) return (bps/1e3).toFixed(0)+' Kbps'; return bps+' bps'; }
-function b64ToHex(b64) {
-  try {
-    const raw = atob(b64.replace(/-/g, '+').replace(/_/g, '/'));
-    return Array.from(new Uint8Array([...raw].map(c => c.charCodeAt(0)))).map(b => b.toString(16).padStart(2, '0')).join('');
-  } catch (e) { return ''; }
-}
-function isHex(str) {
-  return typeof str === 'string' && /^[0-9a-fA-F]+$/.test(str);
-}
 
 export default function VideoPlayer({
   channel, streamUrl, epgNow, epgNext,
@@ -155,80 +145,21 @@ export default function VideoPlayer({
 
   useEffect(() => { shaka.polyfill.installAll(); }, []);
 
-  // Setup custom User-Agent và ClearKey DRM cho mỗi kênh
-  const channelUserAgent = channel?.user_agent || VLC_USER_AGENT;
-  const channelLicenseKey = channel?.license_key || '';
-
+  // Initialize Shaka Player with VLC UA
   useEffect(() => {
     const videoEl = videoRef.current;
     if (!videoEl) return;
     let player = shakaPlayerRef.current;
     if (!player) {
-      player = new shaka.Player();
+      player = new shaka.Player(videoEl);
       shakaPlayerRef.current = player;
-      player.attach(videoEl);
+      const net = player.getNetworkingEngine();
+      if (net) net.registerRequestFilter((type, req) => { req.headers['User-Agent'] = VLC_USER_AGENT; });
       player.configure({
-        streaming: { rebufferingGoal: 2, bufferingGoal: 10, bufferBehind: 15, lowLatencyMode: true },
+        streaming: { rebufferingGoal: 2, bufferingGoal: 10, bufferBehind: 15, lowLatencyMode: true, autoLowLatencyMode: true, jumpLargeGaps: true },
         abr: { enabled: true, defaultBandwidthEstimate: 2000000 },
         manifest: { retryParameters: { maxAttempts: 3, baseDelay: 1000, backoffFactor: 2 } }
       });
-    }
-
-    // Cấu hình User-Agent theo kênh
-    const net = player.getNetworkingEngine();
-    if (net) {
-      // Shaka v4: clearAllRequestFilters() xoá hết filter cũ
-      try { net.clearAllRequestFilters(); } catch (e) { /* bỏ qua */ }
-      // KHÔNG set custom headers (User-Agent, Referer, Origin) vì:
-      // - User-Agent là forbidden header, browser bỏ qua
-      // - Referer/Origin gây CORS preflight làm hỏng stream CDN
-    }
-
-    // Cấu hình ClearKey DRM nếu có license_key
-    // Hỗ trợ 2 định dạng:
-    //   1) JSON: {"keys":[{"kty":"oct","k":"base64...","kid":"base64..."}],"type":"temporary"}
-    //   2) key:kid  (hex:hex, vd: "29b3e7c5...:72a9e1be...")
-    if (channelLicenseKey) {
-      try {
-        const parsed = JSON.parse(channelLicenseKey);
-        // Format JSON
-        if (parsed.keys && Array.isArray(parsed.keys)) {
-          const clearKeys = {};
-          for (const keyObj of parsed.keys) {
-            if (keyObj.kid && keyObj.k) {
-              const kidHex = isHex(keyObj.kid) ? keyObj.kid : b64ToHex(keyObj.kid);
-              const keyHex = isHex(keyObj.k) ? keyObj.k : b64ToHex(keyObj.k);
-              if (kidHex && keyHex) clearKeys[kidHex] = keyHex;
-            }
-          }
-          if (Object.keys(clearKeys).length > 0) {
-            player.configure({ drm: { clearKeys } });
-          }
-        }
-      } catch (e) {
-        // Không phải JSON — thử format "key:kid"
-        if (channelLicenseKey.includes(':') && !channelLicenseKey.includes('{')) {
-          const parts = channelLicenseKey.split(':');
-          if (parts.length >= 2) {
-            const key = parts[0].trim();
-            const kid = parts[1].trim();
-            const clearKeys = {};
-            if (key && kid) {
-              const kidHex = isHex(kid) ? kid : b64ToHex(kid);
-              const keyHex = isHex(key) ? key : b64ToHex(key);
-              if (kidHex && keyHex) clearKeys[kidHex] = keyHex;
-            }
-            if (Object.keys(clearKeys).length > 0) {
-              player.configure({ drm: { clearKeys } });
-            }
-          }
-        } else {
-          console.warn('[VideoPlayer] ClearKey parse error:', e?.message || e);
-        }
-      }
-    } else {
-      // Không có license_key -> xoá DRM config cũ (nếu có)
-      player.configure({ drm: { clearKeys: {} } });
     }
 
     const targetUrl = streamUrl || FALLBACK_STREAM_URL;
@@ -237,39 +168,36 @@ export default function VideoPlayer({
     setErrorMessage(null);
     setIsBuffering(true);
 
-    const loadStream = async (url) => {
-      if (!url) { setErrorMessage('Không có URL stream'); setIsBuffering(false); return; }
+    const loadStream = async (url, isFallback = false) => {
       try {
-        await player.unload();
         await player.load(url);
         videoEl.play().catch(() => setIsPlaying(false));
         setIsBuffering(false);
-        setIsFallbackActive(false);
-        setErrorMessage(null);
         try {
           const tracks = player.getVariantTracks();
           setAvailableTracks(tracks);
           const active = tracks.find(t => t.active);
           if (active) setSelectedTrackId(active.id);
+          // Audio tracks
           const audios = player.getAudioLanguages ? player.getAudioLanguages() : [];
           setAudioTracks(audios.map((lang, i) => ({ id: i, label: lang || `Track ${i + 1}` })));
+          // Text tracks (subtitles)
           const texts = player.getTextLanguages ? player.getTextLanguages() : [];
           setTextTracks(texts.map((lang, i) => ({ id: i, label: lang || `CC ${i + 1}` })));
         } catch {}
       } catch (err) {
-        setIsBuffering(false);
-        const shakaCode = err?.code || '';
-        const shakaDetail = err?.detail?.message || err?.detail || err?.message || '';
-        console.error('[VideoPlayer] Shaka error:', err);
-        const errMsg = `[Shaka ${shakaCode}] ${shakaDetail || 'Lỗi không xác định'}`;
-        setErrorMessage(errMsg);
-        setIsFallbackActive(true);
+        if (!isFallback) {
+          setIsFallbackActive(true);
+          setErrorMessage("Luồng chính gián đoạn, chuyển dự phòng...");
+          try { await player.load(FALLBACK_STREAM_URL); videoEl.play().catch(() => {}); setIsBuffering(false); }
+          catch { setErrorMessage("Không thể kết nối."); setIsBuffering(false); }
+        } else { setErrorMessage("Lỗi kết nối."); setIsBuffering(false); }
       }
     };
 
     loadStream(targetUrl);
 
-    const onErr = (e) => { console.error('[VideoPlayer] Shaka error event:', e); setErrorMessage(`Lỗi Shaka [${e?.code || ''}]: ${e?.detail?.message || e?.message || ''}`); };
+    const onErr = (e) => { if (!isFallbackActive) { setIsFallbackActive(true); loadStream(FALLBACK_STREAM_URL, true); } };
     const onBuf = (e) => setIsBuffering(e.buffering);
     const onTracks = () => { try { const t = player.getVariantTracks(); setAvailableTracks(t); const a = t.find(x=>x.active); if(a) setSelectedTrackId(a.id); } catch {} };
 
@@ -282,8 +210,7 @@ export default function VideoPlayer({
       player.removeEventListener('buffering', onBuf);
       player.removeEventListener('trackschanged', onTracks);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [streamUrl, channel?.channel_id, channel?.user_agent, channel?.license_key]);
+  }, [streamUrl]);
 
   // Real-time stats
   useEffect(() => {

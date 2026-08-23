@@ -26,16 +26,11 @@ import { ProfileProvider, useProfile } from './contexts/ProfileContext';
 import { I18nProvider, useI18n } from './contexts/I18nContext';
 import LanguagePicker from './components/LanguagePicker';
 
-import { fetchChannels, fetchEPGData, fetchFavorites, toggleFavoriteApi, recordWatchHistory, DEFAULT_FALLBACK_STREAM, getProxyStreamUrl } from './services/api';
+import { fetchChannels, fetchEPGData, fetchFavorites, toggleFavoriteApi, recordWatchHistory, DEFAULT_FALLBACK_STREAM } from './services/api';
 import { getFavorites, setFavorites as saveFavs, getHistory, setHistory as saveHistory } from './hooks/useStorage';
 import { findEpgForChannel } from './utils/epgMatch';
 
 initNavigation({ debug: false, visualDebug: false });
-// Giu nguyen thu tu kenh nhu trong file M3U
-function channelSortFn(list) {
-  return list;
-}
-
 
 function AppContent() {
   const device = useDevice();
@@ -93,7 +88,7 @@ function AppContent() {
         const [chanData, epgRes, favData] = await Promise.all([
           fetchChannels(), fetchEPGData(), fetchFavorites()
         ]);
-        setChannels(channelSortFn(chanData));
+        setChannels(chanData);
         setEpgData(epgRes);
         setFavoritesState(favData);
         setWatchHistory(getHistory());
@@ -122,16 +117,13 @@ function AppContent() {
 
   const handleSelectChannel = useCallback((channel) => {
     setCurrentChannel(channel);
-    // Dùng proxy Worker d? bypass CORS - CDN stream không g?i CORS headers
-    // nên browser không cho Shaka fetch tr?c ti?p t? domain khác.
-    // Proxy ? Worker fetch v? phía server (không CORS) r?i tr? v? ?? browser.
-    const stream = getProxyStreamUrl(channel.stream_url || DEFAULT_FALLBACK_STREAM);
-    setActiveStreamUrl(stream);
+    setActiveStreamUrl(channel.stream_url || DEFAULT_FALLBACK_STREAM);
     setIsCatchupMode(false);
     setCatchupProgram(null);
     setIsPlayerOpen(true);
     recordWatchHistory(channel.channel_id);
-    setWatchHistory(prev => {      const updated = prev.filter(h => h.channel_id !== channel.channel_id);
+    setWatchHistory(prev => {
+      const updated = prev.filter(h => h.channel_id !== channel.channel_id);
       updated.unshift({ channel_id: channel.channel_id, position: 0, updated_at: new Date().toISOString() });
       if (updated.length > 30) updated.length = 30;
       saveHistory(updated);

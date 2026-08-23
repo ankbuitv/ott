@@ -4,11 +4,9 @@
 
 @layer base {
   body {
-    background-color: #0a0b0f;
-    color: #f1f5f9;
-    font-family: Inter, system-ui, -apple-system, sans-serif;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
+    background-color: #0d0e12;
+    color: #f8fafc;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
 }
 

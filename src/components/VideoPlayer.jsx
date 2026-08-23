@@ -287,6 +287,26 @@ export default function VideoPlayer({
     };
 
     startLoad();
+    
+    // === 4. Event listeners ===
+    const onBuf = (e) => setIsBuffering(e.buffering);
+    const onTracks = () => {
+      try {
+        const t = player.getVariantTracks();
+        setAvailableTracks(t);
+        const a = t.find(x => x.active);
+        if (a) setSelectedTrackId(a.id);
+      } catch {}
+    };
+    player.addEventListener('buffering', onBuf);
+    player.addEventListener('trackschanged', onTracks);
+
+    return () => {
+      if (player) {
+        player.removeEventListener('buffering', onBuf);
+        player.removeEventListener('trackschanged', onTracks);
+      }
+    };
   }, [streamUrl, parseClearKey, channel?.clearKeyId, channel?.clearKey, channel?.user_agent, channel?.manifest_type]);
 
   // Real-time stats

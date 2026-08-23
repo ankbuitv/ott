@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { useI18n } from '../contexts/I18nContext';
 import shaka from 'shaka-player';
 import {
   Play, Pause, Volume2, VolumeX, Maximize, Minimize,
@@ -14,7 +13,10 @@ import SleepTimer from './SleepTimer';
 import { useDevice } from '../contexts/DeviceContext';
 import { useToast } from '../contexts/ToastContext';
 
-const FALLBACK_STREAM_URL = "http://bore.pub:30113/hls/index.m3u8";
+const FALLBACK_STREAM_URL_HTTP = "http://bore.pub:30113/hls/index.m3u8";
+const FALLBACK_STREAM_URL = (typeof window !== 'undefined' && window.location?.protocol === 'https:')
+  ? `/api/proxy?url=${encodeURIComponent("http://bore.pub:30113/hls/index.m3u8")}`
+  : FALLBACK_STREAM_URL_HTTP;
 const VLC_USER_AGENT = "VLC/3.0.21 LibVLC/3.0.21";
 
 export function generateCatchupUrl(baseUrl, timestamp, catchupType = 'append') {
@@ -64,7 +66,6 @@ export default function VideoPlayer({
   onNextChannel, onPrevChannel, onClose,
   allChannels = [], onOpenSettings,
 }) {
-  const { t } = useI18n();
   const videoRef = useRef(null);
   const containerRef = useRef(null);
   const shakaPlayerRef = useRef(null);
@@ -203,10 +204,10 @@ export default function VideoPlayer({
       const net = player.getNetworkingEngine();
       if (net) net.registerRequestFilter((type, req) => { req.headers['User-Agent'] = VLC_USER_AGENT; });
       player.configure({
-        streaming: { rebufferingGoal: 2, bufferingGoal: 10, bufferBehind: 15, lowLatencyMode: true, autoLowLatencyMode: true, jumpLargeGaps: true, inaccurateManifestTimestampsInSegments: false, alwaysStreamText: false, startAtSegmentBoundary: true },
+        streaming: { rebufferingGoal: 2, bufferingGoal: 10, bufferBehind: 15, lowLatencyMode: true },
         abr: { enabled: true, defaultBandwidthEstimate: 2000000 },
-        manifest: { retryParameters: { maxAttempts: 3, baseDelay: 1000, backoffFactor: 2 }, dash: { ignoreDrmInfo: false, disableXlinkProcessing: true, xlinkFailGracefully: true, ignoreMinBufferTime: true, clockSyncUri: '', defaultPresentationDelay: 3 } },
-        drm: { clearKeys: {}, retryParameters: { maxAttempts: 3, baseDelay: 500, backoffFactor: 2 }, servers: { 'org.w3.clearkey': 'data:,', 'com.widevine.alpha': '' } },
+        manifest: { retryParameters: { maxAttempts: 3, baseDelay: 1000, backoffFactor: 2 }, dash: { disableXlinkProcessing: true, xlinkFailGracefully: true, ignoreMinBufferTime: true } },
+        drm: { clearKeys: {}, retryParameters: { maxAttempts: 3, baseDelay: 500, backoffFactor: 2 } },
       });
     }
 
@@ -243,10 +244,10 @@ export default function VideoPlayer({
           setTextTracks(texts.map((lang, i) => ({ id: i, label: lang || `CC ${i + 1}` })));
         } catch {}
       } catch (err) {
-        // Th? l?i v?i ignoreDrmInfo=true n?u l?i DRM
+        // N?u l?i DRM (6010 = REQUESTED_KEY_SYSTEM_CONFIG), th? l?i v?i ignoreDrmInfo=true
         if (err && err.code === 6010) {
           try {
-            player.configure({ manifest: { dash: { ignoreDrmInfo: true } } });
+            player.configure({ manifest: { ignoreDrmInfo: true } });
             await player.load(url);
             videoEl.play().catch(() => setIsPlaying(false));
             setIsBuffering(false);
@@ -259,7 +260,7 @@ export default function VideoPlayer({
               setErrorMessage("Không thể kết nối."); setIsBuffering(false);
             }
           } finally {
-            try { player.configure({ manifest: { dash: { ignoreDrmInfo: false } } }); } catch (e) {}
+            try { player.configure({ manifest: { ignoreDrmInfo: false } }); } catch (e) {}
           }
         } else if (isMpdUrl(url) && !url.startsWith('http://bore.pub') && !url.includes('/api/proxy')) {
           try { await tryMpdWithProxy(url, player, videoEl); }

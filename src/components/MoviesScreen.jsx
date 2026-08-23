@@ -158,6 +158,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
   };
 
   const openDetail = useCallback(async (movie) => {
+    if (!movie || !movie.id) return;
     setSelected(movie);
     setTrailer(null);
     setTrailerLoading(true);

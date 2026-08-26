@@ -1,5 +1,5 @@
 #EXTM3U url-tvg="https://epg.io.vn/epgc.xml"
-#EXTM3U x-tvg-url="https://vnepg.site/epgu.xml, "https://lichphatsong.site/schedule/epg.xml" tvg-shift=0 cache=500 deinterlace=1 aspect-ratio=16:9 m3uautoload=1"
+#EXTM3U x-tvg-url="https://epg.io.vn/epgc.xml,https://vnepg.site/epgu.xml,https://lichphatsong.site/schedule/epg.xml" tvg-shift=0
 
 # ==========================================
 # 📺 EVENT OTT

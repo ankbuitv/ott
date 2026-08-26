@@ -68,7 +68,7 @@ https://devda.undo.it/Stream/index.php?id=htv3&ext=.m3u8
 #EXTINF:-1 tvg-id="htv4" tvg-logo="https://upload.wikimedia.org/wikipedia/vi/thumb/9/9d/HTV4.svg/1024px-HTV4.svg.png" group-title="TH - Truyền hình Việt",HTV4
 https://devda.undo.it/Stream/index.php?id=htv4&ext=.m3u8
 
-#EXTINF:-1 tvg-id="btv9" tvg-logo="https://upload.wikimedia.org/wikipedia/vi/thumb/3/31/HTV5.svg/1024px-HTV5.svg.png" group-title="TH - Truyền hình Việt",HTV5
+#EXTINF:-1 tvg-id="htv5" tvg-logo="https://upload.wikimedia.org/wikipedia/vi/thumb/3/31/HTV5.svg/1024px-HTV5.svg.png" group-title="TH - Truyền hình Việt",HTV5
 https://devda.undo.it/Stream/index.php?id=btv9&ext=.m3u8
 
 #EXTINF:-1 tvg-id="htv9" tvg-logo="https://upload.wikimedia.org/wikipedia/vi/thumb/4/40/HTV9.svg/1024px-HTV9.svg.png" group-title="TH - Truyền hình Việt",HTV9

@@ -9,9 +9,6 @@
 #EXTINF:-1 tvg-id="event-01" tvg-logo="https://i.ibb.co/HDmcxzMK/Gemini-Generated-Image-v7i9yav7i9yav7i9-removebg-preview.png" group-title="EV - EVENT",Event 01
 https://stream01.ankb.qzz.io/event01/index.m3u8
 
-#EXTINF:-1 tvg-id="event-02" tvg-logo="https://i.ibb.co/HDmcxzMK/Gemini-Generated-Image-v7i9yav7i9yav7i9-removebg-preview.png" group-title="EV - EVENT",Event 02
-https://stream01.ankb.qzz.io/event01/index.m3u8?cookieCheck=1
-
 # ==========================================
 # 📺 DANH SÁCH KÊNH TRUYỀN HÌNH VIỆT NAM
 # Cập nhật ngày: 06/01
@@ -341,19 +338,19 @@ https://sg001-cdw18826playnow.ankb.qzz.io/copyrighted/api/stream/GETftplay/bWI/i
 #EXTINF:-1 tvg-id="woman" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/6/68/Warner_TV.svg/1024px-Warner_TV.svg.png" group-title="🎬 BOX - Giải trí",Woman
 https://sg001-cdw18826playnow.ankb.qzz.io/NotForCommercial/api/stream/GETnfcplay/d28/index.m3u8?token=snYheZmfoT3BDCfcS8k4FNfCJbel4iveQYtx7ZMH
 
-#EXTINF:-1 tvg-id="warner" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/6/68/Warner_TV.svg/1024px-Warner_TV.svg.png" group-title="🎬 BOX - Giải trí",Warner TV
+#EXTINF:-1 tvg-id="warnertvhd" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/6/68/Warner_TV.svg/1024px-Warner_TV.svg.png" group-title="🎬 BOX - Giải trí",Warner TV
 https://sg001-cdw18826playnow.ankb.qzz.io/NotForCommercial/api/stream/GETnfcplay/d2FybmVydHY/index.m3u8?token=snYheZmfoT3BDCfcS8k4FNfCJbel4iveQYtx7ZMH
 
-#EXTINF:-1 tvg-id="cinemax" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/6/68/Cinemax_logo.svg/1024px-Cinemax_logo.svg.png" group-title="🎬 BOX - Giải trí",Cinemax
+#EXTINF:-1 tvg-id="cinemaxhd" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/6/68/Cinemax_logo.svg/1024px-Cinemax_logo.svg.png" group-title="🎬 BOX - Giải trí",Cinemax
 https://sg001-cdw18826playnow.ankb.qzz.io/NotForCommercial/api/stream/GETnfcplay/Q2luZW1heA/index.m3u8?token=snYheZmfoT3BDCfcS8k4FNfCJbel4iveQYtx7ZMH
 
-#EXTINF:-1 tvg-id="cinemaworld" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/6/68/Cinemax_logo.svg/1024px-Cinemax_logo.svg.png" group-title="🎬 BOX - Giải trí",Cinemaworld
+#EXTINF:-1 tvg-id="cinemaworldhd" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/6/68/Cinemax_logo.svg/1024px-Cinemax_logo.svg.png" group-title="🎬 BOX - Giải trí",Cinemaworld
 https://sg001-cdw18826playnow.ankb.qzz.io/NotForCommercial/api/stream/GETnfcplay/Q2luZW1hd29ybGQ/index.m3u8?token=snYheZmfoT3BDCfcS8k4FNfCJbel4iveQYtx7ZMH
 
-#EXTINF:-1 tvg-id="discovery" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/4/4b/Discovery_Channel_logo.svg/1024px-Discovery_Channel_logo.svg.png" group-title="🎬 BOX - Giải trí",Discovery Channel
+#EXTINF:-1 tvg-id="discoveryhd" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/4/4b/Discovery_Channel_logo.svg/1024px-Discovery_Channel_logo.svg.png" group-title="🎬 BOX - Giải trí",Discovery Channel
 https://sg001-cdw18826playnow.ankb.qzz.io/NotForCommercial/api/stream/GETnfcplay/ZHNj/index.m3u8?token=snYheZmfoT3BDCfcS8k4FNfCJbel4iveQYtx7ZMH
 
-#EXTINF:-1 tvg-id="discovery-asia" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/4/4b/Discovery_Channel_logo.svg/1024px-Discovery_Channel_logo.svg.png" group-title="🎬 BOX - Giải trí",Discovery Asia
+#EXTINF:-1 tvg-id="discoveryasiahd" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/4/4b/Discovery_Channel_logo.svg/1024px-Discovery_Channel_logo.svg.png" group-title="🎬 BOX - Giải trí",Discovery Asia
 https://sg001-cdw18826playnow.ankb.qzz.io/NotForCommercial/api/stream/GETnfcplay/YXNpYQ/index.m3u8?token=snYheZmfoT3BDCfcS8k4FNfCJbel4iveQYtx7ZMH
 
 #EXTINF:-1 tvg-id="natgeo" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/f/fc/Nat_Geo_Channel_logo.svg/1024px-Nat_Geo_Channel_logo.svg.png" group-title="🎬 BOX - Giải trí",National Geographic
@@ -366,13 +363,13 @@ https://sg001-cdw18826playnow.ankb.qzz.io/red/api/stream/GETred/USA_NAT_GEO/inde
 #EXTVLCOPT:http-user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0
 https://devda.undo.it/Stream/index.php?id=rakuten-tv&ext=.m3u8
 
-#EXTINF:-1 tvg-id="history" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/2/26/HISTORY_logo_2021.svg/1024px-HISTORY_logo_2021.svg.png" group-title="🎬 BOX - Giải trí",History HD
+#EXTINF:-1 tvg-id="historyhd" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/2/26/HISTORY_logo_2021.svg/1024px-HISTORY_logo_2021.svg.png" group-title="🎬 BOX - Giải trí",History HD
 https://freem3u.xyz/api/live/play.m3u8?vid=9856
 
-#EXTINF:-1 tvg-id="davinci-tv" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/1/11/DaVinci_logo_2013.svg/1024px-DaVinci_logo_2013.svg.png" group-title="🎬 BOX - Giải trí",DaVinci TV
+#EXTINF:-1 tvg-id="davinci" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/1/11/DaVinci_logo_2013.svg/1024px-DaVinci_logo_2013.svg.png" group-title="🎬 BOX - Giải trí",DaVinci TV
 https://devda.undo.it/Stream/index.php?id=davinci-tv&ext=.m3u8
 
-#EXTINF:-1 tvg-id="kbs-world" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/2/26/HISTORY_logo_2021.svg/1024px-HISTORY_logo_2021.svg.png" group-title="🎬 BOX - Giải trí",KBS World
+#EXTINF:-1 tvg-id="kbsworld" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/2/26/HISTORY_logo_2021.svg/1024px-HISTORY_logo_2021.svg.png" group-title="🎬 BOX - Giải trí",KBS World
 https://world.gscdn.kbs.co.kr/world-02/world-02_sd.m3u8?Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly93b3JsZC5nc2Nkbi5rYnMuY28ua3Ivd29ybGQtMDIvKiIsIkNvbmRpdGlvbiI6eyJEYXRlTGVzc1RoYW4iOnsiQVdTOkVwb2NoVGltZSI6MTc4NzAxNDI2OX19fV19&Key-Pair-Id=APKAICDSGT3Y7IXGJ3TA&Signature=ICH7P4xKvCVGymcCm7TCdoyLOlstC~6KcHouAsSMgbXWp3xxG-gFxb~v33Qp-IJ0O-Nw8Opi7rlVN1yamRLQvD4xH3b2Q9m-~5x5iNqsolvHbJrRX1kC~n2WQ~jaV~XS6nraMw-u6UqyyOclBGkg6gJgTTMRIINf4A1Aat2CsCMbm0UcTUp2dbrgidlhQKvU2AV3wiZwNGVYynGbwps0Afz4My1Dj9q2EXg5UF62Y12v1zrso5baN1OS7F4g8i-quxKyB1QxhizrFMM4amIgzUSzOE~Lh6FXEjy0ej3MZMb2YWSnY1lM0qtlYKDcippF1knevpVI~RPLLhiakyq4RQ__
 
 #EXTINF:-1 tvg-id="MTV" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/0/0d/MTV_Logo_2021.svg/1024px-MTV_Logo_2021.svg.png" group-title="🎬 BOX - Giải trí",MTV
@@ -389,19 +386,19 @@ https://sg001-cdw18826playnow.ankb.qzz.io/red/api/stream/GETred/USA_CRIME_INVEST
 #EXTVLCOPT:http-user-agent=VThanhTivi
 https://live.fptplay53.net/epzhd2/outdoorfhd_vhls.smil/chunklist_b5000000.m3u8
 
-#EXTINF:-1 tvg-id="animalplanet" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/2/20/2018_Animal_Planet_logo.svg/1024px-2018_Animal_Planet_logo.svg.png" group-title="🎬 BOX - Giải trí",Animal Planet
+#EXTINF:-1 tvg-id="animalhd" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/2/20/2018_Animal_Planet_logo.svg/1024px-2018_Animal_Planet_logo.svg.png" group-title="🎬 BOX - Giải trí",Animal Planet
 http://198.58.104.90:8989/animalplanet/index.m3u8
 
-#EXTINF:-1 tvg-id="afn-tv" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/8/8e/AFN_logo.svg/1024px-AFN_logo.svg.png" group-title="🎬 BOX - Giải trí",AFN TV
+#EXTINF:-1 tvg-id="afntv" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/8/8e/AFN_logo.svg/1024px-AFN_logo.svg.png" group-title="🎬 BOX - Giải trí",AFN TV
 https://live.fptplay53.net/fnxhd2/afchd_vhls.smil/chunklist.m3u8
 
-#EXTINF:-1 tvg-id="cna-tv" tvg-logo="https://upload.wikimedia.org/wikipedia/en/thumb/6/66/Channel_NewsAsia_logo.svg/1024px-Channel_NewsAsia_logo.svg.png" group-title="🎬 BOX - Giải trí",CNA TV
+#EXTINF:-1 tvg-id="cna" tvg-logo="https://upload.wikimedia.org/wikipedia/en/thumb/6/66/Channel_NewsAsia_logo.svg/1024px-Channel_NewsAsia_logo.svg.png" group-title="🎬 BOX - Giải trí",CNA TV
 https://devda.undo.it/Stream/index.php?id=cna-tv&ext=.m3u8
 
 #EXTINF:-1 tvg-id="bloomberg" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Bloomberg-logo.svg/1024px-Bloomberg-logo.svg.png" group-title="🎬 BOX - Giải trí",Bloomberg
 https://devda.undo.it/Stream/index.php?id=bloomberg&ext=.m3u8
 
-#EXTINF:-1 tvg-id="abcau" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/ABC-logo.svg/1024px-ABC-logo.svg.png" group-title="🎬 BOX - Giải trí",ABC Australia
+#EXTINF:-1 tvg-id="abcaustralia" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/ABC-logo.svg/1024px-ABC-logo.svg.png" group-title="🎬 BOX - Giải trí",ABC Australia
 https://abc-news-dmd-streams-1.akamaized.net/out/v1/701126012d044971b3fa89406a440133/index.m3u8
 
 #EXTINF:-1 tvg-id="sony-channel-tv" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/4/4c/Sony_Channel_2021.svg/1024px-Sony_Channel_2021.svg.png" group-title="🎬 BOX - Giải trí",Sony Channel TV
@@ -426,22 +423,22 @@ https://devda.undo.it/Stream/index.php?id=tv5monde&ext=.m3u8
 https://live.france24.com/hls/live/2037218-b/F24_EN_HI_HLS/master_500.m3u8
 
 
-#EXTINF:-1 tvg-id="bbc-earth" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/8/86/France_24.svg/1024px-France_24.svg.png" group-title="🎬 BOX - Giải trí",BBC Earth
+#EXTINF:-1 tvg-id="bbcearth" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/8/86/France_24.svg/1024px-France_24.svg.png" group-title="🎬 BOX - Giải trí",BBC Earth
 https://sg001-cdw18826playnow.ankb.qzz.io/NotForCommercial/api/stream/GETnfcplay/YmJjZWFydGg/index.m3u8?token=Y67k4yHJp0uXLG1rdW7UioaNtITv4jOkmXOFszE8
 
-#EXTINF:-1 tvg-id="fashion" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/3/3e/Fashion_TV_Logo.svg/1024px-Fashion_TV_Logo.svg.png" group-title="🎬 BOX - Giải trí",Fashion TV
+#EXTINF:-1 tvg-id="fashionhd" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/3/3e/Fashion_TV_Logo.svg/1024px-Fashion_TV_Logo.svg.png" group-title="🎬 BOX - Giải trí",Fashion TV
 https://edge-fast3.evrideo.tv/bfdbb576-83f7-11f0-9f89-0200170e3e04_1000028043_HLS/video_10801920_p_0.m3u8
 
-#EXTINF:-1 tvg-id="kix-tv" tvg-logo="https://upload.wikimedia.org/wikipedia/en/0/0d/KIX_Logo_2018.png" group-title="🎬 BOX - Giải trí",KIX TV
+#EXTINF:-1 tvg-id="kix" tvg-logo="https://upload.wikimedia.org/wikipedia/en/0/0d/KIX_Logo_2018.png" group-title="🎬 BOX - Giải trí",KIX TV
 https://devda.undo.it/Stream/index.php?id=kix-tv&ext=.m3u8
 
-#EXTINF:-1 tvg-id="love-nature-tv" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/0/08/Love_Nature_Logo.svg/1024px-Love_Nature_Logo.svg.png" group-title="🎬 BOX - Giải trí",Love Nature TV
+#EXTINF:-1 tvg-id="lovenature4k" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/0/08/Love_Nature_Logo.svg/1024px-Love_Nature_Logo.svg.png" group-title="🎬 BOX - Giải trí",Love Nature TV
 https://aegis-cloudfront-1.tubi.video/6d6d0f24-8445-4b4c-bdf6-44f9e38beaa4/playlist.m3u8
 
-#EXTINF:-1 tvg-id="nhk-world" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/8/8d/NHK_World-Japan_TV.svg/1024px-NHK_World-Japan_TV.svg.png" group-title="🎬 BOX - Giải trí",NHK World
+#EXTINF:-1 tvg-id="nhkworld" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/8/8d/NHK_World-Japan_TV.svg/1024px-NHK_World-Japan_TV.svg.png" group-title="🎬 BOX - Giải trí",NHK World
 https://media-tyo.hls.nhkworld.jp/hls/w/live/master.m3u8
 
-#EXTINF:-1 tvg-id="cartoonnetwork" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Cartoon_Network_2010_logo.svg/1024px-Cartoon_Network_2010_logo.svg.png" group-title="🎬 BOX - Giải trí",Cartoon Network HD
+#EXTINF:-1 tvg-id="cartoonhd" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Cartoon_Network_2010_logo.svg/1024px-Cartoon_Network_2010_logo.svg.png" group-title="🎬 BOX - Giải trí",Cartoon Network HD
 https://sg001-cdw18826playnow.ankb.qzz.io/NotForCommercial/shortened/cartoonnetwork.m3u8?token=Y67k4yHJp0uXLG1rdW7UioaNtITv4jOkmXOFszE8
 
 #EXTINF:-1 tvg-id="boomerang" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Boomerang_2014_logo.svg/1024px-Boomerang_2014_logo.svg.png" group-title="🎬 BOX - Giải trí",Boomerang
@@ -465,6 +462,9 @@ https://devda.undo.it/Stream/index.php?id=the-lego-channel&ext=.m3u8
 
 #EXTINF:-1 tvg-id="babyfirst" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/2/2d/babyfirst.svg/1024px-Lego_logo.svg.png" group-title="🎬 BOX - Giải trí",BabyFirst
 http://206.212.244.63/639/index.m3u8
+
+#EXTINF:-1 tvg-id="cbeebies" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/2/2d/babyfirst.svg/1024px-Lego_logo.svg.png" group-title="🎬 BOX - Giải trí",BabyFirst
+https://bbc-aog7.vercel.app/api/bbc
 
 
 # ==========================================
@@ -498,7 +498,7 @@ https://devda.undo.it/Stream/index.php?id=world-poker-tour&ext=.m3u8
 https://sg001-cdw18826playnow.ankb.qzz.io/copyrighted/api/stream/GETftplay/c2t5ZjE/index.m3u8?token=snYheZmfoT3BDCfcS8k4FNfCJbel4iveQYtx7ZMH
 
 
-#EXTINF:-1 tvg-id="fpt-" group-title="⚽ SPORTS - Thể thao" group-logo="https://toiyeuvietnam.dpdns.org/HoiQuanLogo/Images/HinhNhom.png" tvg-logo="https://toiyeuvietnam.dpdns.org/Logo/tv360-9/KenhCoBan.png",FPT Sự kiện 1
+#EXTINF:-1 tvg-id="fpt-01" group-title="⚽ SPORTS - Thể thao" group-logo="https://toiyeuvietnam.dpdns.org/HoiQuanLogo/Images/HinhNhom.png" tvg-logo="https://toiyeuvietnam.dpdns.org/Logo/tv360-9/KenhCoBan.png",FPT Sự kiện 1
 https://vips-livecdn.fptplay.net/live/media/su-kien-01/hls_avc_v6/index.m3u8
 
 #EXTINF:-1 tvg-id="fpt-2" group-title="⚽ SPORTS - Thể thao" group-logo="https://toiyeuvietnam.dpdns.org/HoiQuanLogo/Images/HinhNhom.png" tvg-logo="https://toiyeuvietnam.dpdns.org/Logo/tv360-9/KenhCoBan.png",FPT Sự kiện 2

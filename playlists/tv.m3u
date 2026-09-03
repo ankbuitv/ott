@@ -329,7 +329,10 @@ https://sg001-cdw18826playnow.ankb.qzz.io/NotForCommercial/api/stream/GETnfcplay
 
 
 #EXTINF:-1 tvg-id="hbo" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/d/de/HBO_logo.svg/1024px-HBO_logo.svg.png" group-title="🎬 BOX - Giải trí",HBO
-https://sg001-cdw18826playnow.ankb.qzz.io/NotForCommercial/api/stream/GETnfcplay/aGJvX3ZpZXRuYW0/index.m3u8?token=snYheZmfoT3BDCfcS8k4FNfCJbel4iveQYtx7ZMH
+https://sg001-cdw18826playnow.ankb.qzz.io/NotForCommercial/api/stream/GETnfcplay/aGJvcGhj/index.m3u8?token=snYheZmfoT3BDCfcS8k4FNfCJbel4iveQYtx7ZMH
+
+#EXTINF:-1 tvg-id="axn" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/d/de/HBO_logo.svg/1024px-HBO_logo.svg.png" group-title="🎬 BOX - Giải trí",AXN
+https://sg001-cdw18826playnow.ankb.qzz.io/NotForCommercial/api/stream/GETnfcplay/YXhucGhj/index.m3u8?token=snYheZmfoT3BDCfcS8k4FNfCJbel4iveQYtx7ZMH
 
 #EXTINF:-1 tvg-id="musicbox" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/d/de/HBO_logo.svg/1024px-HBO_logo.svg.png" group-title="🎬 BOX - Giải trí",Music Box
 https://sg001-cdw18826playnow.ankb.qzz.io/copyrighted/api/stream/GETftplay/bWI/index.m3u8?token=snYheZmfoT3BDCfcS8k4FNfCJbel4iveQYtx7ZMH
@@ -342,7 +345,7 @@ https://sg001-cdw18826playnow.ankb.qzz.io/NotForCommercial/api/stream/GETnfcplay
 https://sg001-cdw18826playnow.ankb.qzz.io/NotForCommercial/api/stream/GETnfcplay/d2FybmVydHY/index.m3u8?token=snYheZmfoT3BDCfcS8k4FNfCJbel4iveQYtx7ZMH
 
 #EXTINF:-1 tvg-id="cinemaxhd" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/6/68/Cinemax_logo.svg/1024px-Cinemax_logo.svg.png" group-title="🎬 BOX - Giải trí",Cinemax
-https://sg001-cdw18826playnow.ankb.qzz.io/NotForCommercial/api/stream/GETnfcplay/Q2luZW1heA/index.m3u8?token=snYheZmfoT3BDCfcS8k4FNfCJbel4iveQYtx7ZMH
+https://sg001-cdw18826playnow.ankb.qzz.io/NotForCommercial/api/stream/GETnfcplay/Y2luZW1heHBoYw/index.m3u8?token=snYheZmfoT3BDCfcS8k4FNfCJbel4iveQYtx7ZMH
 
 #EXTINF:-1 tvg-id="cinemaworldhd" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/6/68/Cinemax_logo.svg/1024px-Cinemax_logo.svg.png" group-title="🎬 BOX - Giải trí",Cinemaworld
 https://sg001-cdw18826playnow.ankb.qzz.io/NotForCommercial/api/stream/GETnfcplay/Q2luZW1hd29ybGQ/index.m3u8?token=snYheZmfoT3BDCfcS8k4FNfCJbel4iveQYtx7ZMH

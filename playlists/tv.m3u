@@ -437,11 +437,8 @@ https://media-tyo.hls.nhkworld.jp/hls/w/live/master.m3u8
 #EXTINF:-1 tvg-id="cartoonhd" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Cartoon_Network_2010_logo.svg/1024px-Cartoon_Network_2010_logo.svg.png" group-title="🎬 BOX - Giải trí",Cartoon Network HD
 https://sg002-cdw039026playnow.ankb.qzz.io/dashdrm/api/stream/GETdashdrm/PqakXDqQCf6SeZOYN9UlnkvlVkCJ_1SuqXbl5-j3iko/manifest.m3u8?token=Ken1402@
 
-#EXTINF:-1 tvg-id="boomerang" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Boomerang_2014_logo.svg/1024px-Boomerang_2014_logo.svg.png" group-title="🎬 BOX - Giải trí",Boomerang
-#KODIPROP:inputstreamaddon=inputstream.adaptive
-#KODIPROP:inputstream.adaptive.manifest_type=hls
-#KODIPROP:inputstream.adaptive.stream_headers=X-Access-Token=5d3f72d76c010e308199f4116851004f2dfc638521c652ad
-https://sg001-cdw18826playnow.ankb.qzz.io/red/api/stream/GETred/USA_BOOMERANG/index.m3u8?token=snYheZmfoT3BDCfcS8k4FNfCJbel4iveQYtx7ZMH
+#EXTINF:-1 tvg-id="cartoonito" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Boomerang_2014_logo.svg/1024px-Boomerang_2014_logo.svg.png" group-title="🎬 BOX - Giải trí",Cartoonito
+https://sg002-cdw039026playnow.ankb.qzz.io/dashdrm/api/stream/GETdashdrm/8DktZhXSFTsppiyxhaG2o4ScARWP2SIdvfcKH6rs-dKXLyGDHOQZVpmm0g/manifest.m3u8?token=Ken1402@
 
 
 #EXTINF:-1 tvg-id="nick" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/5/52/Nickelodeon_2023_logo.svg/1024px-Nickelodeon_2023_logo.svg.png" group-title="🎬 BOX - Giải trí",Nickelodeon

@@ -348,7 +348,7 @@ https://sg001-cdw18826playnow.ankb.qzz.io/NotForCommercial/api/stream/GETnfcplay
 https://sg001-cdw18826playnow.ankb.qzz.io/NotForCommercial/api/stream/GETnfcplay/Q2luZW1hd29ybGQ/index.m3u8?token=snYheZmfoT3BDCfcS8k4FNfCJbel4iveQYtx7ZMH
 
 #EXTINF:-1 tvg-id="discoveryhd" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/4/4b/Discovery_Channel_logo.svg/1024px-Discovery_Channel_logo.svg.png" group-title="🎬 BOX - Giải trí",Discovery Channel
-https://sg001-cdw18826playnow.ankb.qzz.io/NotForCommercial/api/stream/GETnfcplay/ZHNj/index.m3u8?token=snYheZmfoT3BDCfcS8k4FNfCJbel4iveQYtx7ZMH
+https://sg002-cdw039026playnow.ankb.qzz.io/dashdrm/api/stream/GETdashdrm/by7_uFV3-Q1vgEbyR7ubvgt6TopU_nqgzmhL3n7WDhILkFfBSGbzg2o/manifest.m3u8?token=Ken1402@
 
 #EXTINF:-1 tvg-id="discoveryasiahd" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/4/4b/Discovery_Channel_logo.svg/1024px-Discovery_Channel_logo.svg.png" group-title="🎬 BOX - Giải trí",Discovery Asia
 https://sg001-cdw18826playnow.ankb.qzz.io/NotForCommercial/api/stream/GETnfcplay/YXNpYQ/index.m3u8?token=snYheZmfoT3BDCfcS8k4FNfCJbel4iveQYtx7ZMH
@@ -439,7 +439,7 @@ https://aegis-cloudfront-1.tubi.video/6d6d0f24-8445-4b4c-bdf6-44f9e38beaa4/playl
 https://media-tyo.hls.nhkworld.jp/hls/w/live/master.m3u8
 
 #EXTINF:-1 tvg-id="cartoonhd" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Cartoon_Network_2010_logo.svg/1024px-Cartoon_Network_2010_logo.svg.png" group-title="🎬 BOX - Giải trí",Cartoon Network HD
-https://sg001-cdw18826playnow.ankb.qzz.io/NotForCommercial/shortened/cartoonnetwork.m3u8?token=Y67k4yHJp0uXLG1rdW7UioaNtITv4jOkmXOFszE8
+https://sg002-cdw039026playnow.ankb.qzz.io/dashdrm/api/stream/GETdashdrm/PqakXDqQCf6SeZOYN9UlnkvlVkCJ_1SuqXbl5-j3iko/manifest.m3u8?token=Ken1402@
 
 #EXTINF:-1 tvg-id="boomerang" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Boomerang_2014_logo.svg/1024px-Boomerang_2014_logo.svg.png" group-title="🎬 BOX - Giải trí",Boomerang
 #KODIPROP:inputstreamaddon=inputstream.adaptive
@@ -452,7 +452,7 @@ https://sg001-cdw18826playnow.ankb.qzz.io/red/api/stream/GETred/USA_BOOMERANG/in
 http://nmk.ioapk.com:5050/4gtv-live105/index.m3u8
 
 #EXTINF:-1 tvg-id="dreamworks" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/DreamWorks_Animation_2016.svg/1024px-DreamWorks_Animation_2016.svg.png" group-title="🎬 BOX - Giải trí",Dreamworks HD
-https://sg001-cdw18826playnow.ankb.qzz.io/NotForCommercial/api/stream/GETnfcplay/RHJlYW1Xb3Jrcw/index.m3u8?token=snYheZmfoT3BDCfcS8k4FNfCJbel4iveQYtx7ZMH
+https://sg002-cdw039026playnow.ankb.qzz.io/dashdrm/api/stream/GETdashdrm/7XPZfOcauk0n8r4mfsd_GqxepkTGKG5EtDHFLdIJsmCOhA8PKDFwNXDs/manifest.m3u8?token=Ken1402@
 
 #EXTINF:-1 tvg-id="disney-xd" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/d/d3/Disney_XD_-_2015.svg/1024px-Disney_XD_-_2015.svg.png" group-title="🎬 BOX - Giải trí",Disney XD
 https://devda.undo.it/Stream/index.php?id=disney-xd&ext=.m3u8

@@ -437,7 +437,7 @@ https://media-tyo.hls.nhkworld.jp/hls/w/live/master.m3u8
 #EXTINF:-1 tvg-id="cartoonhd" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Cartoon_Network_2010_logo.svg/1024px-Cartoon_Network_2010_logo.svg.png" group-title="🎬 BOX - Giải trí",Cartoon Network HD
 https://sg002-cdw039026playnow.ankb.qzz.io/dashdrm/api/stream/GETdashdrm/PqakXDqQCf6SeZOYN9UlnkvlVkCJ_1SuqXbl5-j3iko/manifest.m3u8?token=Ken1402@
 
-#EXTINF:-1 tvg-id="cartoonito" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Boomerang_2014_logo.svg/1024px-Boomerang_2014_logo.svg.png" group-title="🎬 BOX - Giải trí",Cartoonito
+#EXTINF:-1 tvg-id="boomerang" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Boomerang_2014_logo.svg/1024px-Boomerang_2014_logo.svg.png" group-title="🎬 BOX - Giải trí",Cartoonito
 https://sg002-cdw039026playnow.ankb.qzz.io/dashdrm/api/stream/GETdashdrm/8DktZhXSFTsppiyxhaG2o4ScARWP2SIdvfcKH6rs-dKXLyGDHOQZVpmm0g/manifest.m3u8?token=Ken1402@
 
 

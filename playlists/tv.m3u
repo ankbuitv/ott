@@ -318,11 +318,8 @@ https://sg001-cdw18826playnow.ankb.qzz.io/NotForCommercial/api/stream/GETnfcplay
 #EXTINF:-1 tvg-id="hollywood" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/d/de/HBO_logo.svg/1024px-HBO_logo.svg.png" group-title="🎬 BOX - Giải trí",Hollywood Classics
 https://sg001-cdw18826playnow.ankb.qzz.io/NotForCommercial/api/stream/GETnfcplay/aGM/index.m3u8?token=snYheZmfoT3BDCfcS8k4FNfCJbel4iveQYtx7ZMH
 
-#EXTINF:-1 tvg-id="hbo" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/d/de/HBO_logo.svg/1024px-HBO_logo.svg.png" group-title="🎬 BOX - Giải trí",HBO Vietnam
+#EXTINF:-1 tvg-id="hbohd" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/d/de/HBO_logo.svg/1024px-HBO_logo.svg.png" group-title="🎬 BOX - Giải trí",HBO
 https://sg002-cdw039026playnow.ankb.qzz.io/dashdrm/api/stream/GETdashdrm/6WTmvB_gCMCw_XrF273svd6LHFBjrGqE6M6Jw7LQBgXYjfIx/manifest.m3u8?token=Ken1402@
-
-#EXTINF:-1 tvg-id="hbo-family" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/d/de/HBO_logo.svg/1024px-HBO_logo.svg.png" group-title="🎬 BOX - Giải trí",HBO Family
-https://sg002-cdw039026playnow.ankb.qzz.io/NotForCommercial/api/stream/GETnfcplay/JBONmpyJcwKK8JAUc2Thz8VgRoxlNPx1W_jbfG-aHg7qYhAA76Q/manifest.m3u8?token=Ken1402@
 
 #EXTINF:-1 tvg-id="axn" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/d/de/HBO_logo.svg/1024px-HBO_logo.svg.png" group-title="🎬 BOX - Giải trí",AXN
 https://sg002-cdw039026playnow.ankb.qzz.io/dashdrm/api/stream/GETdashdrm/09uYwmUJ3VsZsXqFi8RJiOOWBcx8yPOLr5-53J-8gnV0f6g/manifest.m3u8?token=Ken1402@
@@ -403,10 +400,10 @@ https://devda.undo.it/Stream/index.php?id=sony-channel-tv&ext=.m3u8
 
 
 #EXTINF:-1 tvg-id="dw" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/7/7b/Deutsche_Welle_symbol_2012.svg/1024px-Deutsche_Welle_symbol_2012.svg.png" group-title="🎬 BOX - Giải trí",DW
-https://devda.undo.it/Stream/index.php?id=dw&ext=.m3u8
+https://freem3u.xyz/api/live/play.m3u8?vid=109
 
 #EXTINF:-1 tvg-id="tlc" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/5/5f/Travel_Channel_Logo.svg/1024px-Travel_Channel_Logo.svg.png" group-title="🎬 BOX - Giải trí",TLC
-http://4.30.180.36:8420/tlc/index.m3u8?token=test
+https://sg002-cdw039026playnow.ankb.qzz.io/dashdrm/api/stream/GETdashdrm/S-KOcFsA1x1l2pwUaO2lAWRdjQHeLaHbBzvGQ7eBgwIEgggh/manifest.m3u8?token=Ken1402@
 
 #EXTINF:-1 tvg-id="travel-channel" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/5/5f/Travel_Channel_Logo.svg/1024px-Travel_Channel_Logo.svg.png" group-title="🎬 BOX - Giải trí",Travel Channel
 http://206.212.244.63/162/index.m3u8
@@ -423,7 +420,7 @@ https://live.france24.com/hls/live/2037218-b/F24_EN_HI_HLS/master_500.m3u8
 https://sg002-cdw039026playnow.ankb.qzz.io/dashdrm/api/stream/GETdashdrm/csi-oA661gUYiO3nmNDqdNZ0G212POFuPTtXEedUpaR1pBYRQ6tBA-M/manifest.m3u8?token=Ken1402@
 
 #EXTINF:-1 tvg-id="fashionhd" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/3/3e/Fashion_TV_Logo.svg/1024px-Fashion_TV_Logo.svg.png" group-title="🎬 BOX - Giải trí",Fashion TV
-https://edge-fast3.evrideo.tv/bfdbb576-83f7-11f0-9f89-0200170e3e04_1000028043_HLS/video_10801920_p_0.m3u8
+https://sg002-cdw039026playnow.ankb.qzz.io/dashdrm/api/stream/GETdashdrm/FP9LypJHRNhxeaZq0iX7f52G1He9I0urKkmfuOvSfS-B2Mx2yl3MKCes/manifest.m3u8?token=Ken1402@
 
 #EXTINF:-1 tvg-id="kix" tvg-logo="https://upload.wikimedia.org/wikipedia/en/0/0d/KIX_Logo_2018.png" group-title="🎬 BOX - Giải trí",KIX TV
 https://devda.undo.it/Stream/index.php?id=kix-tv&ext=.m3u8
@@ -456,7 +453,7 @@ https://devda.undo.it/Stream/index.php?id=the-lego-channel&ext=.m3u8
 #EXTINF:-1 tvg-id="babyfirst" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/2/2d/babyfirst.svg/1024px-Lego_logo.svg.png" group-title="🎬 BOX - Giải trí",BabyFirst
 http://206.212.244.63/639/index.m3u8
 
-#EXTINF:-1 tvg-id="cbeebies" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/2/2d/babyfirst.svg/1024px-Lego_logo.svg.png" group-title="🎬 BOX - Giải trí",BabyFirst
+#EXTINF:-1 tvg-id="cbeebies" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/2/2d/babyfirst.svg/1024px-Lego_logo.svg.png" group-title="🎬 BOX - Giải trí",Cbeebies
 https://sg002-cdw039026playnow.ankb.qzz.io/dashdrm/api/stream/GETdashdrm/qbj__gryRPNJXaEni-lzFt0lrASwVOAof6Qr6lPyifgVvxpB8lgruEs/manifest.m3u8?token=Ken1402@
 
 

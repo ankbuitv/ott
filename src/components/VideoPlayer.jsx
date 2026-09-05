@@ -18,7 +18,8 @@ import { useI18n } from '../contexts/I18nContext';
 import {
   joinRoom, leaveRoom, sendPartyChat, sendPartyReaction, sendPartyState, onPartyMessage, PARTY_EMOJIS,
 } from '../services/watchParty';
-import { proxifyStreamUrl, refreshStreamToken, applyStreamClientHeaders, isHlsUrl } from '../services/streamGuard';
+import { isProxiedStreamUrl, refreshStreamToken, applyStreamClientHeaders, makeStreamRequestFilter } from '../services/streamGuard';
+import { parseEpgDate } from '../utils/dateUtils';
 
 const FALLBACK_STREAM_URL_HTTP = "http://bore.pub:30113/hls/index.m3u8";
 const FALLBACK_STREAM_URL = (typeof window !== 'undefined' && window.location?.protocol === 'https:')
@@ -26,43 +27,6 @@ const FALLBACK_STREAM_URL = (typeof window !== 'undefined' && window.location?.p
   : FALLBACK_STREAM_URL_HTTP;
 const VLC_USER_AGENT = "VLC/3.0.21 LibVLC/3.0.21";
 
-export function generateCatchupUrl(baseUrl, timestamp, catchupType = 'append') {
-  if (!baseUrl) return '';
-  if (!timestamp) return baseUrl;
-  let utcSec = Math.floor(Date.now() / 1000);
-  let dateObj = new Date();
-  if (typeof timestamp === 'number') {
-    utcSec = timestamp > 10000000000 ? Math.floor(timestamp / 1000) : timestamp;
-    dateObj = new Date(utcSec * 1000);
-  } else if (timestamp instanceof Date) {
-    dateObj = timestamp; utcSec = Math.floor(timestamp.getTime() / 1000);
-  } else if (typeof timestamp === 'string') {
-    if (/^\d{14}$/.test(timestamp)) {
-      const y = parseInt(timestamp.substring(0, 4), 10);
-      const m = parseInt(timestamp.substring(4, 6), 10) - 1;
-      const d = parseInt(timestamp.substring(6, 8), 10);
-      const h = parseInt(timestamp.substring(8, 10), 10);
-      const mi = parseInt(timestamp.substring(10, 12), 10);
-      const s = parseInt(timestamp.substring(12, 14), 10);
-      dateObj = new Date(Date.UTC(y, m, d, h - 7, mi, s));
-      utcSec = Math.floor(dateObj.getTime() / 1000);
-    } else if (!isNaN(Number(timestamp))) {
-      utcSec = parseInt(timestamp, 10);
-      dateObj = new Date(utcSec * 1000);
-    } else {
-      dateObj = new Date(timestamp); utcSec = Math.floor(dateObj.getTime() / 1000);
-    }
-  }
-  const pad = (n) => String(n).padStart(2, '0');
-  const Y = dateObj.getFullYear(), Mo = pad(dateObj.getMonth()+1), D = pad(dateObj.getDate());
-  const h = pad(dateObj.getHours()), mi = pad(dateObj.getMinutes()), s = pad(dateObj.getSeconds());
-  const formatted = `${Y}${Mo}${D}${h}${mi}${s}`;
-  const sep = baseUrl.includes('?') ? '&' : '?';
-  if (catchupType === 'flussonic' || baseUrl.includes('timeshift'))
-    return baseUrl.replace(/\/index\.m3u8$/i, '') + `/timeshift_abs-${utcSec}.m3u8`;
-  if (catchupType === 'shift') return `${baseUrl}${sep}shift=${utcSec}`;
-  return `${baseUrl}${sep}utc=${utcSec}&lutc=${Math.floor(Date.now()/1000)}&catchup_start=${formatted}`;
-}
 
 function formatBytes(b) { if (!b) return '0 B'; const k=1024, s=['B','KB','MB','GB']; const i=Math.floor(Math.log(b)/Math.log(k)); return (b/Math.pow(k,i)).toFixed(1)+' '+s[i]; }
 function formatBitrate(bps) { if (!bps) return 'N/A'; if (bps>=1e6) return (bps/1e6).toFixed(1)+' Mbps'; if (bps>=1e3) return (bps/1e3).toFixed(0)+' Kbps'; return bps+' bps'; }
@@ -89,6 +53,10 @@ export default function VideoPlayer({
   const [isFallbackActive, setIsFallbackActive] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
   const [activeUrl, setActiveUrl] = useState(streamUrl || FALLBACK_STREAM_URL);
+  const streamFilterRef = useRef(null);  // filter xoay token manifest theo kênh/điểm bắt đầu hiện tại
+  const tokenRetryRef = useRef(false);   // chỉ tự xoay token lại 1 lần mỗi lần load
+  const activeUrlRef = useRef(activeUrl);
+  activeUrlRef.current = activeUrl;
 
   const [showInfo, setShowInfo] = useState(false);
   const [showQualityMenu, setShowQualityMenu] = useState(false);
@@ -140,6 +108,7 @@ export default function VideoPlayer({
 
   const device = useDevice();
   const { addToast } = useToast();
+  const { t } = useI18n();
 
   // Touch gesture state
   const touchStartRef = useRef({ x: 0, y: 0, time: 0 });
@@ -267,7 +236,7 @@ export default function VideoPlayer({
   // Host phat tin hieu khi doi kenh
   useEffect(() => {
     if (isHost && partyRoom && channel) {
-      sendPartyState({ channelId: channel.channel_id, channelName: channel.name, stream: channel.stream_url || '' });
+      sendPartyState({ channelId: channel.channel_id, channelName: channel.name });
     }
   }, [isHost, partyRoom, channel?.channel_id]);
 
@@ -316,7 +285,7 @@ export default function VideoPlayer({
       if (navigator.share) await navigator.share({ title: channel?.name || 'CHRTV', url });
       else {
         await navigator.clipboard.writeText(url);
-        addToast('Đã copy link kênh — gửi qua Zalo/Messenger nhé!', 'success');
+        addToast(t('player.copy_link'), 'success');
       }
     } catch {}
     resetOverlayTimer();
@@ -389,10 +358,18 @@ export default function VideoPlayer({
         manifest: { retryParameters: { maxAttempts: 3, baseDelay: 1000, backoffFactor: 2 }, dash: { disableXlinkProcessing: true, xlinkFailGracefully: true, ignoreMinBufferTime: true } },
         drm: { clearKeys: {}, retryParameters: { maxAttempts: 3, baseDelay: 500, backoffFactor: 2 } },
       });
-      // Định danh client CHRTV-OTT/0.0.1 cho mọi request qua proxy bảo vệ
-      // (browser cấm tự set header User-Agent nên dùng header X-CHRTV-Client)
+      // Định danh client CHRTV-OTT/0.0.1 cho mọi request + filter TỰ ĐỘNG XOAY
+      // token manifest (P0-A): token còn < 25s thì xin token MỚI từ server và
+      // rewrite t= trước khi fetch — phát liên tục không gián đoạn.
       const net = player.getNetworkingEngine();
-      if (net) net.registerRequestFilter((type, req) => { applyStreamClientHeaders(req.headers); });
+      if (net) {
+        net.registerRequestFilter((type, req) => {
+          applyStreamClientHeaders(req.headers);
+          const f = streamFilterRef.current;
+          if (f) { try { return f(type, req); } catch (e) { return true; } }
+          return true;
+        });
+      }
     }
 
     const targetUrl = streamUrl || FALLBACK_STREAM_URL;
@@ -401,8 +378,14 @@ export default function VideoPlayer({
     setErrorMessage(null);
     setIsBuffering(true);
 
-    // === 2. Áp header định danh client TRƯỚC khi load ===
+    // === 2. Đặt filter xoay token + header upstream UA cho lần load này ===
     const channelUa = channel?.user_agent;
+    let catchupAt = 0;
+    if (isCatchupMode && catchupProgram?.start) {
+      try { catchupAt = Math.floor(parseEpgDate(catchupProgram.start).getTime() / 1000); } catch (e) {}
+    }
+    streamFilterRef.current = makeStreamRequestFilter(channel, catchupAt);
+    tokenRetryRef.current = false;
     try {
       const ne = player.getNetworkingEngine();
       if (ne) {
@@ -410,6 +393,9 @@ export default function VideoPlayer({
         ne.registerRequestFilter((type, req) => {
           applyStreamClientHeaders(req.headers);
           if (channelUa) { try { req.headers['X-CHRTV-Upstream-UA'] = channelUa; } catch (e) {} }
+          const f = streamFilterRef.current; // delegate xoay token (đọc ref — luôn đúng phiên load)
+          if (f) { try { return f(type, req); } catch (e) { return true; } }
+          return true;
         });
       }
     } catch (e) {}
@@ -417,9 +403,10 @@ export default function VideoPlayer({
     // === 3. Load stream with appropriate config ===
     const startLoad = async () => {
       try {
-        // Mọi luồng m3u8 đi qua proxy bảo vệ: AES-128 rolling token (10 phút,
-        // client tự xoay ở phút 9) + chỉ nhận định danh CHRTV-OTT/0.0.1
-        const url = isHlsUrl(targetUrl) ? await proxifyStreamUrl(targetUrl) : targetUrl;
+        // URL phát do App xin từ /api/stream/token (proxy_url chứa playback token
+        // HMAC, TTL 60s, server rewrite playlist con mỗi lần phát) — client
+        // KHÔNG tự build URL stream, KHÔNG còn stream_url gốc.
+        const url = targetUrl;
         
         // ClearKey t? URL ho?c t? channel (M3U #KODIPROP)
         let clearKey = parseClearKey(url);
@@ -466,16 +453,27 @@ export default function VideoPlayer({
           setErrorMessage('💎 Kênh thuộc gói cao hơn — vào mục Mua Gói kích hoạt (tạm miễn phí).');
           return;
         }
-        // Token hết hạn/bị từ chối → ép xoay token rồi thử đúng 1 lần trước khi fallback
-        if (isHlsUrl(targetUrl) && /TOKEN_|403|token/i.test(errText)) {
+        // Token hết hạn/bị từ chối → xin token MỚI từ server, load lại đúng 1 lần
+        if (isProxiedStreamUrl(targetUrl) && /TOKEN_|401|403|token/i.test(errText) && !tokenRetryRef.current) {
           try {
-            await refreshStreamToken(targetUrl);
-            const retryUrl = await proxifyStreamUrl(targetUrl, { force: true });
-            await player.load(retryUrl);
-            videoEl.play().catch(() => {});
-            setIsBuffering(false); setIsFallbackActive(false); setErrorMessage(null);
-            return;
-          } catch (e) { /* rơi xuống fallback bên dưới */ }
+            let at = 0;
+            if (isCatchupMode && catchupProgram?.start) {
+              try { at = Math.floor(parseEpgDate(catchupProgram.start).getTime() / 1000); } catch (e2) {}
+            }
+            tokenRetryRef.current = true;
+            const retryUrl = await refreshStreamToken(channel, at);
+            if (retryUrl && !player.destroyed()) {
+              setActiveUrl(retryUrl);
+              await player.load(retryUrl);
+              videoEl.play().catch(() => {});
+              setIsBuffering(false); setIsFallbackActive(false); setErrorMessage(null);
+              return;
+            }
+          } catch (e) {
+            if (e?.code === 'LOGIN_REQUIRED') setErrorMessage('Cần đăng nhập để xem kênh này');
+            else if (e?.code === 'PLAN_REQUIRED') setErrorMessage('Kênh này thuộc gói cao hơn — vào Mua Gói để xem');
+          }
+          /* rơi xuống fallback bên dưới */
         }
         // MPD fails → try fallback HLS (không proxy, proxy không handle MPD segments)
         const isMpd = isMpdUrl(targetUrl) || channel?.manifest_type === 'mpd';
@@ -508,10 +506,44 @@ export default function VideoPlayer({
     player.addEventListener('buffering', onBuf);
     player.addEventListener('trackschanged', onTracks);
 
+    // P0-A: manifest token hết hạn giữa chừng (TOKEN_EXPIRED) → xin token MỚI,
+    // load lại MỘT LẦN (không lặp vô hạn).
+    const onFatalError = async (e) => {
+      const detail = (e && e.detail) || {};
+      const code = detail.code || '';
+      const httpStatus = detail.status || (e && e.status) || 0;
+      const isTokenIssue =
+        /TOKEN_(INVALID|EXPIRED|SID_MISMATCH|USER_MISMATCH|SCOPE)|PLAN_REQUIRED|LOGIN_REQUIRED/.test(code) ||
+        [401, 403].includes(httpStatus);
+      if (!isTokenIssue || tokenRetryRef.current) return;
+      const u = activeUrlRef.current;
+      if (!isProxiedStreamUrl(u)) return;
+      tokenRetryRef.current = true;
+      try {
+        let at = 0;
+        if (isCatchupMode && catchupProgram?.start) {
+          try { at = Math.floor(parseEpgDate(catchupProgram.start).getTime() / 1000); } catch (e2) {}
+        }
+        const fresh = await refreshStreamToken(channel, at);
+        if (fresh && shakaPlayerRef.current && !player.destroyed()) {
+          setActiveUrl(fresh);
+          try { await player.load(fresh); } catch (e3) {}
+        }
+      } catch (e2) {
+        if (e2 && e2.code === 'LOGIN_REQUIRED') {
+          setErrorMessage('Cần đăng nhập để xem kênh này');
+        } else if (e2 && e2.code === 'PLAN_REQUIRED') {
+          setErrorMessage('Kênh này thuộc gói cao hơn — vào Mua Gói để xem');
+        }
+      }
+    };
+    player.addEventListener('error', onFatalError);
+
     return () => {
       if (player) {
         player.removeEventListener('buffering', onBuf);
         player.removeEventListener('trackschanged', onTracks);
+        player.removeEventListener('error', onFatalError);
       }
     };
   }, [streamUrl, parseClearKey, channel?.clearKeyId, channel?.clearKey, channel?.user_agent, channel?.manifest_type]);
@@ -668,7 +700,7 @@ export default function VideoPlayer({
   // Sleep timer expired
   const onSleepExpired = useCallback(() => {
     if (videoRef.current) { videoRef.current.pause(); setIsPlaying(false); }
-    addToast && addToast('Tự tắt sau sleep timer', 'info');
+    addToast && addToast(t('player.sleep_done'), 'info');
   }, [addToast]);
 
   // Keyboard shortcuts
@@ -688,7 +720,7 @@ export default function VideoPlayer({
         case 'ArrowDown': if (onNextChannel) onNextChannel(); break;
         case 'Enter': setShowChannelList(prev => !prev); break;
         case 'i': case 'I': setShowInfo(prev => !prev); break;
-        case 'm': case 'M': toggleMute(); addToast && addToast(isMuted ? 'Bật âm thanh' : 'Tắt âm thanh', 'volume'); break;
+        case 'm': case 'M': toggleMute(); addToast && addToast(isMuted ? t('player.unmute') : t('player.mute'), 'volume'); break;
         case 'f': case 'F': toggleFullscreen(); break;
         case 'p': case 'P': togglePiP(); break;
         case 's': case 'S': takeScreenshot(); break;
@@ -767,8 +799,8 @@ export default function VideoPlayer({
       if (dt < 500 && (absDx > 50 || absDy > 50)) {
         if (absDx > absDy) {
           // Horizontal swipe - could be seek (for catchup)
-          if (dx > 50) addToast && addToast('Phát lại tiếp', 'info');
-          else if (dx < -50) addToast && addToast('Phát lại lùi', 'info');
+          if (dx > 50) addToast && addToast(t('player.ff'), 'info');
+          else if (dx < -50) addToast && addToast(t('player.rw'), 'info');
         } else {
           // Vertical swipe
           if (dy < -50) setVolumeLevel(Math.min(100, volume + 10));
@@ -826,7 +858,7 @@ export default function VideoPlayer({
       {/* Buffering */}
       {isBuffering && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 z-20">
-          <div className="w-12 h-12 border-[3px] border-red-500 border-t-transparent rounded-full animate-spin"></div>
+          <div className="w-12 h-12 border-[3px] border-[#f36f21] border-t-transparent rounded-full animate-spin"></div>
           <span className="mt-2 text-xs text-slate-400 font-medium">Đang tải...</span>
         </div>
       )}
@@ -840,7 +872,7 @@ export default function VideoPlayer({
       )}
 
       {errorMessage && (
-        <div className="absolute top-14 left-3 z-30 bg-red-600/90 text-white px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-lg max-w-[280px]">
+        <div className="absolute top-14 left-3 z-30 bg-[#f36f21]/90 text-white px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-lg max-w-[280px]">
           <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
           <span className="text-[10px] font-medium">{errorMessage}</span>
         </div>
@@ -864,7 +896,7 @@ export default function VideoPlayer({
         <div className="absolute top-0 left-0 right-0 px-3 py-2.5 overlay-gradient-top flex items-center justify-between pointer-events-auto">
           <div className="flex items-center gap-2.5">
             {onClose && (
-              <button onClick={onClose} className="p-2 rounded-full bg-black/50 hover:bg-red-600/80 text-white transition-all">
+              <button onClick={onClose} className="p-2 rounded-full bg-black/50 hover:bg-[#f36f21]/80 text-white transition-all">
                 <ArrowLeft className="w-5 h-5" />
               </button>
             )}
@@ -874,9 +906,9 @@ export default function VideoPlayer({
               <div className="flex items-center gap-1.5 mt-0.5">
                 {channel?.group_title && <span className="px-1 py-px text-[9px] font-semibold rounded bg-slate-700/80 text-slate-300">{channel.group_title}</span>}
                 {isCatchupMode ? (
-                  <span className="px-1 py-px text-[9px] font-semibold rounded bg-purple-600/80 text-white flex items-center gap-0.5"><Clock className="w-2 h-2" /> Xem lại</span>
+                  <span className="px-1 py-px text-[9px] font-semibold rounded bg-purple-600/80 text-white flex items-center gap-0.5"><Clock className="w-2 h-2" /> {t('player.replay')}</span>
                 ) : (
-                  <span className="px-1 py-px text-[9px] font-semibold rounded bg-red-600 text-white flex items-center gap-0.5"><Radio className="w-2 h-2 animate-pulse" /> LIVE</span>
+                  <span className="px-1 py-px text-[9px] font-semibold rounded bg-[#f36f21] text-white flex items-center gap-0.5"><Radio className="w-2 h-2 animate-pulse" /> LIVE</span>
                 )}
               </div>
             </div>
@@ -901,13 +933,13 @@ export default function VideoPlayer({
                 <Airplay className="w-3.5 h-3.5" />
               </button>
             )}
-            <button onClick={() => { setShowParty(prev => !prev); setShowEpgStrip(false); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${showParty ? 'bg-purple-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`} title="Xem chung (Watch Party)">
+            <button onClick={() => { setShowParty(prev => !prev); setShowEpgStrip(false); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${showParty ? 'bg-purple-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`} title={t('player.watching_together')}>
               <Users className="w-3.5 h-3.5" />
             </button>
             <button onClick={() => { setShowEpgStrip(prev => !prev); setShowParty(false); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${showEpgStrip ? 'bg-blue-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`} title="Kênh khác đang chiếu gì">
               <Tv className="w-3.5 h-3.5" />
             </button>
-            <button onClick={(e) => { e.stopPropagation(); if (textTracks.length > 1) { setShowSubtitleMenu(prev => !prev); setShowAudioMenu(false); setShowQualityMenu(false); } else { toggleSubtitles(); } resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${showSubtitleMenu ? 'bg-blue-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`} title="Phụ đề">
+            <button onClick={(e) => { e.stopPropagation(); if (textTracks.length > 1) { setShowSubtitleMenu(prev => !prev); setShowAudioMenu(false); setShowQualityMenu(false); } else { toggleSubtitles(); } resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${showSubtitleMenu ? 'bg-blue-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`} title={t('player.subtitles')}>
               <Captions className="w-3.5 h-3.5" />
             </button>
             <button onClick={(e) => { e.stopPropagation(); setShowQualityMenu(prev=>!prev); setShowAudioMenu(false); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${showQualityMenu ? 'bg-blue-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`}>
@@ -919,7 +951,7 @@ export default function VideoPlayer({
             <button onClick={(e) => { e.stopPropagation(); setShowChannelList(prev=>!prev); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${showChannelList ? 'bg-blue-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`}>
               <List className="w-3.5 h-3.5" />
             </button>
-            <button onClick={(e) => { e.stopPropagation(); setShowSleepTimer(prev=>!prev); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${showSleepTimer ? 'bg-amber-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`} title="Sleep Timer">
+            <button onClick={(e) => { e.stopPropagation(); setShowSleepTimer(prev=>!prev); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${showSleepTimer ? 'bg-amber-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`} title={t('player.sleep')}>
               <Timer className="w-3.5 h-3.5" />
             </button>
             {activeUrl && (
@@ -936,17 +968,17 @@ export default function VideoPlayer({
           <div className="absolute top-12 left-3 z-20 w-64 bg-black/85 backdrop-blur-md rounded-xl border border-slate-700/40 p-3 pointer-events-auto shadow-2xl">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1.5 text-[10px] font-semibold text-blue-400 uppercase tracking-wider">
-                <Monitor className="w-3 h-3" /> Thông số
+                <Monitor className="w-3 h-3" /> {t('player.stats')}
               </div>
               <button onClick={() => setShowInfo(false)} className="p-0.5 rounded hover:bg-slate-700/50"><X className="w-3 h-3 text-slate-400" /></button>
             </div>
             <div className="space-y-2">
               {[
-                { icon: Monitor, label: 'Độ phân giải', value: videoStats.resolution },
+                { icon: Monitor, label: t('player.resolution'), value: videoStats.resolution },
                 { icon: Gauge, label: 'Bitrate', value: formatBitrate(videoStats.bitrate) },
                 { icon: Activity, label: 'FPS', value: videoStats.fps || 'N/A' },
                 { icon: Wifi, label: 'Buffer', value: `${videoStats.bufferLength}s` },
-                { icon: Hash, label: 'Frame rớt', value: videoStats.droppedFrames, color: videoStats.droppedFrames > 0 ? 'text-red-400' : 'text-emerald-400' },
+                { icon: Hash, label: t('player.dropped'), value: videoStats.droppedFrames, color: videoStats.droppedFrames > 0 ? 'text-[#ff9a3d]' : 'text-emerald-400' },
               ].map(({ icon: Ic, label, value, color }) => (
                 <div key={label} className="flex items-center justify-between text-[11px]">
                   <span className="text-slate-500 flex items-center gap-1"><Ic className="w-3 h-3" /> {label}</span>
@@ -954,15 +986,9 @@ export default function VideoPlayer({
                 </div>
               ))}
               <div className="border-t border-slate-700/40 pt-2 mt-1">
-                <div className="text-[9px] text-slate-600 mb-0.5">User-Agent</div>
-                <div className="text-[9px] text-slate-400 font-mono break-all bg-black/30 rounded p-1">{VLC_USER_AGENT}</div>
+                <div className="text-[9px] text-slate-600 mb-0.5">Server</div>
+                <div className="text-[9px] text-slate-400 font-mono">CHRTV · {channel?.group_title || ''}</div>
               </div>
-              {activeUrl && (
-                <div>
-                  <div className="text-[9px] text-slate-600 mb-0.5">Stream</div>
-                  <div className="text-[9px] text-slate-500 font-mono break-all bg-black/30 rounded p-1 max-h-10 overflow-y-auto">{activeUrl}</div>
-                </div>
-              )}
             </div>
           </div>
         )}
@@ -971,12 +997,12 @@ export default function VideoPlayer({
         {showQualityMenu && (
           <div className="absolute top-12 right-3 z-20 w-56 bg-black/85 backdrop-blur-md rounded-xl border border-slate-700/40 p-2 pointer-events-auto shadow-2xl">
             <div className="flex items-center justify-between mb-1.5">
-              <div className="flex items-center gap-1.5 text-[10px] font-semibold text-blue-400 uppercase tracking-wider"><Settings className="w-3 h-3" /> Chất lượng</div>
+              <div className="flex items-center gap-1.5 text-[10px] font-semibold text-blue-400 uppercase tracking-wider"><Settings className="w-3 h-3" /> {t('player.quality')}</div>
               <button onClick={() => setShowQualityMenu(false)} className="p-0.5 rounded hover:bg-slate-700/50"><X className="w-3 h-3 text-slate-400" /></button>
             </div>
             <div className="space-y-0.5 max-h-52 overflow-y-auto">
-              <button onClick={() => { shakaPlayerRef.current?.switchVariant(); setSelectedTrackId(-1); setShowQualityMenu(false); resetOverlayTimer(); }} className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] transition-all ${selectedTrackId === -1 ? 'bg-red-600 text-white font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}>
-                <div className="font-medium">Tự động</div>
+              <button onClick={() => { shakaPlayerRef.current?.switchVariant(); setSelectedTrackId(-1); setShowQualityMenu(false); resetOverlayTimer(); }} className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] transition-all ${selectedTrackId === -1 ? 'bg-[#f36f21] text-white font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}>
+                <div className="font-medium">{t('player.auto_quality')}</div>
                 <div className="text-[9px] opacity-70">ADB chọn phù hợp</div>
               </button>
               {/* Data saver */}
@@ -990,7 +1016,7 @@ export default function VideoPlayer({
                 </span>
               </button>
               {availableTracks.map(t => (
-                <button key={t.id} onClick={() => selectTrack(t)} className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] transition-all ${selectedTrackId === t.id ? 'bg-red-600 text-white font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}>
+                <button key={t.id} onClick={() => selectTrack(t)} className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] transition-all ${selectedTrackId === t.id ? 'bg-[#f36f21] text-white font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}>
                   <div className="font-medium">{qualityLabel(t)}</div>
                   <div className="text-[9px] opacity-70">{formatBitrate(t.bandwidth)} {t.codecs && `· ${t.codecs}`}</div>
                 </button>
@@ -1004,13 +1030,13 @@ export default function VideoPlayer({
         {showAudioMenu && (
           <div className="absolute top-12 right-3 z-20 w-48 bg-black/85 backdrop-blur-md rounded-xl border border-slate-700/40 p-2 pointer-events-auto shadow-2xl">
             <div className="flex items-center justify-between mb-1.5">
-              <div className="flex items-center gap-1.5 text-[10px] font-semibold text-blue-400 uppercase tracking-wider"><AudioLines className="w-3 h-3" /> Ngôn ngữ</div>
+              <div className="flex items-center gap-1.5 text-[10px] font-semibold text-blue-400 uppercase tracking-wider"><AudioLines className="w-3 h-3" /> {t('player.language')}</div>
               <button onClick={() => setShowAudioMenu(false)} className="p-0.5 rounded hover:bg-slate-700/50"><X className="w-3 h-3 text-slate-400" /></button>
             </div>
             <div className="space-y-0.5 max-h-52 overflow-y-auto">
               {audioTracks.length === 0 && <div className="text-[10px] text-slate-500 text-center py-2">Chỉ 1 ngôn ngữ</div>}
               {audioTracks.map((t) => (
-                <button key={t.id} onClick={() => selectAudio(t.id)} className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] transition-all ${selectedAudioId === t.id ? 'bg-red-600 text-white font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}>
+                <button key={t.id} onClick={() => selectAudio(t.id)} className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] transition-all ${selectedAudioId === t.id ? 'bg-[#f36f21] text-white font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}>
                   {t.label}
                 </button>
               ))}
@@ -1022,15 +1048,15 @@ export default function VideoPlayer({
         {showSubtitleMenu && (
           <div className="absolute top-12 right-3 z-20 w-48 bg-black/85 backdrop-blur-md rounded-xl border border-slate-700/40 p-2 pointer-events-auto shadow-2xl">
             <div className="flex items-center justify-between mb-1.5">
-              <div className="flex items-center gap-1.5 text-[10px] font-semibold text-blue-400 uppercase tracking-wider"><Captions className="w-3 h-3" /> Phụ đề</div>
+              <div className="flex items-center gap-1.5 text-[10px] font-semibold text-blue-400 uppercase tracking-wider"><Captions className="w-3 h-3" /> {t('player.subtitles')}</div>
               <button onClick={() => setShowSubtitleMenu(false)} className="p-0.5 rounded hover:bg-slate-700/50"><X className="w-3 h-3 text-slate-400" /></button>
             </div>
             <div className="space-y-0.5 max-h-52 overflow-y-auto">
-              <button onClick={() => { const p = shakaPlayerRef.current; try { p?.setTextTrackVisibility(false); } catch {} setSelectedTextId(-2); setShowSubtitleMenu(false); resetOverlayTimer(); }} className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] transition-all ${selectedTextId === -2 ? 'bg-red-600 text-white font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}>
+              <button onClick={() => { const p = shakaPlayerRef.current; try { p?.setTextTrackVisibility(false); } catch {} setSelectedTextId(-2); setShowSubtitleMenu(false); resetOverlayTimer(); }} className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] transition-all ${selectedTextId === -2 ? 'bg-[#f36f21] text-white font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}>
                 Tắt phụ đề
               </button>
               {textTracks.map((t) => (
-                <button key={t.id} onClick={() => selectSubtitle(t.id)} className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] transition-all ${selectedTextId === t.id ? 'bg-red-600 text-white font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}>
+                <button key={t.id} onClick={() => selectSubtitle(t.id)} className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] transition-all ${selectedTextId === t.id ? 'bg-[#f36f21] text-white font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}>
                   {t.label}
                 </button>
               ))}
@@ -1111,7 +1137,7 @@ export default function VideoPlayer({
                     className="flex-1 px-2.5 py-1.5 bg-slate-800/60 border border-slate-700/40 rounded-lg text-[11px] text-white placeholder:text-slate-600 focus:outline-none focus:border-purple-500/60"
                   />
                   <button onClick={() => { if (partyText.trim()) { sendPartyChat(partyText.trim()); setPartyText(''); } }} className="p-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white"><Send className="w-3.5 h-3.5" /></button>
-                  <button onClick={leaveParty} className="text-[10px] text-slate-500 hover:text-red-400 font-bold shrink-0">Rời</button>
+                  <button onClick={leaveParty} className="text-[10px] text-slate-500 hover:text-[#ff9a3d] font-bold shrink-0">Rời</button>
                 </div>
               </>
             )}
@@ -1144,7 +1170,7 @@ export default function VideoPlayer({
             <input
               type="range" min={0} max={100} value={isMuted ? 0 : volume}
               onChange={e => setVolumeLevel(parseInt(e.target.value))}
-              className="w-40 accent-red-600 h-1"
+              className="w-40 accent-[#f36f21] h-1"
             />
             <span className="text-[10px] text-slate-400 font-mono w-8 text-right">{isMuted ? 0 : volume}%</span>
           </div>
@@ -1158,17 +1184,17 @@ export default function VideoPlayer({
               <button onClick={() => setShowChannelList(false)} className="p-0.5 rounded hover:bg-slate-700/50"><X className="w-3 h-3 text-slate-400" /></button>
             </div>
             <div className="px-2.5 py-1.5">
-              <input type="text" placeholder="Tìm kênh..." value={channelListSearch} onChange={e => setChannelListSearch(e.target.value)} className="w-full px-2.5 py-1.5 bg-slate-800/50 border border-slate-700/40 rounded-lg text-[11px] text-slate-200 focus:outline-none focus:border-red-600/40" />
+              <input type="text" placeholder={t('player.search_channel')} value={channelListSearch} onChange={e => setChannelListSearch(e.target.value)} className="w-full px-2.5 py-1.5 bg-slate-800/50 border border-slate-700/40 rounded-lg text-[11px] text-slate-200 focus:outline-none focus:border-[#f36f21]/40" />
             </div>
             <div className="flex-1 overflow-y-auto px-1.5 pb-1.5 space-y-0.5">
               {filteredChannelList.map((ch) => (
-                <button key={ch.channel_id} onClick={() => { window.__chrtv_select_channel && window.__chrtv_select_channel(ch); setShowChannelList(false); resetOverlayTimer(); }} className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left transition-all ${channel?.channel_id === ch.channel_id ? 'bg-red-600/15 border border-red-600/40 text-white' : 'hover:bg-slate-800/50 text-slate-300 border border-transparent'}`}>
+                <button key={ch.channel_id} onClick={() => { window.__chrtv_select_channel && window.__chrtv_select_channel(ch); setShowChannelList(false); resetOverlayTimer(); }} className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left transition-all ${channel?.channel_id === ch.channel_id ? 'bg-[#f36f21]/15 border border-[#f36f21]/40 text-white' : 'hover:bg-slate-800/50 text-slate-300 border border-transparent'}`}>
                   <img src={ch.logo || ''} alt="" className="w-7 h-7 object-contain rounded bg-slate-900/60 p-0.5 shrink-0" onError={e => e.target.style.display = 'none'} />
                   <div className="min-w-0 flex-1">
                     <div className="text-[11px] font-semibold truncate">{ch.name}</div>
                     <div className="text-[9px] text-slate-600 truncate">{ch.group_title}</div>
                   </div>
-                  {channel?.channel_id === ch.channel_id && <Radio className="w-3 h-3 text-red-500 shrink-0 animate-pulse" />}
+                  {channel?.channel_id === ch.channel_id && <Radio className="w-3 h-3 text-[#f36f21] shrink-0 animate-pulse" />}
                 </button>
               ))}
               {filteredChannelList.length === 0 && <div className="text-[10px] text-slate-500 text-center py-3">Không tìm thấy</div>}
@@ -1183,7 +1209,7 @@ export default function VideoPlayer({
           <div className="mb-2 bg-black/50 backdrop-blur-sm rounded-xl p-2.5 border border-slate-700/25">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1 text-[9px] font-semibold text-red-400 uppercase tracking-wider mb-0.5">
+                <div className="flex items-center gap-1 text-[9px] font-semibold text-[#ff9a3d] uppercase tracking-wider mb-0.5">
                   <Clock className="w-2.5 h-2.5" /> Đang phát
                 </div>
                 <h3 className="text-[13px] font-bold text-white truncate">{isCatchupMode && catchupProgram ? catchupProgram.title : (epgNow?.title || 'Chương trình')}</h3>
@@ -1193,13 +1219,13 @@ export default function VideoPlayer({
                 </p>
                 {epgNow && (
                   <div className="w-full bg-slate-800/80 h-1 rounded-full mt-1 overflow-hidden">
-                    <div className="bg-red-600 h-full rounded-full transition-all duration-500" style={{ width: `${nowProgress}%` }} />
+                    <div className="bg-[#f36f21] h-full rounded-full transition-all duration-500" style={{ width: `${nowProgress}%` }} />
                   </div>
                 )}
               </div>
               {epgNext && !isCatchupMode && (
                 <div className="md:w-48 border-t md:border-t-0 md:border-l border-slate-700/30 pt-1.5 md:pt-0 md:pl-2.5">
-                  <div className="text-[9px] font-semibold text-slate-600 uppercase tracking-wider">Tiếp theo</div>
+                  <div className="text-[9px] font-semibold text-slate-600 uppercase tracking-wider">{t('player.up_next')}</div>
                   <h4 className="text-[11px] font-semibold text-slate-300 truncate">{epgNext.title}</h4>
                   <p className="text-[9px] text-slate-600">{formatTimeHHMM(epgNext.start)}</p>
                 </div>
@@ -1220,7 +1246,7 @@ export default function VideoPlayer({
           {/* Controls */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
-              <button onClick={togglePlay} className="p-2 rounded-full bg-red-600 text-white hover:bg-red-700 shadow-lg shadow-red-600/25">
+              <button onClick={togglePlay} className="p-2 rounded-full bg-[#f36f21] text-white hover:bg-[#f36f21] shadow-lg shadow-[#f36f21]/25">
                 {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 fill-current" />}
               </button>
               <button onClick={toggleMute} className="p-2 rounded-full bg-black/50 text-slate-200 hover:bg-black/70">

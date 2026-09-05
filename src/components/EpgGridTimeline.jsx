@@ -4,7 +4,6 @@ import { useDevice } from '../contexts/DeviceContext';
 import { Calendar, Clock, Play, Search, Filter, Tv, Radio } from 'lucide-react';
 import FocusableWrapper from './FocusableWrapper';
 import { formatTimeHHMM, formatDateVN, parseEpgDate } from '../utils/dateUtils';
-import { generateCatchupUrl } from './VideoPlayer';
 
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 
@@ -46,11 +45,11 @@ export default function EpgGridTimeline({
         offset,
         date: d,
         future: offset > 0,
-        label: offset === 0 ? t('epg.today') : (offset === -1 ? t('epg.yesterday') : (offset === 1 ? 'Ngày mai' : formatDateVN(d)))
+        label: offset === 0 ? t('epg.today') : (offset === -1 ? t('epg.yesterday') : (offset === 1 ? t('epg.tomorrow') : formatDateVN(d)))
       });
     }
     return tabs;
-  }, []);
+  }, [t]);
 
   const categories = useMemo(() => {
     const groups = new Set([t('movies.genre.all')]);
@@ -149,7 +148,7 @@ export default function EpgGridTimeline({
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
         <div>
-          <div className="flex items-center gap-1.5 text-red-500 font-bold uppercase tracking-wider text-[10px] mb-0.5">
+          <div className="flex items-center gap-1.5 text-[#f36f21] font-bold uppercase tracking-wider text-[10px] mb-0.5">
             <Calendar className="w-3.5 h-3.5" /> LỊCH PHÁT SÓNG
           </div>
           <h1 className="text-xl font-extrabold text-white">EPG & Xem Lại</h1>
@@ -161,7 +160,7 @@ export default function EpgGridTimeline({
             placeholder="Tìm kênh..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-red-600/60 transition-colors"
+            className="w-full pl-9 pr-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-[#f36f21]/60 transition-colors"
           />
         </div>
       </div>
@@ -174,7 +173,7 @@ export default function EpgGridTimeline({
             onClick={() => setSelectedDayOffset(tab.offset)}
             className={`px-3 py-2 rounded-lg font-medium text-xs whitespace-nowrap flex items-center gap-1.5 transition-all ${
               selectedDayOffset === tab.offset
-                ? (tab.future ? 'bg-sky-600 text-white shadow-lg shadow-sky-600/30 font-bold' : 'bg-red-600 text-white shadow-lg shadow-red-600/30 font-bold')
+                ? (tab.future ? 'bg-sky-600 text-white shadow-lg shadow-sky-600/30 font-bold' : 'bg-[#f36f21] text-white shadow-lg shadow-[#f36f21]/30 font-bold')
                 : tab.future
                 ? 'bg-slate-900/60 border border-sky-800/40 text-sky-300/80 hover:bg-slate-800 hover:text-sky-200'
                 : 'bg-slate-900/60 border border-slate-800/50 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
@@ -197,7 +196,7 @@ export default function EpgGridTimeline({
             onClick={() => setSelectedCategory(cat)}
             className={`px-2.5 py-1 rounded-md text-[11px] font-semibold whitespace-nowrap transition-all ${
               selectedCategory === cat
-                ? 'bg-red-600/15 text-red-400 border border-red-600/40'
+                ? 'bg-[#f36f21]/15 text-[#ff9a3d] border border-[#f36f21]/40'
                 : 'bg-slate-900/40 text-slate-500 hover:text-slate-300 hover:bg-slate-800/60'
             }`}
           >
@@ -311,7 +310,7 @@ function ChannelTag({ useSpatial, channel, onSelectChannel }) {
       </div>
     </>
   );
-  const cls = "md:w-56 flex items-center gap-2.5 bg-[#0d0e12]/60 p-2.5 rounded-lg border border-slate-800/30 shrink-0 hover:border-red-600/40 transition-all";
+  const cls = "md:w-56 flex items-center gap-2.5 bg-[#0d0e12]/60 p-2.5 rounded-lg border border-slate-800/30 shrink-0 hover:border-[#f36f21]/40 transition-all";
   if (useSpatial) {
     return <FocusableWrapper onClick={() => onSelectChannel && onSelectChannel(channel)} className={cls}>{content}</FocusableWrapper>;
   }
@@ -329,8 +328,8 @@ const ProgrammeChip = React.memo(function ProgrammeChip({ prog, channel, nowTs, 
 
   const handleClick = useCallback(() => {
     if (isPast) {
-      const catchupUrl = generateCatchupUrl(channel.stream_url, prog.start, channel.catchup_type);
-      if (onPlayCatchup) onPlayCatchup(channel, prog, catchupUrl);
+      // Server xin token catchup (kèm thời điểm program) — client không build URL
+      if (onPlayCatchup) onPlayCatchup(channel, prog);
     } else if (isLiveNow || isSoon) {
       // Đang phát / sắp phát trong 5 phút -> vào sống
       if (onSelectChannel) onSelectChannel(channel);
@@ -342,11 +341,11 @@ const ProgrammeChip = React.memo(function ProgrammeChip({ prog, channel, nowTs, 
       <div>
         <div className="flex items-center justify-between gap-1.5 mb-1">
           <span className="text-[11px] font-bold text-slate-400 flex items-center gap-0.5">
-            <Clock className="w-2.5 h-2.5 text-red-500/70" />
+            <Clock className="w-2.5 h-2.5 text-[#f36f21]/70" />
             {formatTimeHHMM(prog.start)} - {formatTimeHHMM(prog.stop)}
           </span>
           {isLiveNow && (
-            <span className="px-1.5 py-px text-[9px] font-bold rounded bg-red-600 text-white flex items-center gap-0.5">
+            <span className="px-1.5 py-px text-[9px] font-bold rounded bg-[#f36f21] text-white flex items-center gap-0.5">
               <Radio className="w-2 h-2 animate-pulse" /> LIVE
             </span>
           )}
@@ -369,7 +368,7 @@ const ProgrammeChip = React.memo(function ProgrammeChip({ prog, channel, nowTs, 
 
   const cls = `w-56 p-2.5 rounded-lg border shrink-0 flex flex-col justify-between transition-colors ${
     isLiveNow
-      ? 'bg-red-950/30 border-red-600/60'
+      ? 'bg-[#7a2f0e]/30 border-[#f36f21]/60'
       : isPast
       ? 'bg-[#0d0e12]/40 border-slate-800/40 hover:border-slate-600/60'
       : 'bg-[#0d0e12]/20 border-slate-800/20 text-slate-600'

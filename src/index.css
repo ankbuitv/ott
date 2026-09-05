@@ -2,28 +2,39 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ===== CHRTV × MYTV THEME (2026-09) ===== */
+:root {
+  --orange: #f36f21;
+  --orange2: #ff9a3d;
+  --bg: #0b0b0d;
+  --bg2: #131316;
+  --card: #1b1b1f;
+  --line: #26262b;
+  --muted: #9b9ba3;
+}
+
 @layer base {
   body {
-    background-color: #0a0b0f;
-    color: #f1f5f9;
+    background-color: #0b0b0d;
+    color: #f2f2f2;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 4px; height: 4px; }
+/* Scrollbar (mytv) */
+::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #222; border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: #dc2626; }
+::-webkit-scrollbar-thumb { background: #2c2c32; border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: var(--orange); }
 
-/* TV Remote Focus */
+/* TV Remote Focus (cam orange) */
 .tv-focused {
   outline: none !important;
-  border-color: #dc2626 !important;
-  background-color: rgba(220, 38, 38, 0.15) !important;
-  box-shadow: 0 0 12px rgba(220, 38, 38, 0.4) !important;
+  border-color: var(--orange) !important;
+  background-color: rgba(243, 111, 33, 0.15) !important;
+  box-shadow: 0 0 12px rgba(243, 111, 33, 0.4) !important;
   transform: scale(1.03);
   transition: all 0.15s ease-out;
   z-index: 30;
@@ -49,6 +60,95 @@
   to { transform: translateX(0); opacity: 1; }
 }
 
+/* ===== ANIMATIONS (mytv) ===== */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes floaty {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+/* Thanh equalizer "Đang phát" (mytv .eq) */
+@keyframes eqBar {
+  0%, 100% { transform: scaleY(0.5); }
+  50% { transform: scaleY(1); }
+}
+
+.anim-fade-up { animation: fadeUp .45s cubic-bezier(.22,.8,.36,1) both; }
+.anim-fade-in { animation: fadeIn .35s ease both; }
+.anim-scale-in { animation: scaleIn .3s cubic-bezier(.22,.8,.36,1) both; }
+.anim-slide-down { animation: slideDown .3s cubic-bezier(.22,.8,.36,1) both; }
+.anim-floaty { animation: floaty 4s ease-in-out infinite; }
+
+/* Equalizer bars — 3 thanh đỏ nhấp nhúc */
+.eq {
+  display: inline-flex; gap: 2px; align-items: flex-end; height: 12px;
+}
+.eq i {
+  width: 3px; background: #e53935; border-radius: 1px;
+  animation: eqBar 1s infinite ease-in-out;
+}
+.eq i:nth-child(1) { height: 6px; }
+.eq i:nth-child(2) { height: 12px; animation-delay: .2s; }
+.eq i:nth-child(3) { height: 8px; animation-delay: .4s; }
+
+/* Tiêu đề hero kiểu mytv: chữ nghiêng đậm + gradient cam */
+.title-art {
+  font-style: italic;
+  background: linear-gradient(180deg, #fff 30%, #ffd9a8 75%, #ff9a3d 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 3px 10px rgba(0,0,0,0.55));
+}
+
+/* Nút cam mytv */
+.btn-orange {
+  background: linear-gradient(135deg, var(--orange2), var(--orange));
+  box-shadow: 0 6px 20px rgba(243, 111, 33, 0.4);
+  transition: filter .18s, transform .18s;
+}
+.btn-orange:hover { filter: brightness(1.08); transform: translateY(-1px); }
+
+/* Card mytv: hover nâng + scale nhẹ */
+.mytv-card {
+  transition: transform .22s cubic-bezier(.22,.8,.36,1), border-color .22s, box-shadow .22s;
+}
+.mytv-card:hover {
+  transform: translateY(-3px) scale(1.015);
+  border-color: #3a3a42;
+  box-shadow: 0 14px 34px rgba(0,0,0,0.5);
+}
+
+/* Tab chbar: gạch chân cam */
+.chbar-btn {
+  position: relative; padding: 12px 2px; font-weight: 700;
+  color: var(--muted); border-bottom: 3px solid transparent;
+  transition: color .18s, border-color .18s;
+  white-space: nowrap;
+}
+.chbar-btn:hover { color: #fff; }
+.chbar-btn.on { color: #fff; border-bottom-color: var(--orange); }
+
+/* Topbar mytv: nền solid gradient (KHÔNG backdrop-blur — tránh đơ khi cuộn) */
+.topbar-mytv {
+  background: linear-gradient(180deg, rgba(5,5,6,0.98) 0%, rgba(9,9,12,0.94) 100%);
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
 /* Range input */
 input[type="range"] {
   -webkit-appearance: none;
@@ -60,24 +160,20 @@ input[type="range"] {
 }
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #dc2626;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--orange);
   cursor: pointer;
   border: 2px solid #fff;
 }
 input[type="range"]::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #dc2626;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--orange);
   cursor: pointer;
   border: 2px solid #fff;
 }
 
 /* Selection */
-::selection { background-color: rgba(220, 38, 38, 0.25); color: #fff; }
+::selection { background-color: rgba(243, 111, 33, 0.35); color: #fff; }
 
 /* Safe area for mobile */
 .safe-area-bottom { padding-bottom: env(safe-area-inset-bottom, 0); }

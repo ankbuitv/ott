@@ -14,7 +14,7 @@ function Toggle({ on, onClick, label }) {
   return (
     <button
       onClick={onClick}
-      className={`w-11 h-6 rounded-full transition-all shrink-0 ${on ? 'bg-red-600' : 'bg-slate-700'}`}
+      className={`w-11 h-6 rounded-full transition-all shrink-0 ${on ? 'bg-[#f36f21]' : 'bg-slate-700'}`}
       aria-label={label}
     >
       <div className={`w-4.5 h-4.5 w-[18px] h-[18px] rounded-full bg-white shadow transition-transform ${on ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
@@ -101,7 +101,7 @@ export default function SettingsPage({ onClose }) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <div className="flex items-center gap-1.5 text-red-500 font-bold uppercase tracking-wider text-[10px] mb-0.5">
+          <div className="flex items-center gap-1.5 text-[#f36f21] font-bold uppercase tracking-wider text-[10px] mb-0.5">
             <Settings className="w-3.5 h-3.5" /> {t('settings.title')}
           </div>
           <h1 className="text-2xl font-extrabold text-white">{t('settings.title')}</h1>
@@ -116,7 +116,7 @@ export default function SettingsPage({ onClose }) {
       <div className="grid md:grid-cols-2 gap-5">
         {/* ===== NGÔN NGỮ ===== */}
         <div className="bg-[#13151c] border border-slate-800/40 rounded-xl p-5 space-y-4 md:col-span-2">
-          <h3 className="text-sm font-bold text-white flex items-center gap-2"><Languages className="w-4 h-4 text-red-400" /> {t('settings.language')}</h3>
+          <h3 className="text-sm font-bold text-white flex items-center gap-2"><Languages className="w-4 h-4 text-[#ff9a3d]" /> {t('settings.language')}</h3>
           <div className="flex flex-wrap gap-2.5">
             {languages.map(l => {
               const active = lang === l.code;
@@ -127,7 +127,7 @@ export default function SettingsPage({ onClose }) {
                   onClick={() => setLang(l.code)}
                   className={`relative flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all border ${
                     active
-                      ? 'bg-red-600 border-red-500 text-white shadow-lg shadow-red-600/20'
+                      ? 'bg-[#f36f21] border-[#f36f21] text-white shadow-lg shadow-[#f36f21]/20'
                       : 'bg-slate-800/60 border-slate-700/50 text-slate-300 hover:bg-slate-700/60 hover:text-white'
                   }`}
                 >
@@ -161,7 +161,7 @@ export default function SettingsPage({ onClose }) {
                   key={t_opt}
                   onClick={() => updateSetting('theme', t_opt)}
                   className={`px-4 py-2 text-xs rounded-lg font-medium transition-all flex items-center gap-1.5 ${
-                    settings.theme === t_opt ? 'bg-red-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
+                    settings.theme === t_opt ? 'bg-[#f36f21] text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
                   }`}
                 >
                   {t_opt === 'dark' ? <Moon className="w-3 h-3" /> : <Sun className="w-3 h-3" />}
@@ -352,8 +352,8 @@ export default function SettingsPage({ onClose }) {
             <div className="space-y-2.5">
               <p className="text-[11px] text-emerald-400 flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4" /> 2FA đang BẬT — tài khoản của bạn được bảo vệ 2 lớp.</p>
               <div className="flex gap-2">
-                <input value={twoFaCode} onChange={(e) => setTwoFaCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Mã 2FA để tắt" inputMode="numeric" className="w-40 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm font-mono tracking-widest text-white text-center focus:outline-none focus:border-red-500" />
-                <button onClick={disable2Fa} disabled={twoFaCode.length !== 6} className="px-4 py-2 bg-red-600/90 hover:bg-red-600 disabled:opacity-40 text-white text-xs font-bold rounded-xl flex items-center gap-1.5"><ShieldOff className="w-3.5 h-3.5" /> Tắt 2FA</button>
+                <input value={twoFaCode} onChange={(e) => setTwoFaCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Mã 2FA để tắt" inputMode="numeric" className="w-40 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm font-mono tracking-widest text-white text-center focus:outline-none focus:border-[#f36f21]" />
+                <button onClick={disable2Fa} disabled={twoFaCode.length !== 6} className="px-4 py-2 bg-[#f36f21]/90 hover:bg-[#f36f21] disabled:opacity-40 text-white text-xs font-bold rounded-xl flex items-center gap-1.5"><ShieldOff className="w-3.5 h-3.5" /> Tắt 2FA</button>
               </div>
             </div>
           )}
@@ -375,7 +375,7 @@ export default function SettingsPage({ onClose }) {
             <button
               onClick={handleReset}
               className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                showConfirm ? 'bg-red-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
+                showConfirm ? 'bg-[#f36f21] text-white' : 'bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700'
               }`}
             >
               {showConfirm ? <><Trash2 className="w-4 h-4" /> {t('settings.confirm_reset')}</> : <><RotateCcw className="w-4 h-4" /> {t('settings.reset_default')}</>}

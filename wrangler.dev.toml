@@ -6,6 +6,13 @@ name = "chrtv-backend-dev"
 main = "worker/worker.js"
 compatibility_date = "2024-01-01"
 
+# ===== BIẾN CHỈ DÙNG LOCAL DEV (KHÔNG dùng để deploy) =====
+# Production: set qua `wrangler secret put <NAME> <VALUE>` (xem SECURITY_FIX_RUNBOOK.md).
+[vars]
+JWT_SECRET = "dev-only-jwt-secret-local-1234567890"
+STREAM_TOKEN_SECRET = "dev-only-stream-secret-local-1234567890"
+ADMIN_MASTER_TOKEN = "dev-only-admin-master-token-local"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "chrtv-db"

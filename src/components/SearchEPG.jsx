@@ -1,7 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Search, X, Clock, Radio, Play } from 'lucide-react';
 import { formatTimeHHMM, parseEpgDate } from '../utils/dateUtils';
-import { generateCatchupUrl } from './VideoPlayer';
 
 export default function SearchEPG({ epgData, channels, onPlayCatchup, onSelectChannel }) {
   const [query, setQuery] = useState('');
@@ -45,8 +44,8 @@ export default function SearchEPG({ epgData, channels, onPlayCatchup, onSelectCh
               key={i}
               onClick={() => {
                 if ((r.isPast || r.isLive) && r.channel) {
-                  const url = generateCatchupUrl(r.channel.stream_url, r.start, r.channel.catchup_type);
-                  onPlayCatchup && onPlayCatchup(r.channel, r, url);
+                  // Server xin token catchup (kèm thời điểm program) — client không build URL
+                  onPlayCatchup && onPlayCatchup(r.channel, r);
                 } else if (r.channel) {
                   onSelectChannel && onSelectChannel(r.channel);
                 }
@@ -62,7 +61,7 @@ export default function SearchEPG({ epgData, channels, onPlayCatchup, onSelectCh
                   <span>{formatTimeHHMM(r.start)} - {formatTimeHHMM(r.stop)}</span>
                 </div>
               </div>
-              {r.isLive && <span className="px-1.5 py-px text-[9px] bg-red-600 rounded text-white font-bold shrink-0">LIVE</span>}
+              {r.isLive && <span className="px-1.5 py-px text-[9px] bg-[#f36f21] rounded text-white font-bold shrink-0">LIVE</span>}
               {r.isPast && <Play className="w-3 h-3 text-purple-400 shrink-0" />}
             </button>
           ))}

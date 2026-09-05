@@ -1,91 +1,87 @@
 import React, { useState, useEffect } from 'react';
-import { Tv, Search, Calendar, Play, ArrowRight, ArrowLeft, Check } from 'lucide-react';
+import { Tv, Film, Trophy, Crown, ArrowRight, X } from 'lucide-react';
+import { useI18n } from '../contexts/I18nContext';
 
-const STEPS = [
-  {
-    icon: Tv,
-    title: 'Chào mừng đến CHRTV',
-    desc: 'Xem truyền hình trực tuyến mọi lúc mọi nơi. Hỗ trợ Smart TV, mobile và web.',
-  },
-  {
-    icon: Search,
-    title: 'Tìm kênh yêu thích',
-    desc: 'Dùng ô tìm kiếm hoặc lọc theo thể loại (VTV, HTV, Thể Thao...) để tìm nhanh kênh bạn muốn.',
-  },
-  {
-    icon: Calendar,
-    title: 'Lịch phát sóng EPG',
-    desc: 'Tab "Lịch EPG" cho phép xem chương trình trong 7 ngày qua và nhấn để xem lại bất cứ lúc nào.',
-  },
-  {
-    icon: Play,
-    title: 'Trải nghiệm xem',
-    desc: 'Khi xem, di chuyển chuột để hiện thanh điều khiển. Sau 5s không tương tác sẽ tự ẩn. Nhấn Enter mở danh sách kênh, phím I xem thông số kỹ thuật.',
-  },
-];
-
-export default function OnboardingTour({ forceShow = false, onComplete }) {
-  const [step, setStep] = useState(0);
+/**
+ * Welcome popup (kiểu mytv dd-auth) — hiện:
+ *  1. Lần đầu vào web (localStorage `chrtv_welcomed` chưa set)
+ *  2. Sau khi đăng nhập lần đầu trong session (sessionStorage `chrtv_welcomed_session`)
+ */
+export default function OnboardingTour({ forceShow = false, onLogin = false }) {
+  const { t } = useI18n();
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
     if (forceShow) { setVisible(true); return; }
+    let show = false;
     try {
-      const completed = localStorage.getItem('chrtv_onboarded');
-      if (!completed) setVisible(true);
-    } catch { setVisible(true); }
-  }, [forceShow]);
+      const firstEver = !localStorage.getItem('chrtv_welcomed');
+      const afterLogin = onLogin && !sessionStorage.getItem('chrtv_welcomed_session');
+      if (firstEver || afterLogin) {
+        show = true;
+        if (afterLogin) sessionStorage.setItem('chrtv_welcomed_session', '1');
+      }
+    } catch { show = false; }
+    if (show) {
+      const id = requestAnimationFrame(() => setVisible(true));
+      return () => cancelAnimationFrame(id);
+    }
+  }, [forceShow, onLogin]);
+
+  const close = () => {
+    try {
+      localStorage.setItem('chrtv_welcomed', '1');
+      sessionStorage.setItem('chrtv_welcomed_session', '1');
+    } catch {}
+    setVisible(false);
+  };
 
   if (!visible) return null;
 
-  const handleNext = () => {
-    if (step < STEPS.length - 1) setStep(step + 1);
-    else handleFinish();
-  };
-
-  const handleFinish = () => {
-    try { localStorage.setItem('chrtv_onboarded', '1'); } catch {}
-    setVisible(false);
-    onComplete && onComplete();
-  };
-
-  const StepIcon = STEPS[step].icon;
-  const isLast = step === STEPS.length - 1;
+  const feats = [
+    { icon: Tv, text: t('welcome.f1'), color: 'bg-sky-500/15 text-sky-400' },
+    { icon: Film, text: t('welcome.f2'), color: 'bg-purple-500/15 text-purple-400' },
+    { icon: Trophy, text: t('welcome.f3'), color: 'bg-emerald-500/15 text-emerald-400' },
+    { icon: Crown, text: t('welcome.f4'), color: 'bg-[#f36f21]/15 text-[#ff9a3d]' },
+  ];
 
   return (
-    <div className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-[#13151c] border border-slate-800/60 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
-        <div className="p-6 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-red-600/15 flex items-center justify-center mx-auto mb-4">
-            <StepIcon className="w-8 h-8 text-red-500" />
+    <div className="fixed inset-0 z-[300] bg-black/80 anim-fade-in flex items-center justify-center p-4" onClick={close}>
+      <div
+        className="bg-[#17171b] border border-[#2a2a30] rounded-2xl shadow-2xl w-full max-w-md overflow-hidden anim-scale-in"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header mytv: gradient cam + logo */}
+        <div className="relative h-24 bg-gradient-to-br from-[#3a1508] via-[#7a2f0e] to-[#c8571d] flex items-center justify-center">
+          <div className="absolute inset-0 opacity-30" style={{ background: 'radial-gradient(80% 120% at 70% 20%, rgba(255,154,61,.5), transparent 60%)' }}></div>
+          <div className="relative text-4xl font-black italic tracking-tight text-white drop-shadow-lg">
+            CHR<span className="text-[#ffd9a8]">TV</span>
           </div>
-          <h2 className="text-lg font-extrabold text-white mb-2">{STEPS[step].title}</h2>
-          <p className="text-xs text-slate-400 leading-relaxed">{STEPS[step].desc}</p>
+          <button onClick={close} className="absolute top-3 right-3 p-1.5 rounded-full hover:bg-white/10 text-white/70 hover:text-white transition">
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
-        <div className="px-6 pb-3 flex items-center justify-center gap-1.5">
-          {STEPS.map((_, i) => (
-            <div
-              key={i}
-              className={`h-1 rounded-full transition-all ${i === step ? 'w-6 bg-red-600' : 'w-1.5 bg-slate-700'}`}
-            />
-          ))}
-        </div>
+        <div className="p-6">
+          <h3 className="text-lg font-black text-white mb-1">{t('welcome.title')} 👋</h3>
+          <p className="text-xs text-[#9b9ba3] mb-5">{t('welcome.sub')}</p>
 
-        <div className="px-5 pb-5 flex gap-2">
-          {step > 0 && (
-            <button
-              onClick={() => setStep(step - 1)}
-              className="flex-1 px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold hover:bg-slate-700 transition-all flex items-center justify-center gap-1"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" /> Quay lại
-            </button>
-          )}
-          <button
-            onClick={handleNext}
-            className="flex-1 px-4 py-2 rounded-xl bg-red-600 text-white text-xs font-semibold hover:bg-red-700 transition-all flex items-center justify-center gap-1"
-          >
-            {isLast ? <><Check className="w-3.5 h-3.5" /> Bắt đầu</> : <>Tiếp <ArrowRight className="w-3.5 h-3.5" /></>}
+          <div className="space-y-2.5 mb-6">
+            {feats.map(({ icon: Ic, text, color }, i) => (
+              <div key={i} className="flex items-center gap-3 anim-fade-up" style={{ animationDelay: `${i * 70 + 100}ms` }}>
+                <span className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${color}`}>
+                  <Ic className="" style={{ width: 18, height: 18 }} />
+                </span>
+                <span className="text-[13px] text-[#d6d6dc] leading-snug">{text}</span>
+              </div>
+            ))}
+          </div>
+
+          <button onClick={close} className="w-full btn-orange text-white font-extrabold text-sm py-3.5 rounded-xl flex items-center justify-center gap-2">
+            {t('welcome.cta')} <ArrowRight className="w-4 h-4" />
+          </button>
+          <button onClick={close} className="w-full mt-2 py-2.5 text-[12px] font-semibold text-[#9b9ba3] hover:text-white transition">
+            {t('welcome.later')}
           </button>
         </div>
       </div>

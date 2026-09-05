@@ -13,47 +13,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <script>
-    /* ===== CHRTV CLIENT GUARD: cấm F12/devtools + chuột phải; F12 => web dừng ===== */
-    (function () {
-      var killed = false;
-      function killAll() {
-        if (killed) return; killed = true;
-        try { document.querySelectorAll('video').forEach(function (v) { try { v.pause(); v.removeAttribute('src'); v.load(); } catch (e) {} }); } catch (e) {}
-        try { window.stop(); } catch (e) {}
-        try { if (window.__chrtv_player) window.__chrtv_player.destroy(); } catch (e) {}
-        try {
-          var d = document, el = d.documentElement, b = d.body;
-          if (b) b.innerHTML = '';
-          var box = d.createElement('div');
-          box.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:#000;color:#f36f21;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:Arial,sans-serif;text-align:center;padding:24px';
-          box.innerHTML = '<div style="font-size:54px;margin-bottom:14px">🔒</div><div style="font-size:20px;font-weight:800;color:#fff">Phiên xem đã bị dừng</div><div style="font-size:13px;color:#9b9ba3;margin-top:8px;max-width:420px">Phát hiện công cụ nhà phát triển (F12/DevTools) — nội dung được bảo vệ bản quyền.<br>Đóng DevTools rồi tải lại trang (F5) để tiếp tục xem.</div><div style="font-size:12px;color:#666;margin-top:18px">Hỗ trợ: support@ankb.qzz.io</div>';
-          (b || el).appendChild(box);
-        } catch (e) {}
-        try { setInterval(function () { try { window.stop(); } catch (e) {} }, 800); } catch (e) {}
-      }
-      // Cấm chuột phải
-      document.addEventListener('contextmenu', function (e) { e.preventDefault(); }, true);
-      // Cấm F12 + tổ hợp mở DevTools + xem source
-      document.addEventListener('keydown', function (e) {
-        var k = (e.key || '').toLowerCase();
-        if (e.key === 'F12' || e.code === 'F12' || e.keyCode === 123) { e.preventDefault(); e.stopPropagation(); killAll(); return; }
-        if ((e.ctrlKey || e.metaKey) && e.shiftKey && (k === 'i' || k === 'j' || k === 'c')) { e.preventDefault(); e.stopPropagation(); killAll(); return; }
-        if ((e.ctrlKey || e.metaKey) && k === 'u') { e.preventDefault(); e.stopPropagation(); killAll(); return; }
-      }, true);
-      // Phát hiện DevTools đang mở (an toàn với zoom) => dừng web
-      var dpr0 = window.devicePixelRatio || 1;
-      function devtoolsOpen() {
-        try {
-          var z = (window.devicePixelRatio || 1) / (dpr0 || 1) || 1;
-          var dw = window.outerWidth - window.innerWidth * z;
-          var dh = window.outerHeight - window.innerHeight * z;
-          return dw > 220 || dh > 220;
-        } catch (e) { return false; }
-      }
-      setInterval(function () { if (devtoolsOpen()) killAll(); }, 1200);
-    })();
-    </script>
+
   </head>
   <body class="bg-[#0d0e12] text-slate-100 antialiased select-none overflow-x-hidden">
     <div id="root"></div>

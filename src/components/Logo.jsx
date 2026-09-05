@@ -12,7 +12,7 @@ export default function Logo({ size = 'md', showSubtext = true, className = '' }
 
   return (
     <div className={`flex items-center gap-2 ${className}`}>
-      <div className={`${sizes.icon} bg-gradient-to-br from-red-500 to-red-700 rounded-md flex items-center justify-center shadow-lg shadow-red-600/20 relative overflow-hidden shrink-0`}>
+      <div className={`${sizes.icon} bg-gradient-to-br from-[#f36f21] to-[#c2570f] rounded-md flex items-center justify-center shadow-lg shadow-[#f36f21]/20 relative overflow-hidden shrink-0`}>
         <svg className={`${sizes.ic} text-white relative z-10`} fill="currentColor" viewBox="0 0 24 24">
           <path d="M8 5v14l11-7z"/>
         </svg>
@@ -22,7 +22,7 @@ export default function Logo({ size = 'md', showSubtext = true, className = '' }
       <div className="flex flex-col leading-none">
         <span className={`${sizes.text} font-black tracking-tight text-white`}>CHRTV</span>
         {showSubtext && (
-          <span className={`${sizes.sub} font-bold tracking-[0.2em] text-red-400/90 mt-0.5`}>
+          <span className={`${sizes.sub} font-bold tracking-[0.2em] text-[#ff9a3d]/90 mt-0.5`}>
             IPTV · LIVE
           </span>
         )}

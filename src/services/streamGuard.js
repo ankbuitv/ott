@@ -40,6 +40,13 @@ export async function getStreamToken(u, { force = false } = {}) {
     const res = await fetch(`${API_BASE}/api/stream/token?u=${encodeURIComponent(u)}`, {
       headers: { "X-CHRTV-Client": CHRTV_CLIENT_UA },
     });
+    if (res.status === 403) {
+      // LOGIN_REQUIRED / PLAN_REQUIRED / TOKEN_* — ném lỗi để player KHÔNG tự fallback lách gói
+      let code = "TOKEN_DENIED";
+      try { const j = await res.json(); code = j.error || code; } catch (e) {}
+      const err = new Error(code); err.code = code;
+      throw err;
+    }
     if (!res.ok) { _cache.lastError = now; return _cache.t || ""; }
     const j = await res.json();
     if (!j || !j.t) return _cache.t || "";

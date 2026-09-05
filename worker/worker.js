@@ -811,6 +811,15 @@ async function handleProxy(request, env) {
   const reqUrl = new URL(request.url);
   const targetUrl = reqUrl.searchParams.get("url");
   if (!targetUrl) return new Response("Missing url", { status: 400, headers: CORS });
+  // Không cho dùng proxy cũ để lách gói: target stream phải đúng nhóm kênh của plan
+  const deny = await streamAccessDenied(request, env, targetUrl);
+  if (deny) return new Response(JSON.stringify(deny), { status: 403, headers: { ...CORS, "Content-Type": "application/json" } });
+  // Target giống stream thì cũng phải là client CHRTV-OTT (chặn curl/ffplay qua cổng cũ)
+  if (/\.(m3u8|ts|mpd)(\?|$)/i.test(targetUrl)) {
+    const blocked = streamToolBlocked(request);
+    if (blocked) return new Response(JSON.stringify({ error: "Client bị chặn", reason: blocked }), { status: 403, headers: { ...CORS, "Content-Type": "application/json" } });
+    if (!streamIdentityOk(request)) return new Response(JSON.stringify({ error: "Chỉ chấp nhận client CHRTV-OTT/0.0.1" }), { status: 403, headers: { ...CORS, "Content-Type": "application/json" } });
+  }
 
   const proxyBase = `${reqUrl.origin}${reqUrl.pathname}`;
   const fetchOpts = {
@@ -938,6 +947,53 @@ async function streamSid(request, env) {
 function streamErr(obj, status) {
   return new Response(JSON.stringify(obj), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 }
+// ---- GATING theo nhóm kênh: Standard=VN, Recreational=VN+PHIM, VIP=tất cả ----
+const CHRTV_VN_RE = /(vtv|htv|thvl|sctv|antv|qu\u1ed1c gia|nh\u00e2n d\u00e2n|qu\u1ed1c h\u1ed9i|truy\u1ec1n h\u00ecnh vi\u1ec7t nam|\u0111\u1ecba ph\u01b0\u01a1ng|h\u00e0 n\u1ed9i|v\u0129nh long|c\u1ea7n th\u01a1|vietnam|n\u00f4ng nghi\u1ec7p|ph\u1ed5 th\u00f4ng|d\u00e2n t\u1ed9c)/i;
+const CHRTV_PHIM_RE = /(phim|movie|cinema|film|hollywood|classic|series|drama)/i;
+function classifyGroupChrtv(g) {
+  g = String(g || "");
+  if (CHRTV_PHIM_RE.test(g)) return "PHIM";
+  if (CHRTV_VN_RE.test(g)) return "VN";
+  return "KHAC";
+}
+function planAllowsGroupChrtv(plan, g) {
+  const c = String(plan || "standard").toLowerCase();
+  if (c === "vip") return true;
+  const cls = classifyGroupChrtv(g);
+  if (c === "recreational") return cls === "VN" || cls === "PHIM";
+  return cls === "VN"; // standard / mặc định
+}
+let _chanDirCache = null;
+async function channelGroupForUrl(urlStr, env) {
+  if (!hasDB(env)) return null;
+  try {
+    if (!_chanDirCache || Date.now() - _chanDirCache.at > 300000) {
+      const { results } = await env.DB.prepare("SELECT stream_url, group_title FROM channels WHERE is_active = 1").all();
+      const dirs = {};
+      for (const c of results || []) {
+        try {
+          const u = new URL(c.stream_url);
+          dirs[u.origin + (u.pathname.replace(/\/[^/]*$/, "") || "/")] = c.group_title || "";
+        } catch (e) {}
+      }
+      _chanDirCache = { at: Date.now(), dirs };
+    }
+    const t = new URL(urlStr);
+    const key = t.origin + (t.pathname.replace(/\/[^/]*$/, "") || "/");
+    return Object.prototype.hasOwnProperty.call(_chanDirCache.dirs, key) ? _chanDirCache.dirs[key] : null;
+  } catch { return null; }
+}
+async function streamAccessDenied(request, env, urlStr) {
+  // Chỉ áp dụng cho target giống stream; nhóm kênh phải có trong DB (không rõ thì cho qua)
+  if (!/\.(m3u8|ts|mpd)(\?|$)/i.test(urlStr || "")) return null;
+  const group = await channelGroupForUrl(urlStr, env);
+  if (group === null) return null;
+  let usr = null;
+  try { usr = await getUser(request, env); } catch (e) {}
+  const plan = usr ? (usr.plan || "standard") : "standard";
+  if (planAllowsGroupChrtv(plan, group)) return null;
+  return { error: usr ? "PLAN_REQUIRED" : "LOGIN_REQUIRED", group, plan };
+}
 async function handleStreamToken(request, env) {
   const blocked = streamToolBlocked(request);
   if (blocked) return json({ error: "Client bị chặn", reason: blocked }, 403);
@@ -947,9 +1003,12 @@ async function handleStreamToken(request, env) {
   try { base = new URL(u); } catch { return json({ error: "Thiếu/sai tham số u" }, 400); }
   if (!/^https?:$/.test(base.protocol)) return json({ error: "u phải là http(s)" }, 400);
   const now = Math.floor(Date.now() / 1000);
-  // Có Bearer hợp lệ thì gắn uid (token chặt hơn); khách vẫn được cấp vì gói tạm free
+  // Có Bearer hợp lệ thì gắn uid (token chặt hơn); khách = Standard (chỉ kênh VN)
   let uid = 0;
-  try { const usr = await getUser(request, env); uid = usr ? usr.id : 0; } catch {}
+  let usr = null;
+  try { usr = await getUser(request, env); uid = usr ? usr.id : 0; } catch (e) {}
+  const denial = await streamAccessDenied(request, env, base.toString());
+  if (denial) return json(denial, 403);
   const payload = {
     u: base.toString(),
     p: base.pathname.replace(/\/[^/]*$/, "") || "/",

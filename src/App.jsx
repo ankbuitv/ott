@@ -3,6 +3,11 @@ import { initNavigation } from '@noriginmedia/react-spatial-navigation';
 
 import Sidebar from './components/Sidebar';
 import PlansScreen from './components/PlansScreen';
+import AuthModal from './components/AuthModal';
+
+// Khách vãng lai (chưa đăng nhập): vẫn vào web + xem kênh VN bình thường (mức Standard).
+// Xem chương trình đã phát (catchup), phim, hoặc kênh vượt gói => mới yêu cầu đăng nhập.
+const GUEST_USER = { id: 0, username: 'khach', display_name: 'Khách', role: 'guest', plan: '', guest: true };
 import { planAllows } from './services/plans';
 import TopNav from './components/TopNav';
 import VideoPlayer from './components/VideoPlayer';
@@ -41,6 +46,12 @@ function AppContent() {
   const { user, isAuthenticated, token } = useAuth();
   const { currentProfile } = useProfile();
   const { hasPicked, resetPicker } = useI18n();
+  const guestMode = !isAuthenticated || !user;
+  const effUser = guestMode ? GUEST_USER : user;
+  const promptLogin = useCallback((msg) => {
+    if (msg) addToast(msg, 'info');
+    setShowAuth(true);
+  }, [addToast]);
   const [showLangPicker, setShowLangPicker] = useState(!hasPicked());
   const [showAuth, setShowAuth] = useState(false);
   const [movieToOpen, setMovieToOpen] = useState(null); // phim được chọn từ TopNav search
@@ -135,8 +146,12 @@ function AppContent() {
   }, [channels, selectedCategory, searchQuery, settings]);
 
   const handleSelectChannel = useCallback((channel) => {
-    // GATING gói cước: Standard=kênh VN, Recreational=VN+Phim, VIP=tất cả (tạm free — bấm kích hoạt là mở)
-    if (channel && !planAllows(user?.plan, channel.group_title)) {
+    // GATING: khách = Standard (chỉ kênh VN); user = theo gói đã kích hoạt
+    if (channel && guestMode && !planAllows('standard', channel.group_title)) {
+      promptLogin(`"${channel.name}" cần đăng nhập để xem — đăng ký miễn phí nhé!`);
+      return;
+    }
+    if (channel && !guestMode && !planAllows(user?.plan, channel.group_title)) {
       addToast(`"${channel.name}" thuộc gói cao hơn — vào Mua Gói kích hoạt (tạm miễn phí)`, 'error');
       setActiveTab('plans');
       return;
@@ -155,9 +170,14 @@ function AppContent() {
       return updated;
     });
     addToast(`Đang xem: ${channel.name}`, 'channel');
-  }, [addToast, user?.plan]);
+  }, [addToast, user?.plan, guestMode, promptLogin]);
 
   const handlePlayCatchup = useCallback((channel, program, catchupUrl) => {
+    // Xem CHƯƠNG TRÌNH đã phát (catchup) => bắt buộc đăng nhập
+    if (guestMode) {
+      promptLogin('Xem chương trình đã phát cần đăng nhập — miễn phí nhé!');
+      return;
+    }
     setCurrentChannel(channel);
     setActiveStreamUrl(catchupUrl);
     // Catchup cũng phải đúng gói của kênh đó
@@ -170,7 +190,7 @@ function AppContent() {
     setCatchupProgram(program);
     setIsPlayerOpen(true);
     recordWatchHistory(channel.channel_id);
-  }, [addToast, user?.plan]);
+  }, [addToast, user?.plan, guestMode, promptLogin]);
 
   const handleToggleFavorite = useCallback(async (channelId) => {
     const isFav = favorites.includes(channelId);
@@ -218,16 +238,8 @@ function AppContent() {
     return <LanguagePicker onClose={() => setShowLangPicker(false)} />;
   }
 
-  if (!isAuthenticated || !user) {
-    return (
-      <>
-        <AuthScreen />
-        <KeyboardShortcuts open={showKeyboardShortcuts} onClose={() => setShowKeyboardShortcuts(false)} />
-      </>
-    );
-  }
-
-  if (!currentProfile) {
+  // Khách: KHÔNG chặn cổng — vào web xem bình thường (UI như user đã đăng nhập)
+  if (!guestMode && !currentProfile) {
     return <ProfileGate />;
   }
 
@@ -239,7 +251,7 @@ function AppContent() {
           channels={channels}
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}
-          user={user}
+          user={effUser}
           currentProfile={currentProfile}
           setActiveTab={setActiveTab}
           activeTab={activeTab}
@@ -251,7 +263,7 @@ function AppContent() {
         <div className="flex flex-1 overflow-hidden">
           <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onShowSettings={() => setShowSettings(true)} onShowAdmin={() => setShowAdmin(true)} />
           <main className="flex-1 flex flex-col h-full overflow-y-auto pb-16 md:pb-0">
-            {showSettings ? <SettingsPage onClose={() => setShowSettings(false)} /> : <MoviesScreen openMovie={movieToOpen} onOpenMovieHandled={() => setMovieToOpen(null)} />}
+            {showSettings ? <SettingsPage onClose={() => setShowSettings(false)} /> : <MoviesScreen openMovie={movieToOpen} onOpenMovieHandled={() => setMovieToOpen(null)} onRequireLogin={() => promptLogin('Đăng nhập để xem phim nhé — miễn phí!')} />}
           </main>
         </div>
       </div>
@@ -264,7 +276,7 @@ function AppContent() {
         channels={channels}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
-        user={user}
+        user={effUser}
         currentProfile={currentProfile}
         setActiveTab={setActiveTab}
         activeTab={activeTab}
@@ -349,7 +361,7 @@ function AppContent() {
             allChannels={channels}
             epgLookup={getEpgForChannel}
             initialPartyRoom={deepPartyRoom}
-            currentUserName={currentProfile?.name || user?.display_name || user?.username || 'Khách'}
+            currentUserName={currentProfile?.name || effUser?.display_name || effUser?.username || 'Khách'}
           />
         </div>
       )}
@@ -358,6 +370,7 @@ function AppContent() {
         <ChannelInfoModal channel={channelInfoModal.channel} epgNow={channelInfoModal.epgNow} epgNext={channelInfoModal.epgNext} isFavorite={channelInfoModal.isFav} onPlay={handleSelectChannel} onToggleFavorite={handleToggleFavorite} onClose={() => setChannelInfoModal(null)} />
       )}
       <KeyboardShortcuts open={showKeyboardShortcuts} onClose={() => setShowKeyboardShortcuts(false)} />
+      <AuthModal open={showAuth} onClose={() => setShowAuth(false)} />
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
       <OnboardingTour />
     </div>

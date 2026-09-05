@@ -454,8 +454,19 @@ export default function VideoPlayer({
           setTextTracks(texts.map((lang, i) => ({ id: i, label: lang || `CC ${i + 1}` })));
         } catch {}
       } catch (err) {
+        const errText = String(err?.message || err?.code || err || '');
+        // Bị chặn theo gói/đăng nhập — hiện thông báo, KHÔNG tự fallback (tránh lách)
+        if (/LOGIN_REQUIRED/.test(errText)) {
+          setIsBuffering(false);
+          setErrorMessage('🔒 Kênh này cần đăng nhập để xem — đóng trình phát rồi đăng nhập/đăng ký (miễn phí).');
+          return;
+        }
+        if (/PLAN_REQUIRED/.test(errText)) {
+          setIsBuffering(false);
+          setErrorMessage('💎 Kênh thuộc gói cao hơn — vào mục Mua Gói kích hoạt (tạm miễn phí).');
+          return;
+        }
         // Token hết hạn/bị từ chối → ép xoay token rồi thử đúng 1 lần trước khi fallback
-        const errText = String(err?.message || err || '');
         if (isHlsUrl(targetUrl) && /TOKEN_|403|token/i.test(errText)) {
           try {
             await refreshStreamToken(targetUrl);

@@ -8,6 +8,7 @@ import { useDevice } from '../contexts/DeviceContext';
 import { useToast } from '../contexts/ToastContext';
 import { useProfile } from '../contexts/ProfileContext';
 import { useI18n } from '../contexts/I18nContext';
+import { useAuth } from '../contexts/AuthContext';
 
 const CATALOG_PAGE = 30;
 
@@ -20,10 +21,17 @@ function MovieSkeleton() {
   );
 }
 
-export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = {}) {
+export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onRequireLogin } = {}) {
   const device = useDevice();
   const { addToast } = useToast();
   const { currentProfile } = useProfile();
+  const { isAuthenticated } = useAuth();
+  // Xem PHIM => bắt buộc đăng nhập (khách chỉ xem kênh truyền hình)
+  const ensureAuthed = useCallback(() => {
+    if (isAuthenticated) return true;
+    onRequireLogin?.();
+    return false;
+  }, [isAuthenticated, onRequireLogin]);
   const { t } = useI18n();
 
   // Quốc gia người xem → poster/khối phim đổi theo vùng.
@@ -298,7 +306,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
               </div>
               <div className="flex items-center gap-3">
                 <button
-                  onClick={() => setPlayMovie(hero)}
+                  onClick={() => { if (ensureAuthed()) setPlayMovie(hero); }}
                   className="flex items-center gap-2 bg-white text-black px-7 py-3 rounded-xl font-bold text-sm hover:bg-stone-200 transition shadow-xl shadow-white/10"
                 >
                   <Play className="w-5 h-5 fill-current" /> {t('movies.btn.play')}
@@ -531,7 +539,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
           trailer={trailer}
           trailerLoading={trailerLoading}
           onClose={() => setSelected(null)}
-          onPlay={() => { recordMovieWatch(selected); setPlayMovie(selected); }}
+          onPlay={() => { if (!ensureAuthed()) return; recordMovieWatch(selected); setPlayMovie(selected); }}
           onMovieChange={(m) => { setSelected(m); }}
           onListChanged={refreshMovieLists}
         />

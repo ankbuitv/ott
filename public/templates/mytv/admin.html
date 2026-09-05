@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CHRTV — Admin gửi thông báo</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="burger" onclick="document.querySelector('.rail').classList.toggle('open')">☰</button>
+  <a class="brand" href="index.html">
+    <img src="https://i.ibb.co/h1BtzkVr/logo.png" alt="CHRTV" onerror="this.outerHTML='<span style=&quot;font-weight:900;font-size:22px&quot;>CHR<span style=&quot;color:#f36f21&quot;>TV</span></span>'">
+  </a>
+  <div class="tb-spacer"></div>
+  <span class="tbadge" style="position:static">ADMIN</span>
+  <div class="tb-icons" style="margin-left:10px">
+    <button class="tb-avatar">A</button>
+  </div>
+</header>
+
+<nav class="rail">
+  <a href="index.html"><span class="ic">🏠</span><span class="lbl">Trang chủ</span></a>
+  <a href="truyen-hinh.html"><span class="ic">📺</span><span class="lbl">Truyền hình</span></a>
+  <a href="#"><span class="ic">🎬</span><span class="lbl">Phim truyện</span></a>
+  <a href="#"><span class="ic">⚽</span><span class="lbl">Thể thao</span></a>
+  <a href="shorts.html"><span class="ic">▶️</span><span class="lbl">Shorts</span></a>
+  <div class="grow"></div>
+  <div class="foot">Admin Console<br>Quản trị nội dung<br>Người dùng<br>Gói cước</div>
+</nav>
+
+<div class="tbadge">⭐ MyTV Style — Admin gửi thông báo</div>
+
+<div class="page" style="padding-top:0">
+  <h2 class="sec-title" style="color:#fff;padding:26px 90px 0">🔔 Gửi thông báo tới người dùng</h2>
+  <div class="admin-wrap">
+
+    <!-- FORM -->
+    <div class="panel">
+      <h3>📨 Soạn thông báo đẩy (Push notification)</h3>
+
+      <label>Loại thông báo</label>
+      <select id="f-type">
+        <option value="info">📢 Tin tức / Khuyến mãi</option>
+        <option value="live">🔴 Chương trình sắp phát</option>
+        <option value="warning">⚠️ Bảo trì / Cảnh báo</option>
+      </select>
+
+      <label>Tiêu đề</label>
+      <input id="f-title" placeholder="VD: Săn deal cuối tuần — giảm 50% gói VIP!">
+
+      <label>Nội dung</label>
+      <textarea id="f-body" placeholder="VD: Nhập mã WEEKEND50 để được giảm ngay 50% gói VIP khi đăng ký trước Chủ nhật."></textarea>
+
+      <label>Đối tượng nhận</label>
+      <select id="f-target">
+        <option>Tất cả người dùng</option>
+        <option>Chỉ gói Free</option>
+        <option>Gói VIP / VIPLITE / VIPMAX</option>
+        <option>Theo thiết bị Android</option>
+        <option>Theo thiết bị Smart TV</option>
+      </select>
+
+      <label>Thời gian gửi</label>
+      <select id="f-when">
+        <option>Gửi ngay</option>
+        <option>Hẹn giờ — hôm nay 20:00</option>
+        <option>Hẹn giờ — 19:45 trước khung vàng</option>
+      </select>
+
+      <button class="btn-orange" onclick="send()">🚀 Gửi thông báo</button>
+
+      <h3 style="margin-top:26px">🗒 Lịch sử gửi</h3>
+      <div class="log" id="log">
+        <div class="log-row"><span class="ty live">LIVE</span> <span>“Thời sự 19h chuẩn bị phát sóng trên VTV1” → Tất cả</span><span class="when">17:58</span></div>
+        <div class="log-row"><span class="ty info">INFO</span> <span>“Săn deal cuối tuần — giảm 50% gói VIP” → Free users</span><span class="when">Hôm qua 10:12</span></div>
+        <div class="log-row"><span class="ty warning">WARN</span> <span>“Bảo trì hệ thống 02:00–03:00 đêm nay” → Tất cả</span><span class="when">Hôm qua 09:00</span></div>
+        <div class="log-row"><span class="ty info">INFO</span> <span>“INTER vs NAPOLI 23:00 — Đã bật nhắc!” → Follower SPOTV</span><span class="when">04/09 21:30</span></div>
+      </div>
+    </div>
+
+    <!-- PREVIEW -->
+    <div class="panel">
+      <h3>📱 Xem trước trên điện thoại</h3>
+      <div class="phone">
+        <div class="notch"><i></i></div>
+        <div class="p-screen">
+          <div class="p-time"><span>19:40</span><span>📶 🔋</span></div>
+          <div class="p-app">📺</div>
+          <div id="pushzone">
+            <div class="push">
+              <span class="ic">📢</span>
+              <div><b>CHRTV — Săn deal cuối tuần</b>
+              <p>Giảm 50% gói VIP khi đăng ký trước Chủ nhật. Nhập mã WEEKEND50!</p>
+              <span class="now">bây giờ</span></div>
+            </div>
+            <div class="push">
+              <span class="ic">🔴</span>
+              <div><b>Thời sự 19h sắp phát</b>
+              <p>VTV1 — bắt đầu sau 5 phút. Bật xem ngay!</p>
+              <span class="now">5 phút trước</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="tnav">
+  <a href="index.html">← Trang chủ</a>
+  <a href="../index.html">☰ Gallery</a>
+</div>
+
+<script>
+const ICONS = { info:'📢', live:'🔴', warning:'⚠️' };
+function send(){
+  const ty  = document.getElementById('f-type').value;
+  const tt  = document.getElementById('f-title').value.trim() || 'CHRTV thông báo';
+  const bd  = document.getElementById('f-body').value.trim() || '(không có nội dung)';
+  const tg  = document.getElementById('f-target').value;
+  const now = new Date().toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'});
+
+  const zone = document.getElementById('pushzone');
+  const d = document.createElement('div');
+  d.className = 'push';
+  d.innerHTML = `<span class="ic">${ICONS[ty]}</span><div><b>CHRTV — ${tt}</b><p>${bd}</p><span class="now">bây giờ</span></div>`;
+  zone.prepend(d);
+
+  const log = document.getElementById('log');
+  const r = document.createElement('div');
+  r.className = 'log-row';
+  r.innerHTML = `<span class="ty ${ty}">${ty.toUpperCase()}</span> <span>“${tt}” → ${tg}</span><span class="when">${now}</span>`;
+  log.prepend(r);
+}
+</script>
+</body></html>

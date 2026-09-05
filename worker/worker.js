@@ -9,6 +9,12 @@ const SOURCE_EPG_URL2 = "https://lichphatsong.io.vn/epgc.xml";
 const SOURCE_EPG_URL3 = "https://epg.pm/vi/epgc.xml";
 const FALLBACK_STREAM_URL = "http://bore.pub:30113/hls/index.m3u8";
 const JWT_SECRET = "chrtv_ott_secret_2026";
+// Khoá AES-128 cho token stream (rolling 10 phút). NOTE: hardcode tạm như JWT_SECRET — nên chuyển sang wrangler secret.
+const STREAM_TOKEN_SECRET = "chrtv_stream_aes128_2026";
+const CHRTV_CLIENT_UA = "CHRTV-OTT/0.0.1";
+const SUPPORT_EMAIL = "support@ankb.qzz.io";
+const STREAM_TOKEN_TTL = 600;
+const STREAM_TOKEN_ROTATE = 540;
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
@@ -476,8 +482,13 @@ async function getUser(request, env) {
   const userId = verifyJWT(auth.slice(7));
   if (!userId) return null;
   try {
-    const { results } = await env.DB.prepare("SELECT id, username, email, display_name, avatar_url, role, email_verified FROM users WHERE id = ?").bind(userId).all();
-    return results[0] || null;
+    try {
+      const { results } = await env.DB.prepare("SELECT id, username, email, display_name, avatar_url, role, email_verified, plan FROM users WHERE id = ?").bind(userId).all();
+      return results[0] || null;
+    } catch {
+      const { results: r2 } = await env.DB.prepare("SELECT id, username, email, display_name, avatar_url, role, email_verified FROM users WHERE id = ?").bind(userId).all();
+      return r2[0] || null;
+    }
   } catch { return null; }
 }
 
@@ -550,6 +561,7 @@ async function ensureSchema(env) {
       "ALTER TABLE users ADD COLUMN banned INTEGER DEFAULT 0",
       "ALTER TABLE users ADD COLUMN totp_secret TEXT DEFAULT ''",
       "ALTER TABLE users ADD COLUMN totp_enabled INTEGER DEFAULT 0",
+      "ALTER TABLE users ADD COLUMN plan TEXT DEFAULT ''",
     ]) {
       try { await env.DB.prepare(stmt).run(); } catch (e) { /* cột đã có — bỏ qua */ }
     }
@@ -586,6 +598,8 @@ async function handleAPI(path, request, env, ctx) {
   if (path === "/api/playlist") return await handlePlaylist(env, request);
   if (path === "/api/epg") return await handleEPG(env, request);
   if (path === "/api/proxy") return await handleProxy(request, env);
+  if (path === "/api/stream/token") return await handleStreamToken(request, env);
+  if (path === "/api/stream/proxy") return await handleStreamProxy(request, env);
   if (path === "/api/favorites") return await handleFavorites(request, env);
   if (path === "/api/history") return await handleHistory(request, env);
   if (path === "/api/rating") return await handleRating(request, env);
@@ -856,6 +870,157 @@ function rewriteM3U8(text, targetUrl, proxyBase) {
   }).join("\n");
 }
 
+// ========== SECURE STREAM PROXY (AES-128 ROLLING TOKEN) ==========
+// Proxy m3u8 + segment với token động: AES-128-GCM, TTL 10 phút, client xoay ở phút 9.
+// Chặn curl/ffplay/VLC...; chỉ nhận client định danh CHRTV-OTT/0.0.1 (UA hoặc header X-CHRTV-Client).
+const UA_BLOCKLIST_RE = /curl|wget|ffmpeg|ffplay|libavformat|lavf|vlc|mpv|python-requests|python-urllib|okhttp|go-http-client|postman|insomnia|httpie|libwww|scrapy|axios|node-fetch|charles|fiddler|wireshark|hlsfetch/i;
+let _streamKeyCache = null;
+async function streamKey(env) {
+  if (_streamKeyCache) return _streamKeyCache;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode((env && env.STREAM_TOKEN_SECRET) || STREAM_TOKEN_SECRET));
+  const raw = new Uint8Array(digest.slice(0, 16)); // AES-128
+  _streamKeyCache = await crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+  return _streamKeyCache;
+}
+function b64uEncode(buf) {
+  const b = new Uint8Array(buf); let s = "";
+  for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function b64uDecode(str) {
+  let t = String(str).replace(/-/g, "+").replace(/_/g, "/");
+  while (t.length % 4) t += "=";
+  const bin = atob(t); const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+async function sha256hex(str) {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+  return [...new Uint8Array(d)].map((x) => x.toString(16).padStart(2, "0")).join("");
+}
+async function issueStreamToken(payload, env) {
+  const key = await streamKey(env);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(JSON.stringify(payload)));
+  const merged = new Uint8Array(12 + ct.byteLength);
+  merged.set(iv, 0); merged.set(new Uint8Array(ct), 12);
+  return b64uEncode(merged);
+}
+async function verifyStreamToken(token, env) {
+  try {
+    const raw = b64uDecode(token);
+    if (raw.length <= 12) return null;
+    const key = await streamKey(env);
+    const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: raw.slice(0, 12) }, key, raw.slice(12));
+    return JSON.parse(new TextDecoder().decode(pt));
+  } catch { return null; }
+}
+function streamToolBlocked(request) {
+  const ua = request.headers.get("User-Agent") || "";
+  if (UA_BLOCKLIST_RE.test(ua)) return "UA bị chặn (curl/ffplay/vlc/...)";
+  // Heuristics chặn proxy-tool (Charles/Fiddler explicit proxy hay thêm các header này)
+  for (const h of ["via", "proxy-connection", "forwarded", "proxy-authorization", "x-forwarded-via", "proxy-uri"]) {
+    if (request.headers.get(h)) return "header cấm: " + h;
+  }
+  return null;
+}
+function streamIdentityOk(request) {
+  const ua = request.headers.get("User-Agent") || "";
+  if (ua.trim() === CHRTV_CLIENT_UA) return true;
+  if ((request.headers.get("X-CHRTV-Client") || "").trim() === CHRTV_CLIENT_UA) return true;
+  return false;
+}
+async function streamSid(request, env) {
+  const ip = request.headers.get("CF-Connecting-IP") || "";
+  const ua = (request.headers.get("User-Agent") || "").slice(0, 80);
+  return (await sha256hex(ip + "|" + ua + "|" + STREAM_TOKEN_SECRET)).slice(0, 16);
+}
+function streamErr(obj, status) {
+  return new Response(JSON.stringify(obj), { status, headers: { ...CORS, "Content-Type": "application/json" } });
+}
+async function handleStreamToken(request, env) {
+  const blocked = streamToolBlocked(request);
+  if (blocked) return json({ error: "Client bị chặn", reason: blocked }, 403);
+  if (!streamIdentityOk(request)) return json({ error: "Chỉ chấp nhận client CHRTV-OTT/0.0.1" }, 403);
+  const u = new URL(request.url).searchParams.get("u") || "";
+  let base;
+  try { base = new URL(u); } catch { return json({ error: "Thiếu/sai tham số u" }, 400); }
+  if (!/^https?:$/.test(base.protocol)) return json({ error: "u phải là http(s)" }, 400);
+  const now = Math.floor(Date.now() / 1000);
+  // Có Bearer hợp lệ thì gắn uid (token chặt hơn); khách vẫn được cấp vì gói tạm free
+  let uid = 0;
+  try { const usr = await getUser(request, env); uid = usr ? usr.id : 0; } catch {}
+  const payload = {
+    u: base.toString(),
+    p: base.pathname.replace(/\/[^/]*$/, "") || "/",
+    sid: await streamSid(request, env),
+    uid, iat: now, exp: now + STREAM_TOKEN_TTL,
+  };
+  return json({
+    success: true,
+    t: await issueStreamToken(payload, env),
+    iat: now, exp: payload.exp, rotate_at: now + STREAM_TOKEN_ROTATE, ttl: STREAM_TOKEN_TTL,
+  });
+}
+async function handleStreamProxy(request, env) {
+  const blocked = streamToolBlocked(request);
+  if (blocked) return streamErr({ error: "Client bị chặn", reason: blocked }, 403);
+  if (!streamIdentityOk(request)) return streamErr({ error: "Chỉ chấp nhận client CHRTV-OTT/0.0.1" }, 403);
+  const q = new URL(request.url).searchParams;
+  const tu = q.get("u") || ""; const tok = q.get("t") || "";
+  if (!tu || !tok) return new Response("Missing u/t", { status: 400, headers: CORS });
+  const payload = await verifyStreamToken(tok, env);
+  const nowS = Math.floor(Date.now() / 1000);
+  if (!payload) return streamErr({ error: "TOKEN_INVALID" }, 403);
+  if (payload.exp < nowS) return streamErr({ error: "TOKEN_EXPIRED" }, 403);
+  if (payload.sid !== (await streamSid(request, env))) return streamErr({ error: "TOKEN_SID_MISMATCH" }, 403);
+  let target;
+  try { target = new URL(tu); } catch { return new Response("Bad u", { status: 400, headers: CORS }); }
+  // Token chỉ dùng được cho cùng origin + cùng thư mục path với URL đã cấp (chống biến proxy thành open relay)
+  const tokBase = (() => { try { return new URL(payload.u); } catch { return null; } })();
+  const dir = (payload.p || "/");
+  if (!tokBase || tokBase.origin !== target.origin || !(target.pathname === tokBase.pathname || target.pathname.startsWith(dir + "/") || (dir === "/" && target.pathname.startsWith("/")))) {
+    return streamErr({ error: "TOKEN_SCOPE" }, 403);
+  }
+  const upstreamHeaders = { "User-Agent": "VLC/3.0.21 LibVLC/3.0.21", "Accept": "*/*", "Referer": target.origin + "/" };
+  const range = request.headers.get("Range");
+  if (range) upstreamHeaders["Range"] = range;
+  let resp;
+  try {
+    resp = await fetch(target.toString(), { headers: upstreamHeaders, signal: AbortSignal.timeout(9000), redirect: "follow" });
+  } catch {
+    return new Response("Stream unavailable", { status: 502, headers: CORS });
+  }
+  const ct = (resp.headers.get("Content-Type") || "").toLowerCase();
+  const isPlaylist = ct.includes("mpegurl") || /\.m3u8(\?|$)/i.test(target.pathname);
+  const headers = new Headers(resp.headers);
+  headers.delete("Content-Encoding"); headers.delete("Content-Length");
+  Object.entries(CORS).forEach(([k, v]) => headers.set(k, v));
+  if (isPlaylist) {
+    headers.set("Content-Type", "application/vnd.apple.mpegurl");
+    headers.set("Cache-Control", "no-store");
+    const text = await resp.text();
+    const proxyBase = new URL(request.url).origin + "/api/stream/proxy";
+    return new Response(rewriteM3U8Secure(text, target, proxyBase, tok), { status: resp.status, headers });
+  }
+  headers.set("Cache-Control", "private, max-age=30");
+  return new Response(resp.body, { status: resp.status, headers });
+}
+function rewriteM3U8Secure(text, targetUrl, proxyBase, tok) {
+  const toProxy = (raw) => {
+    try {
+      const abs = new URL(raw, targetUrl).toString();
+      return proxyBase + "?u=" + encodeURIComponent(abs) + "&t=" + tok;
+    } catch { return raw; }
+  };
+  return text.split(/\r?\n/).map((line) => {
+    const l = line.trim();
+    if (!l) return line;
+    if (l.startsWith("#")) return line.replace(/URI="([^"]+)"/g, (_m, uri) => 'URI="' + toProxy(uri) + '"');
+    return toProxy(l);
+  }).join("\n");
+}
+
 // ========== AUTH ==========
 async function handleAuth(path, request, env) {
   if (!hasDB(env)) return dbUnavailable();
@@ -1064,6 +1229,23 @@ async function handleUser(path, request, env) {
   await ensureSchema(env);
   const user = await getUser(request, env);
   if (!user) return json({ error: "Chưa đăng nhập" }, 401);
+
+  // ========== GÓI CƯỚC (đăng ký gói) — tạm thời FREE toàn bộ ==========
+  const PLANS = {
+    standard:     { code: "standard",     name: "Standard",     rank: 1, price: 0, priceText: "TẠM FREE", allows: "Kênh truyền hình Việt Nam" },
+    recreational: { code: "recreational", name: "Recreational", rank: 2, price: 0, priceText: "TẠM FREE", allows: "Kênh Việt Nam + kênh Phim" },
+    vip:          { code: "vip",          name: "VIP",          rank: 3, price: 0, priceText: "TẠM FREE", allows: "Tất cả kênh — VN + Phim + Thể thao + Quốc tế" },
+  };
+  if (path === "/user/plan" && request.method === "GET") {
+    return json({ success: true, current: user.plan || "", plans: PLANS, free: true, support: SUPPORT_EMAIL });
+  }
+  if (path === "/user/plan/activate" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const code = (body.plan || "").toLowerCase();
+    if (!PLANS[code]) return json({ error: "Gói không hợp lệ" }, 400);
+    await env.DB.prepare("UPDATE users SET plan = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(code, user.id).run();
+    return json({ success: true, plan: code, price: 0, free: true, message: `Kích hoạt gói ${PLANS[code].name} thành công — hiện tạm miễn phí. Hỗ trợ: ${SUPPORT_EMAIL}`, support: SUPPORT_EMAIL });
+  }
 
   // Get profile + profiles + settings
   if (path === "/user/profile" && request.method === "GET") {

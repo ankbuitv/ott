@@ -2,6 +2,8 @@ import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { initNavigation } from '@noriginmedia/react-spatial-navigation';
 
 import Sidebar from './components/Sidebar';
+import PlansScreen from './components/PlansScreen';
+import { planAllows } from './services/plans';
 import TopNav from './components/TopNav';
 import VideoPlayer from './components/VideoPlayer';
 import EpgGridTimeline from './components/EpgGridTimeline';
@@ -133,6 +135,12 @@ function AppContent() {
   }, [channels, selectedCategory, searchQuery, settings]);
 
   const handleSelectChannel = useCallback((channel) => {
+    // GATING gói cước: Standard=kênh VN, Recreational=VN+Phim, VIP=tất cả (tạm free — bấm kích hoạt là mở)
+    if (channel && !planAllows(user?.plan, channel.group_title)) {
+      addToast(`"${channel.name}" thuộc gói cao hơn — vào Mua Gói kích hoạt (tạm miễn phí)`, 'error');
+      setActiveTab('plans');
+      return;
+    }
     setCurrentChannel(channel);
     setActiveStreamUrl(channel.stream_url || DEFAULT_FALLBACK_STREAM);
     setIsCatchupMode(false);
@@ -147,16 +155,22 @@ function AppContent() {
       return updated;
     });
     addToast(`Đang xem: ${channel.name}`, 'channel');
-  }, [addToast]);
+  }, [addToast, user?.plan]);
 
   const handlePlayCatchup = useCallback((channel, program, catchupUrl) => {
     setCurrentChannel(channel);
     setActiveStreamUrl(catchupUrl);
+    // Catchup cũng phải đúng gói của kênh đó
+    if (!planAllows(user?.plan, channel?.group_title)) {
+      addToast(`"${channel.name}" thuộc gói cao hơn — vào Mua Gói kích hoạt (tạm miễn phí)`, 'error');
+      setActiveTab('plans');
+      return;
+    }
     setIsCatchupMode(true);
     setCatchupProgram(program);
     setIsPlayerOpen(true);
     recordWatchHistory(channel.channel_id);
-  }, []);
+  }, [addToast, user?.plan]);
 
   const handleToggleFavorite = useCallback(async (channelId) => {
     const isFav = favorites.includes(channelId);
@@ -267,6 +281,8 @@ function AppContent() {
             <EpgGridTimeline channels={channels} epgData={epgData} onPlayCatchup={handlePlayCatchup} onSelectChannel={handleSelectChannel} />
           ) : showSettings ? (
             <SettingsPage onClose={() => setShowSettings(false)} />
+          ) : activeTab === 'plans' ? (
+            <PlansScreen />
           ) : (
             <>
               {activeTab === 'channels' ? (

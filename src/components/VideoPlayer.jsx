@@ -18,6 +18,7 @@ import { useI18n } from '../contexts/I18nContext';
 import {
   joinRoom, leaveRoom, sendPartyChat, sendPartyReaction, sendPartyState, onPartyMessage, PARTY_EMOJIS,
 } from '../services/watchParty';
+import { proxifyStreamUrl, refreshStreamToken, applyStreamClientHeaders, isHlsUrl } from '../services/streamGuard';
 
 const FALLBACK_STREAM_URL_HTTP = "http://bore.pub:30113/hls/index.m3u8";
 const FALLBACK_STREAM_URL = (typeof window !== 'undefined' && window.location?.protocol === 'https:')
@@ -388,9 +389,10 @@ export default function VideoPlayer({
         manifest: { retryParameters: { maxAttempts: 3, baseDelay: 1000, backoffFactor: 2 }, dash: { disableXlinkProcessing: true, xlinkFailGracefully: true, ignoreMinBufferTime: true } },
         drm: { clearKeys: {}, retryParameters: { maxAttempts: 3, baseDelay: 500, backoffFactor: 2 } },
       });
-      // M?c ??nh VLC UA cho m?i request
+      // Định danh client CHRTV-OTT/0.0.1 cho mọi request qua proxy bảo vệ
+      // (browser cấm tự set header User-Agent nên dùng header X-CHRTV-Client)
       const net = player.getNetworkingEngine();
-      if (net) net.registerRequestFilter((type, req) => { req.headers['User-Agent'] = VLC_USER_AGENT; });
+      if (net) net.registerRequestFilter((type, req) => { applyStreamClientHeaders(req.headers); });
     }
 
     const targetUrl = streamUrl || FALLBACK_STREAM_URL;
@@ -399,22 +401,25 @@ export default function VideoPlayer({
     setErrorMessage(null);
     setIsBuffering(true);
 
-    // === 2. Apply user-agent BEFORE loading ===
+    // === 2. Áp header định danh client TRƯỚC khi load ===
     const channelUa = channel?.user_agent;
     try {
       const ne = player.getNetworkingEngine();
-      if (ne) { 
+      if (ne) {
         ne.clearRequestFilters();
         ne.registerRequestFilter((type, req) => {
-          req.headers['User-Agent'] = channelUa || VLC_USER_AGENT;
-        }); 
+          applyStreamClientHeaders(req.headers);
+          if (channelUa) { try { req.headers['X-CHRTV-Upstream-UA'] = channelUa; } catch (e) {} }
+        });
       }
     } catch (e) {}
 
     // === 3. Load stream with appropriate config ===
     const startLoad = async () => {
       try {
-        const url = targetUrl;
+        // Mọi luồng m3u8 đi qua proxy bảo vệ: AES-128 rolling token (10 phút,
+        // client tự xoay ở phút 9) + chỉ nhận định danh CHRTV-OTT/0.0.1
+        const url = isHlsUrl(targetUrl) ? await proxifyStreamUrl(targetUrl) : targetUrl;
         
         // ClearKey t? URL ho?c t? channel (M3U #KODIPROP)
         let clearKey = parseClearKey(url);
@@ -449,6 +454,18 @@ export default function VideoPlayer({
           setTextTracks(texts.map((lang, i) => ({ id: i, label: lang || `CC ${i + 1}` })));
         } catch {}
       } catch (err) {
+        // Token hết hạn/bị từ chối → ép xoay token rồi thử đúng 1 lần trước khi fallback
+        const errText = String(err?.message || err || '');
+        if (isHlsUrl(targetUrl) && /TOKEN_|403|token/i.test(errText)) {
+          try {
+            await refreshStreamToken(targetUrl);
+            const retryUrl = await proxifyStreamUrl(targetUrl, { force: true });
+            await player.load(retryUrl);
+            videoEl.play().catch(() => {});
+            setIsBuffering(false); setIsFallbackActive(false); setErrorMessage(null);
+            return;
+          } catch (e) { /* rơi xuống fallback bên dưới */ }
+        }
         // MPD fails → try fallback HLS (không proxy, proxy không handle MPD segments)
         const isMpd = isMpdUrl(targetUrl) || channel?.manifest_type === 'mpd';
         if (isMpd && !targetUrl.includes('bore.pub')) {

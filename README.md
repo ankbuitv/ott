@@ -31,6 +31,7 @@ CHRTV là hệ thống ứng dụng xem truyền hình IPTV chuyên nghiệp, ca
 - **Link EPG XML gốc**: `https://epg.io.vn/epgc.xml`
 - **Link Stream Backup (Fallback)**: `http://bore.pub:30113/hls/index.m3u8`
 - **Logo CHRTV chính thức**: `https://i.ibb.co/HDmcxzMK/Gemini-Generated-Image-v7i9yav7i9yav7i9-removebg-preview.png`
+- **Bảo vệ luồng + gói cước (tạm free)**: proxy m3u8 riêng `/api/stream/token` + `/api/stream/proxy` — token AES-128-GCM TTL 10 phút, client tự xoay ở phút 9 để người xem liền mạch; token bind (origin+path thư mục, IP+UA), chặn cứng curl/ffplay/VLC và header proxy-tool (Charles/Fiddler); client phải định danh `CHRTV-OTT/0.0.1` (UA hoặc header `X-CHRTV-Client` — browser không được set UA). JS chặn F12/Ctrl+Shift+I/C/U + chuột phải, mở DevTools là trang tự dừng. Gói cước 3 bậc Standard (kênh VN) / Recreational (VN+Phim) / VIP (tất cả) — đang 100% miễn phí, kích hoạt qua `/user/plan/activate`; hỗ trợ qua email support@ankb.qzz.io (không dùng SĐT).
 
 ---
 

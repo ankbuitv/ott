@@ -194,6 +194,13 @@ export default function TopNav({ channels, searchQuery, setSearchQuery, user, cu
       </div>
 
       <div className="flex items-center gap-2">
+        <button
+          onClick={() => setActiveTab('plans')}
+          className={`hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-full text-[11px] font-extrabold transition ${activeTab === 'plans' ? 'bg-[#f36f21] text-white' : 'bg-gradient-to-r from-[#ff9a3d] to-[#f36f21] text-white hover:brightness-110'}`}
+          title="Mua gói — tạm miễn phí"
+        >
+          💎 Mua gói
+        </button>
         <div className="relative" ref={notifRef}>
           <button
             onClick={() => { setNotifOpen((o) => !o); if (!notifOpen) setTimeout(markAllRead, 1500); }}

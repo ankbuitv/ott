@@ -20,8 +20,10 @@ export default function AuthScreen() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [resetToken, setResetToken] = useState('');
+  const [totpCode, setTotpCode] = useState('');
   const [devCode, setDevCode] = useState(null);   // chỉ có khi server KHÔNG gửi được email (chưa cấu hình Brevo)
   const [resendIn, setResendIn] = useState(0);    // đếm ngược cooldown gửi lại mã
+  const [needTotp, setNeedTotp] = useState(false); // server yêu cầu mã 2FA khi login
 
   // Cooldown "gửi lại mã"
   useEffect(() => {
@@ -33,8 +35,14 @@ export default function AuthScreen() {
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
-    const r = await login(loginVal, password);
+    setNeedTotp(false);
+    const r = await login(loginVal, password, totpCode);
     if (r.success) addToast(t('auth.msg.login_ok'), 'success');
+    else if (r.code === 'TOTP_REQUIRED') {
+      setNeedTotp(true);
+      setError(r.error);
+      return;
+    }
     else if (r.code === 'EMAIL_NOT_VERIFIED') {
       // Chưa xác minh email → sang màn xác minh, cho gửi lại mã
       if (r.email) setEmail(r.email);
@@ -216,6 +224,9 @@ export default function AuthScreen() {
                   {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
+              {needTotp && (
+                <input type="text" value={totpCode} onChange={e => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Mã 2FA (6 số)" inputMode="numeric" required className="w-full px-3 py-3 bg-amber-500/5 border border-amber-500/30 rounded-xl text-sm font-mono tracking-[0.3em] text-center text-amber-200 placeholder:text-amber-700 focus:outline-none focus:border-amber-500" />
+              )}
               <div className="flex items-center justify-between text-[11px]">
                 <button type="button" onClick={() => { setView('forgot'); setError(''); setSuccess(''); }} className="text-red-400 hover:text-red-300">{t('auth.link.forgot')}</button>
               </div>

@@ -1,3 +1,5 @@
+import { API_BASE } from './config';
+
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMG = 'https://image.tmdb.org/t/p';
 // Default fallback key — get free one at https://www.themoviedb.org/settings/api
@@ -65,6 +67,22 @@ async function tmdbFetch(path, query = {}) {
   const key = `${path}?${qs}`;
   const cached = fromCache(key);
   if (cached) return cached;
+
+  // Ưu tiên PROXY qua Worker (/api/tmdb): server tự gắn key + cache D1 ở edge,
+  // client không lộ api_key. Proxy lỗi (worker cũ/không có) → gọi thẳng TMDB như cũ.
+  try {
+    const proxyQs = new URLSearchParams({ path, ...Object.fromEntries(new URLSearchParams(qs).entries()) });
+    proxyQs.delete('api_key');
+    const res = await fetch(`${API_BASE}/api/tmdb?${proxyQs.toString()}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && (data.results || data.id || data.genres)) {
+        cacheTMDB(key, data);
+        return data;
+      }
+    }
+  } catch {}
+
   try {
     const res = await fetch(`${TMDB_BASE}${path}?${qs}`);
     const data = await res.json();
@@ -73,6 +91,23 @@ async function tmdbFetch(path, query = {}) {
   } catch (e) {
     return { results: [], error: e.message };
   }
+}
+
+// --- Cast / Person / Recommendations / Collection (dùng trong modal chi tiết phim) ---
+export async function getCredits(id, mediaType = 'movie') {
+  return tmdbFetch(`/${mediaType === 'tv' ? 'tv' : 'movie'}/${id}/credits`);
+}
+export async function getPerson(id) {
+  return tmdbFetch(`/person/${id}`);
+}
+export async function getPersonCredits(id) {
+  return tmdbFetch(`/person/${id}/combined_credits`);
+}
+export async function getRecommendations(id, mediaType = 'movie') {
+  return tmdbFetch(`/${mediaType === 'tv' ? 'tv' : 'movie'}/${id}/recommendations`);
+}
+export async function getCollection(id) {
+  return tmdbFetch(`/collection/${id}`);
 }
 
 export const imgPath = (path, size = 'w500') => path ? `${TMDB_IMG}/${size}${path}` : null;

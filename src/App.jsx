@@ -68,6 +68,23 @@ function AppContent() {
 
   useEffect(() => { localStorage.setItem('chrtv_tab', activeTab); }, [activeTab]);
 
+  // ============ DEEP LINK: ?channel=ID&party=CODE (share từ player) ============
+  const [deepPartyRoom, setDeepPartyRoom] = useState(null);
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search || (window.location.hash || '').split('?')[1] || '');
+      const chId = params.get('channel');
+      const party = params.get('party');
+      if (party) setDeepPartyRoom(`party:${party.toUpperCase()}`);
+      if (chId && channels.length > 0) {
+        const ch = channels.find((c) => c.channel_id === chId);
+        if (ch && (!currentChannel || currentChannel.channel_id !== chId)) {
+          handleSelectChannel(ch);
+        }
+      }
+    } catch {}
+  }, [channels]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     const root = document.documentElement;
     if (settings.theme === 'light') {
@@ -314,6 +331,9 @@ function AppContent() {
             onPrevChannel={handlePrevChannel}
             onClose={() => setIsPlayerOpen(false)}
             allChannels={channels}
+            epgLookup={getEpgForChannel}
+            initialPartyRoom={deepPartyRoom}
+            currentUserName={currentProfile?.name || user?.display_name || user?.username || 'Khách'}
           />
         </div>
       )}

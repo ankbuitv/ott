@@ -19,12 +19,14 @@ export default function EpgGridTimeline({
   const dateTabs = useMemo(() => {
     const tabs = [];
     const now = new Date();
-    for (let offset = 0; offset >= -6; offset--) {
+    // 7 ngày qua (xem lại/catchup) + hôm nay + 6 ngày tới (lịch phát sóng)
+    for (let offset = -6; offset <= 6; offset++) {
       const d = new Date(now.getTime() + offset * 24 * 60 * 60 * 1000);
       tabs.push({
         offset,
         date: d,
-        label: offset === 0 ? t('epg.today') : (offset === -1 ? t('epg.yesterday') : formatDateVN(d))
+        future: offset > 0,
+        label: offset === 0 ? t('epg.today') : (offset === -1 ? t('epg.yesterday') : (offset === 1 ? 'Ngày mai' : formatDateVN(d)))
       });
     }
     return tabs;
@@ -103,7 +105,9 @@ export default function EpgGridTimeline({
             onClick={() => setSelectedDayOffset(tab.offset)}
             className={`px-3 py-2 rounded-lg font-medium text-xs whitespace-nowrap flex items-center gap-1.5 transition-all ${
               selectedDayOffset === tab.offset
-                ? 'bg-red-600 text-white shadow-lg shadow-red-600/30 font-bold'
+                ? (tab.future ? 'bg-sky-600 text-white shadow-lg shadow-sky-600/30 font-bold' : 'bg-red-600 text-white shadow-lg shadow-red-600/30 font-bold')
+                : tab.future
+                ? 'bg-slate-900/60 border border-sky-800/40 text-sky-300/80 hover:bg-slate-800 hover:text-sky-200'
                 : 'bg-slate-900/60 border border-slate-800/50 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
             }`}
           >
@@ -180,9 +184,13 @@ export default function EpgGridTimeline({
                       <FocusableWrapper
                         key={idx}
                         onClick={() => {
-                          if (isPast || isLiveNow) {
+                          if (isPast) {
+                            // Xem lại (catchup)
                             const catchupUrl = generateCatchupUrl(channel.stream_url, prog.start, channel.catchup_type);
                             if (onPlayCatchup) onPlayCatchup(channel, prog, catchupUrl);
+                          } else if (isLiveNow || pStart <= new Date(Date.now() + 5 * 60 * 1000)) {
+                            // Đang phát / sắp phát trong 5 phút -> vào sống
+                            onSelectChannel && onSelectChannel(channel);
                           }
                         }}
                         className={`w-56 p-2.5 rounded-lg border shrink-0 flex flex-col justify-between transition-all ${
@@ -207,6 +215,11 @@ export default function EpgGridTimeline({
                             {isPast && (
                               <span className="px-1 py-px text-[9px] font-medium rounded bg-purple-900/60 text-purple-300 flex items-center gap-0.5">
                                 <Play className="w-2 h-2 fill-current" /> Xem lại
+                              </span>
+                            )}
+                            {!isPast && !isLiveNow && (
+                              <span className="px-1 py-px text-[9px] font-medium rounded bg-sky-900/50 text-sky-300 flex items-center gap-0.5">
+                                <Clock className="w-2 h-2" /> Sắp phát
                               </span>
                             )}
                           </div>

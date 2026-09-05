@@ -28,13 +28,13 @@ export function AuthProvider({ children }) {
     removeStorage('chrtv_token');
   }, [token]);
 
-  const login = useCallback(async (loginStr, password) => {
+  const login = useCallback(async (loginStr, password, totp) => {
     setLoading(true);
     try {
       const res = await fetch(`${BASE}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ login: loginStr, password })
+        body: JSON.stringify({ login: loginStr, password, totp: totp || undefined })
       });
       const data = await res.json();
       setLoading(false);

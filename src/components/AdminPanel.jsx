@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Users, BarChart3, Bell, Radio, Send, Eye, TrendingUp, Calendar, Plus, Trash2, Save, X } from 'lucide-react';
+import { Settings, Users, BarChart3, Bell, Radio, Send, Eye, TrendingUp, Calendar, Plus, Trash2, Save, X, ScrollText, Ban, KeyRound, ShieldCheck, ChevronDown } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { API_BASE } from '../services/config';
@@ -30,6 +30,9 @@ export default function AdminPanel({ onClose }) {
   const [analytics, setAnalytics] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [broadcasts, setBroadcasts] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [users, setUsers] = useState([]);
+  const [audit, setAudit] = useState([]);
 
   // Notification form
   const [notifyTitle, setNotifyTitle] = useState('');
@@ -61,7 +64,50 @@ export default function AdminPanel({ onClose }) {
     // EPG data
     fetch(`${BASE}/api/channels`).then(r => r.json()).then(d => setAllChannels(d.channels || [])).catch(() => {});
     fetch(`${BASE}/admin/epg-overrides`, { headers }).then(r => r.json()).then(d => setEpgOverridesList(d.overrides || [])).catch(() => {});
+    fetch(`${BASE}/admin/analytics/summary`, { headers }).then(r => r.json()).then(d => d.success && setSummary(d)).catch(() => {});
+    fetch(`${BASE}/admin/users`, { headers }).then(r => r.json()).then(d => setUsers(d.users || [])).catch(() => {});
+    fetch(`${BASE}/admin/audit`, { headers }).then(r => r.json()).then(d => setAudit(d.audit || [])).catch(() => {});
   }, [token]);
+
+  // ===== Quản lý user =====
+  const userAction = async (id, action) => {
+    if (action === 'delete' && !confirm('XÓA vĩnh viễn tài khoản này? Không thể hoàn tác!')) return;
+    const r = await fetch(`${BASE}/admin/users/action`, { method: 'POST', headers, body: JSON.stringify({ id, action }) });
+    const d = await r.json();
+    if (d.success) {
+      if (d.tempPassword) addToast(`Mật khẩu tạm: ${d.tempPassword} — gửi cho user ngay!`, 'success');
+      else addToast('Đã thực hiện.', 'success');
+      fetch(`${BASE}/admin/users`, { headers }).then(r => r.json()).then(dd => setUsers(dd.users || [])).catch(() => {});
+      fetch(`${BASE}/admin/audit`, { headers }).then(r => r.json()).then(dd => setAudit(dd.audit || [])).catch(() => {});
+    } else addToast(d.error || 'Lỗi', 'error');
+  };
+
+  // ===== Biểu đồ SVG =====
+  const SimpleBarChart = ({ data, color = '#dc2626', label }) => {
+    if (!data || data.length === 0) return <p className="text-[10px] text-slate-600 text-center py-3">Chưa có dữ liệu {label}</p>;
+    const max = Math.max(...data.map((d) => d.count), 1);
+    const W = 100, H = 34;
+    const bw = W / Math.max(data.length, 7);
+    return (
+      <div>
+        <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider mb-1">{label}</p>
+        <svg viewBox={`0 0 ${W} ${H + 8}`} className="w-full h-20" preserveAspectRatio="none">
+          {data.map((d, i) => {
+            const h = (d.count / max) * H;
+            return (
+              <g key={i}>
+                <rect x={i * bw + bw * 0.15} y={H - h} width={bw * 0.7} height={h} rx={0.8} fill={color} opacity={0.85} />
+                {data.length <= 14 && (
+                  <text x={i * bw + bw / 2} y={H + 6} fontSize={2.6} fill="#78716c" textAnchor="middle">{(d.date || '').slice(5)}</text>
+                )}
+              </g>
+            );
+          })}
+        </svg>
+        <p className="text-[9px] text-slate-600">Tổng: {data.reduce((s, d) => s + d.count, 0)} · cao nhất {max}/ngày</p>
+      </div>
+    );
+  };
 
   const sendNotification = async (e) => {
     e.preventDefault();
@@ -172,7 +218,7 @@ export default function AdminPanel({ onClose }) {
         </div>
 
         <div className="flex border-b border-slate-800/40 overflow-x-auto">
-          {[{ id: 'stats', label: 'Thống kê', icon: BarChart3 }, { id: 'notify', label: 'Thông báo', icon: Bell }, { id: 'broadcast', label: 'Broadcast', icon: Send }, { id: 'epg', label: 'EPG kênh', icon: Calendar }, { id: 'analytics', label: 'Analytics', icon: TrendingUp }].map(t => (
+          {[{ id: 'stats', label: 'Thống kê', icon: BarChart3 }, { id: 'users', label: 'Người dùng', icon: Users }, { id: 'audit', label: 'Nhật ký', icon: ScrollText }, { id: 'notify', label: 'Thông báo', icon: Bell }, { id: 'broadcast', label: 'Broadcast', icon: Send }, { id: 'epg', label: 'EPG kênh', icon: Calendar }, { id: 'analytics', label: 'Analytics', icon: TrendingUp }].map(t => (
             <button key={t.id} onClick={() => setTab(t.id)} className={`flex items-center gap-1.5 px-4 py-2 text-[11px] font-semibold transition-all whitespace-nowrap ${tab === t.id ? 'text-red-400 border-b-2 border-red-600' : 'text-slate-500 hover:text-white'}`}>
               <t.icon className="w-3 h-3" /> {t.label}
             </button>
@@ -194,6 +240,32 @@ export default function AdminPanel({ onClose }) {
                   <div className="text-[10px] text-slate-500">{s.label}</div>
                 </div>
               ))}
+            </div>
+          )}
+
+          {tab === 'stats' && summary && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+              <div className="bg-slate-900/60 rounded-xl p-3 border border-slate-800/30">
+                <SimpleBarChart data={summary.viewsByDay || []} color="#dc2626" label="Lượt xem 14 ngày" />
+              </div>
+              <div className="bg-slate-900/60 rounded-xl p-3 border border-slate-800/30">
+                <SimpleBarChart data={summary.loginsByDay || []} color="#059669" label="Đăng nhập 14 ngày" />
+              </div>
+              {(summary.topChannels || []).length > 0 && (
+                <div className="bg-slate-900/60 rounded-xl p-3 border border-slate-800/30 md:col-span-2">
+                  <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider mb-1.5">Top kênh xem nhiều (30 ngày)</p>
+                  {summary.topChannels.map((c, i) => (
+                    <div key={i} className="flex items-center gap-2 py-0.5">
+                      <span className="text-[10px] text-slate-600 w-4">{i + 1}.</span>
+                      <span className="text-[11px] text-slate-300 flex-1 truncate">{c.channel_id}</span>
+                      <div className="w-32 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                        <div className="h-full bg-red-600 rounded-full" style={{ width: `${(c.count / (summary.topChannels[0]?.count || 1)) * 100}%` }}></div>
+                      </div>
+                      <span className="text-[10px] font-bold text-white w-8 text-right">{c.count}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -313,6 +385,59 @@ export default function AdminPanel({ onClose }) {
                   </div>
                 </>
               )}
+            </div>
+          )}
+
+          {tab === 'users' && (
+            <div className="space-y-1.5 max-h-[52vh] overflow-y-auto">
+              {users.length === 0 && <p className="text-xs text-slate-500 text-center py-4">Chưa có user nào</p>}
+              {users.map((u) => (
+                <div key={u.id} className={`rounded-xl px-3 py-2 border ${u.banned ? 'bg-red-950/30 border-red-900/40' : 'bg-slate-900/40 border-slate-800/30'}`}>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-white truncate">{u.username}</span>
+                        {u.role === 'admin' && <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-emerald-600 text-white">ADMIN</span>}
+                        {u.banned ? <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-red-600 text-white">BỊ KHOÁ</span> : null}
+                        {!u.email_verified && <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-slate-700 text-slate-300">CHƯA XÁC MINH</span>}
+                        {u.totp_enabled ? <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-amber-600/30 text-amber-300">2FA</span> : null}
+                      </div>
+                      <div className="text-[10px] text-slate-500 truncate">{u.email} · tạo {u.created_at}</div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {u.banned ? (
+                        <button onClick={() => userAction(u.id, 'unban')} className="px-2 py-1 rounded-lg bg-emerald-600/20 text-emerald-400 text-[10px] font-bold hover:bg-emerald-600/30">Mở khoá</button>
+                      ) : (
+                        <button onClick={() => userAction(u.id, 'ban')} className="px-2 py-1 rounded-lg bg-red-600/20 text-red-400 text-[10px] font-bold hover:bg-red-600/30 flex items-center gap-0.5"><Ban className="w-3 h-3" /> Khoá</button>
+                      )}
+                      {u.role === 'admin' ? (
+                        <button onClick={() => userAction(u.id, 'demote')} className="px-2 py-1 rounded-lg bg-slate-700/50 text-slate-300 text-[10px] font-bold hover:bg-slate-700">Hạ admin</button>
+                      ) : (
+                        <button onClick={() => userAction(u.id, 'promote')} className="px-2 py-1 rounded-lg bg-blue-600/20 text-blue-400 text-[10px] font-bold hover:bg-blue-600/30">Lên admin</button>
+                      )}
+                      {u.totp_enabled && (
+                        <button onClick={() => userAction(u.id, 'disable_2fa')} className="px-2 py-1 rounded-lg bg-amber-600/20 text-amber-400 text-[10px] font-bold hover:bg-amber-600/30" title="Tắt 2FA của user này (lạc Authenticator)">Tắt 2FA</button>
+                      )}
+                      <button onClick={() => userAction(u.id, 'reset_password')} className="px-2 py-1 rounded-lg bg-slate-700/50 text-slate-300 text-[10px] font-bold hover:bg-slate-700 flex items-center gap-0.5" title="Reset mật khẩu"><KeyRound className="w-3 h-3" /></button>
+                      <button onClick={() => userAction(u.id, 'delete')} className="px-2 py-1 rounded-lg bg-slate-700/50 text-red-400 text-[10px] font-bold hover:bg-red-600/20"><Trash2 className="w-3 h-3" /></button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {tab === 'audit' && (
+            <div className="space-y-1 max-h-[52vh] overflow-y-auto">
+              {audit.length === 0 && <p className="text-xs text-slate-500 text-center py-4">Chưa có thao tác nào được ghi</p>}
+              {audit.map((a) => (
+                <div key={a.id} className="flex items-center gap-2 bg-slate-900/40 rounded-lg px-3 py-1.5 border border-slate-800/30">
+                  <ShieldCheck className="w-3 h-3 text-slate-600 shrink-0" />
+                  <span className="text-[10px] font-mono text-blue-400 shrink-0">{a.action}</span>
+                  <span className="text-[10px] text-slate-400 truncate flex-1">{a.username || `user#${a.user_id}`} · {a.detail}</span>
+                  <span className="text-[9px] text-slate-600 shrink-0">{a.created_at}</span>
+                </div>
+              ))}
             </div>
           )}
 

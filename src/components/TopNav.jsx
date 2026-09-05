@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Logo from './Logo';
+import { Bell, Check, BellRing } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../contexts/I18nContext';
 import { MovieAPI, imgPath } from '../services/tmdb';
+import { API_BASE } from '../services/config';
+import { enablePush, disablePush, isPushEnabled } from '../services/push';
 
 export default function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, setActiveTab, activeTab, onSelectChannel, onSelectMovie, onShowAuth }) {
   const { isAuthenticated, logout } = useAuth();
@@ -11,6 +14,57 @@ export default function TopNav({ channels, searchQuery, setSearchQuery, user, cu
   const [movieResults, setMovieResults] = useState([]);
   const [searchingMovies, setSearchingMovies] = useState(false);
   const boxRef = useRef(null);
+
+  // ============ NOTIFICATION CENTER + WEB PUSH ============
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifs, setNotifs] = useState([]);
+  const [lastRead, setLastRead] = useState(() => {
+    try { return parseInt(localStorage.getItem('chrtv_notif_read') || '0', 10); } catch { return 0; }
+  });
+  const [pushOn, setPushOn] = useState(false);
+  const notifRef = useRef(null);
+
+  const unreadCount = notifs.filter((n) => {
+    const ts = new Date((n.created_at || '').replace(' ', 'T') + 'Z').getTime() || 0;
+    return ts > lastRead;
+  }).length;
+
+  useEffect(() => {
+    let alive = true;
+    fetch(`${API_BASE}/api/notifications`, { headers: { Accept: 'application/json' } })
+      .then((r) => r.json())
+      .then((d) => { if (alive) setNotifs(d.notifications || []); })
+      .catch(() => {});
+    isPushEnabled().then((on) => { if (alive) setPushOn(on); }).catch(() => {});
+    const iv = setInterval(() => {
+      fetch(`${API_BASE}/api/notifications`, { headers: { Accept: 'application/json' } })
+        .then((r) => r.json()).then((d) => { if (alive) setNotifs(d.notifications || []); }).catch(() => {});
+    }, 60000);
+    return () => { alive = false; clearInterval(iv); };
+  }, []);
+
+  useEffect(() => {
+    const h = (e) => { if (notifRef.current && !notifRef.current.contains(e.target)) setNotifOpen(false); };
+    window.addEventListener('mousedown', h);
+    return () => window.removeEventListener('mousedown', h);
+  }, []);
+
+  const markAllRead = () => {
+    const now = Date.now();
+    try { localStorage.setItem('chrtv_notif_read', String(now)); } catch {}
+    setLastRead(now);
+  };
+
+  const togglePush = async () => {
+    if (pushOn) {
+      const r = await disablePush();
+      if (r.ok) { setPushOn(false); alert('Đã tắt thông báo đẩy.'); }
+    } else {
+      const r = await enablePush();
+      if (r.ok) setPushOn(true);
+      else alert(r.reason || 'Không bật được push.');
+    }
+  };
 
   const q = searchQuery.trim();
 
@@ -140,9 +194,49 @@ export default function TopNav({ channels, searchQuery, setSearchQuery, user, cu
       </div>
 
       <div className="flex items-center gap-2">
-        <button className="p-2 hover:bg-white/10 rounded-xl transition">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
-        </button>
+        <div className="relative" ref={notifRef}>
+          <button
+            onClick={() => { setNotifOpen((o) => !o); if (!notifOpen) setTimeout(markAllRead, 1500); }}
+            className="relative p-2 hover:bg-white/10 rounded-xl transition"
+            title="Thông báo"
+          >
+            {unreadCount > 0 ? <BellRing className="w-5 h-5 text-amber-400" /> : <Bell className="w-5 h-5" />}
+            {unreadCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-red-600 text-white text-[9px] font-bold flex items-center justify-center">
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
+          </button>
+
+          {notifOpen && (
+            <div className="absolute right-0 top-full mt-2 w-80 max-w-[92vw] bg-[#141419] border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50">
+              <div className="px-4 py-2.5 border-b border-white/5 flex items-center justify-between">
+                <span className="text-xs font-bold">Thông báo</span>
+                <button onClick={markAllRead} className="text-[10px] text-stone-400 hover:text-white flex items-center gap-1"><Check className="w-3 h-3" /> Đọc hết</button>
+              </div>
+              <div className="max-h-72 overflow-y-auto">
+                {notifs.length === 0 ? (
+                  <p className="px-4 py-6 text-center text-[11px] text-stone-500">Chưa có thông báo nào</p>
+                ) : notifs.map((n) => (
+                  <div key={n.id} className="px-4 py-2.5 border-b border-white/5 hover:bg-white/5">
+                    <div className="flex items-start gap-2">
+                      <span className={`mt-1 w-2 h-2 rounded-full shrink-0 ${n.type === 'warning' ? 'bg-amber-400' : n.type === 'error' ? 'bg-red-500' : 'bg-sky-400'}`}></span>
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-bold truncate">{n.title}</p>
+                        <p className="text-[10px] text-stone-400 line-clamp-2">{n.body}</p>
+                        <p className="text-[9px] text-stone-600 mt-0.5">{n.created_at}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button onClick={togglePush} className="w-full px-4 py-2.5 text-[11px] font-bold text-left border-t border-white/5 hover:bg-white/5 flex items-center gap-2">
+                {pushOn ? <BellRing className="w-3.5 h-3.5 text-emerald-400" /> : <Bell className="w-3.5 h-3.5" />}
+                {pushOn ? 'Thông báo đẩy: ĐANG BẬT — bấm để tắt' : 'Bật thông báo đẩy (nhận tin cả khi đóng tab)'}
+              </button>
+            </div>
+          )}
+        </div>
 
         {isAuthenticated && currentProfile ? (
           <div className="flex items-center gap-2">

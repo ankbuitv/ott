@@ -11,6 +11,7 @@ CHRTV là hệ thống ứng dụng xem truyền hình IPTV chuyên nghiệp, ca
 - **TV Spatial Navigation**: `@noriginmedia/react-spatial-navigation` quản lý Focus State tự động đổi viền/nền màu đỏ rực rỡ (`#dc2626`) khi active trên Android TV.
 - **Player Core**: Shaka Player (tối ưu HLS delay thấp, tự động phát luồng dự phòng `http://bore.pub:30113/hls/index.m3u8` khi luồng chính lỗi).
 - **Phim ảnh theo vị trí địa lý**: phát hiện quốc gia người xem qua `/api/geo` (Cloudflare IP geo `request.cf.country`, fallback timezone) → TMDB gọi kèm `region` + `language` riêng (poster đang chiếu, sắp chiếu, TV show bản địa, kho phim trộn theo vùng). Đổi khu vực thủ công bằng bộ chọn cờ 🌐 trong trang Phim.
+- **Bảo mật & cộng đồng**: rate-limit đăng nhập (sai 5 lần khoá 15 phút), 2FA TOTP (Google Authenticator), audit log admin, quản lý user (ban/promote/reset password), Watch Party xem chung có chat + reaction (D1 polling), Web Push VAPID, notification center, TMDB proxy cache edge (giấu api_key), PiP/Cast/AirPlay, data saver ≤480p, EPG 7 ngày (quá khứ + tương lai), My List + Tiếp tục xem phim, trang diễn viên & đề xuất phim, share deep link `?channel=ID&party=CODE`.
 - **Xác minh email bắt buộc khi đăng ký**: gửi mã 6 số qua Brevo, chưa xác minh không đăng nhập được (UI có nút gửi lại mã + cooldown); khi Worker chưa cấu hình `BREVO_API_KEY` thì rơi về `devCode` hiển thị ngay trên màn hình xác minh.
 
 ### 2. Backend / Infrastructure (Cloudflare Serverless)

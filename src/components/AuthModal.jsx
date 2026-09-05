@@ -19,6 +19,8 @@ export default function AuthModal({ open, onClose, initialView = 'login' }) {
   const [resetToken, setResetToken] = useState('');
   const [devCode, setDevCode] = useState(null); // chỉ có khi server chưa gửi được email
   const [resendIn, setResendIn] = useState(0);
+  const [needTotp, setNeedTotp] = useState(false);
+  const [totpCode, setTotpCode] = useState('');
 
   const { login, register, verifyEmail, forgotPassword, resetPassword, resendVerify, loading } = useAuth();
   const { addToast } = useToast();
@@ -35,8 +37,10 @@ export default function AuthModal({ open, onClose, initialView = 'login' }) {
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
-    const r = await login(loginVal, password);
+    setNeedTotp(false);
+    const r = await login(loginVal, password, totpCode);
     if (r.success) { addToast(t('auth.msg.login_ok'), 'success'); onClose(); }
+    else if (r.code === 'TOTP_REQUIRED') { setNeedTotp(true); setError(r.error); return; }
     else if (r.code === 'EMAIL_NOT_VERIFIED') {
       if (r.email) setEmail(r.email);
       setDevCode(null);
@@ -141,6 +145,9 @@ export default function AuthModal({ open, onClose, initialView = 'login' }) {
                   {showPass ? <EyeOff className="w-4 h-4 text-slate-600" /> : <Eye className="w-4 h-4 text-slate-600" />}
                 </button>
               </div>
+              {needTotp && (
+                <input type="text" value={totpCode} onChange={e => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Mã 2FA (6 số)" inputMode="numeric" required className="w-full px-3 py-2.5 bg-amber-500/5 border border-amber-500/30 rounded-xl text-sm font-mono tracking-[0.3em] text-center text-amber-200 placeholder:text-amber-700 focus:outline-none focus:border-amber-500" />
+              )}
               <button type="submit" disabled={loading} className="w-full py-2.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-bold text-sm rounded-xl transition-all flex items-center justify-center gap-1.5">
                 {loading ? t('app.loading') : <>{t('auth.btn.login')} <ArrowRight className="w-4 h-4" /></>}
               </button>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Search, Star, Play, X, Info, Calendar, Clock, Tv, Film, SlidersHorizontal, TrendingUp } from 'lucide-react';
-import { MovieAPI, imgPath, bgPath, COUNTRY_INFO, countryInfoOf, REGION_LIST, setTMDBRegion, getUpcoming, getMovieGenres, getTMDBKey, setTMDBKey, isDefaultTMDBKey } from '../services/tmdb';
+import { Search, Star, Play, X, Info, Calendar, Clock, Tv, Film, SlidersHorizontal, TrendingUp, Heart, History, Plus, Check } from 'lucide-react';
+import { MovieAPI, imgPath, bgPath, COUNTRY_INFO, countryInfoOf, REGION_LIST, setTMDBRegion, getUpcoming, getMovieGenres, getTMDBKey, setTMDBKey, isDefaultTMDBKey, getCredits, getPerson, getPersonCredits, getRecommendations, getCollection, getMovieDetails } from '../services/tmdb';
+import { getMovieHistory, recordMovieWatch, isWatched, toggleWatchlistLocal, fetchWatchlist } from '../services/movieList';
 import { resolveCountry, currentCountry, setManualCountry } from '../services/geo';
 import MoviePlayerModal from './MoviePlayerModal';
 import { useDevice } from '../contexts/DeviceContext';
@@ -70,6 +71,18 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
   const [playMovie, setPlayMovie] = useState(null);
   const [trailer, setTrailer] = useState(null);
   const [trailerLoading, setTrailerLoading] = useState(false);
+  // Tiếp tục xem phim + Danh sách của tôi (My List)
+  const [movieHistory, setMovieHistory] = useState(() => getMovieHistory());
+  const [myList, setMyList] = useState([]);
+  const [heroTrailer, setHeroTrailer] = useState(null);
+
+  useEffect(() => { fetchWatchlist().then((l) => setMyList(l)).catch(() => {}); }, []);
+
+  // Refresh 2 hàng trên khi đóng modal phát/chi tiết
+  const refreshMovieLists = useCallback(() => {
+    setMovieHistory(getMovieHistory());
+    fetchWatchlist().then((l) => setMyList(l)).catch(() => {});
+  }, []);
 
   // Block kid profiles
   useEffect(() => {
@@ -114,7 +127,13 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
       ]);
       if (!mounted) return;
       setTvLocal(!!(tvR && tvR.__local));
-      setHero(heroR.results?.[0] || null);
+      const firstHero = heroR.results?.[0] || null;
+      setHero(firstHero);
+      // Trailer autoplay (muted) cho hero — Netflix style
+      setHeroTrailer(null);
+      if (firstHero) {
+        MovieAPI.trailer(firstHero).then((v) => { if (mounted && v?.key) setHeroTrailer(v.key); }).catch(() => {});
+      }
       setRows({ trending: trR.results || [], nowPlaying: npR.results || [], topRated: tR.results || [], popularTV: tvR.results || [], upcoming: upR.results || [] });
       setGenres(gR.genres || []);
       setLoading(false);
@@ -236,7 +255,20 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
       {hero && (
         <section className="relative h-[82vh] -mt-px">
           <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${bgPath(hero.backdrop_path || hero.poster_path)})` }}></div>
-          <div className="absolute inset-0 bg-gradient-to-r from-black via-black/60 to-transparent"></div>
+          {heroTrailer && (
+            <div className="absolute inset-0 overflow-hidden pointer-events-none">
+              <iframe
+                key={heroTrailer}
+                src={`https://www.youtube.com/embed/${heroTrailer}?autoplay=1&mute=1&controls=0&modestbranding=1&rel=0&loop=1&playlist=${heroTrailer}&playsinline=1&start=8`}
+                className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 min-w-[177.78vh] min-h-[56.25vw] w-full h-full"
+                style={{ filter: 'saturate(1.05)' }}
+                allow="autoplay; encrypted-media"
+                tabIndex={-1}
+                title="trailer"
+              />
+            </div>
+          )}
+          <div className={`absolute inset-0 bg-gradient-to-r from-black via-black/60 to-transparent ${heroTrailer ? 'via-black/70' : ''}`}></div>
           <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent"></div>
 
           <div className="relative h-full flex items-end pb-14 px-8 md:px-12 max-w-4xl">
@@ -432,6 +464,14 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
         </div>
       ) : (
         <div className="pb-20 space-y-10 pt-6">
+          {/* Tiếp tục xem phim (local) */}
+          {movieHistory.length > 0 && (
+            <MovieRow title="⏪ Tiếp tục xem" items={movieHistory} gridCls={gridCls} onClick={openDetail} loading={false} />
+          )}
+          {/* Danh sách của tôi (My List) */}
+          {myList.length > 0 && (
+            <MovieRow title="❤️ Danh sách của tôi" items={myList} gridCls={gridCls} onClick={openDetail} loading={false} />
+          )}
           {/* Rows — nội dung đổi theo quốc gia người xem */}
           <MovieRow title={t('movies.row.trending')} items={rows.trending} gridCls={gridCls} onClick={openDetail} loading={loading} />
           <MovieRow title={t('movies.row.now_playing_in', { country: `${countryInfo.flag} ${countryInfo.name}` })} items={rows.nowPlaying} gridCls={gridCls} onClick={openDetail} loading={loading} />
@@ -491,12 +531,14 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
           trailer={trailer}
           trailerLoading={trailerLoading}
           onClose={() => setSelected(null)}
-          onPlay={() => setPlayMovie(selected)}
+          onPlay={() => { recordMovieWatch(selected); setPlayMovie(selected); }}
+          onMovieChange={(m) => { setSelected(m); }}
+          onListChanged={refreshMovieLists}
         />
       )}
 
       {/* Full-screen third-party player */}
-      {playMovie && <MoviePlayerModal movie={playMovie} onClose={() => setPlayMovie(null)} />}
+      {playMovie && <MoviePlayerModal movie={playMovie} onClose={() => { setPlayMovie(null); refreshMovieLists(); }} />}
     </div>
   );
 }
@@ -556,8 +598,31 @@ function MovieCard({ movie, onClick }) {
   );
 }
 
-function MovieDetailModal({ movie, trailer, trailerLoading, onClose, onPlay }) {
+function MovieDetailModal({ movie, trailer, trailerLoading, onClose, onPlay, onMovieChange, onListChanged }) {
   const { t } = useI18n();
+  const [inList, setInList] = useState(() => isWatched(movie));
+  const [cast, setCast] = useState([]);
+  const [recs, setRecs] = useState([]);
+  const [collection, setCollection] = useState(null);
+  const [person, setPerson] = useState(null); // PersonModal data
+
+  // Tai cast + recommendations + collection khi mo/doi phim
+  useEffect(() => {
+    setCast([]); setRecs([]); setCollection(null); setInList(isWatched(movie));
+    const type = movie.media_type === 'tv' ? 'tv' : 'movie';
+    getCredits(movie.id, type).then((r) => setCast((r.cast || []).slice(0, 12))).catch(() => {});
+    getRecommendations(movie.id, type).then((r) => setRecs((r.results || []).filter((m) => m.poster_path).slice(0, 12))).catch(() => {});
+    if (type === 'movie' && movie.belongs_to_collection?.id) {
+      getCollection(movie.belongs_to_collection.id).then((r) => setCollection(r?.parts ? r : null)).catch(() => {});
+    }
+  }, [movie.id, movie.media_type]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleList = () => {
+    const now = toggleWatchlistLocal(movie);
+    setInList(now);
+    onListChanged?.();
+  };
+
   return (
     <div className="fixed inset-0 z-[200] bg-black/85 backdrop-blur-sm overflow-y-auto" onClick={onClose}>
       <div className="relative max-w-4xl mx-auto my-8 bg-stone-900 rounded-2xl overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
@@ -603,13 +668,23 @@ function MovieDetailModal({ movie, trailer, trailerLoading, onClose, onPlay }) {
           </div>
 
           <div className="mt-4 space-y-2">
-            <button
-              onClick={onPlay}
-              className="w-full px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition"
-            >
-              <Play className="w-4 h-4 fill-current" />
-              ▶ {t('movies.btn.play')}
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={onPlay}
+                className="flex-1 px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition"
+              >
+                <Play className="w-4 h-4 fill-current" />
+                {t('movies.btn.play')}
+              </button>
+              <button
+                onClick={toggleList}
+                className={`px-4 py-3 font-bold rounded-xl flex items-center gap-2 border transition ${inList ? 'bg-red-600/20 text-red-400 border-red-600/40' : 'bg-white/5 text-stone-300 border-white/10 hover:bg-white/10'}`}
+                title={inList ? 'Bỏ khỏi Danh sách của tôi' : 'Thêm vào Danh sách của tôi'}
+              >
+                {inList ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                {inList ? 'Đang theo dõi' : 'My List'}
+              </button>
+            </div>
             {!trailer && !trailerLoading && (
               <button
                 onClick={onClose}
@@ -619,6 +694,116 @@ function MovieDetailModal({ movie, trailer, trailerLoading, onClose, onPlay }) {
               </button>
             )}
           </div>
+
+          {/* Cast */}
+          {cast.length > 0 && (
+            <div className="mt-6">
+              <h4 className="text-[10px] text-stone-500 font-bold uppercase tracking-widest mb-2">Diễn viên</h4>
+              <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none">
+                {cast.map((c) => (
+                  <button key={`${c.id}-${c.credit_id}`} onClick={() => { c.id && getPerson(c.id).then((p) => setPerson(p)).catch(() => {}); }} className="w-20 shrink-0 text-center group">
+                    <img
+                      src={c.profile_path ? imgPath(c.profile_path, 'w185') : 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="80" height="120"%3E%3Crect fill="%23272727" width="80" height="120"/%3E%3C/svg%3E'}
+                      alt={c.name}
+                      className="w-20 h-28 object-cover rounded-lg border border-white/10 group-hover:border-red-500/50 transition"
+                      loading="lazy"
+                    />
+                    <p className="text-[10px] font-bold mt-1 truncate">{c.name}</p>
+                    <p className="text-[9px] text-stone-500 truncate">{c.character}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Collection (franchise) */}
+          {collection && (
+            <div className="mt-6">
+              <h4 className="text-[10px] text-stone-500 font-bold uppercase tracking-widest mb-2">📚 Thuộc series: {movie.belongs_to_collection?.name}</h4>
+              <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-none">
+                {collection.parts.filter((m) => m.poster_path).sort((a, b) => (a.release_date || '').localeCompare(b.release_date || '')).map((m) => (
+                  <button key={m.id} onClick={() => onMovieChange?.({ ...m, media_type: 'movie', overview: m.overview || '' })} className="w-24 shrink-0 group">
+                    <img src={imgPath(m.poster_path, 'w185')} alt={m.title} className="w-24 h-36 object-cover rounded-lg border border-white/10 group-hover:border-red-500/50 transition" loading="lazy" />
+                    <p className="text-[10px] font-semibold mt-1 truncate">{m.title}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Recommendations */}
+          {recs.length > 0 && (
+            <div className="mt-6">
+              <h4 className="text-[10px] text-stone-500 font-bold uppercase tracking-widest mb-2">Có thể bạn cũng thích</h4>
+              <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-none">
+                {recs.map((m) => (
+                  <button key={`${m.media_type || 'movie'}-${m.id}`} onClick={() => onMovieChange?.({ ...m, media_type: m.media_type || (m.title ? 'movie' : 'tv'), overview: m.overview || '' })} className="w-24 shrink-0 group">
+                    <img src={imgPath(m.poster_path, 'w185')} alt={m.title || m.name} className="w-24 h-36 object-cover rounded-lg border border-white/10 group-hover:border-red-500/50 transition" loading="lazy" />
+                    <p className="text-[10px] font-semibold mt-1 truncate">{m.title || m.name}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Person modal */}
+      {person && (
+        <PersonModal person={person} onClose={() => setPerson(null)} onMovieChange={(m) => { setPerson(null); onMovieChange?.(m); }} />
+      )}
+    </div>
+  );
+}
+
+function PersonModal({ person, onClose, onMovieChange }) {
+  const [credits, setCredits] = useState([]);
+  useEffect(() => {
+    getPersonCredits(person.id).then((r) => {
+      const list = (r.cast || [])
+        .filter((m) => m.poster_path)
+        .sort((a, b) => (b.popularity || 0) - (a.popularity || 0))
+        .slice(0, 18);
+      setCredits(list);
+    }).catch(() => {});
+  }, [person.id]);
+
+  return (
+    <div className="fixed inset-0 z-[220] bg-black/90 backdrop-blur-sm overflow-y-auto" onClick={onClose}>
+      <div className="relative max-w-3xl mx-auto my-8 bg-stone-900 rounded-2xl overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex gap-4 p-6">
+          <img
+            src={person.profile_path ? imgPath(person.profile_path, 'w185') : 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="120" height="180"%3E%3Crect fill="%23272727" width="120" height="180"/%3E%3C/svg%3E'}
+            alt={person.name}
+            className="w-32 h-48 object-cover rounded-xl border border-white/10 shrink-0"
+          />
+          <div className="flex-1 min-w-0">
+            <button onClick={onClose} className="absolute top-3 right-3 w-9 h-9 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center">
+              <X className="w-5 h-5" />
+            </button>
+            <h2 className="text-2xl font-black tracking-tight mb-1">{person.name}</h2>
+            <p className="text-[11px] text-stone-500 mb-2">
+              {person.known_for_department === 'Acting' ? 'Diễn viên' : person.known_for_department || 'Nghệ sĩ'}
+              {person.birthday && ` · sinh ${person.birthday}`}
+              {person.place_of_birth && ` · ${person.place_of_birth}`}
+            </p>
+            <p className="text-xs text-stone-300 leading-relaxed line-clamp-6">{person.biography || 'Chưa có tiểu sử.'}</p>
+          </div>
+        </div>
+        <div className="px-6 pb-6">
+          <h4 className="text-[10px] text-stone-500 font-bold uppercase tracking-widest mb-2">Phim đã tham gia</h4>
+          {credits.length === 0 ? (
+            <p className="text-[11px] text-stone-500">Đang tải…</p>
+          ) : (
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2.5">
+              {credits.map((m) => (
+                <button key={`${m.id}-${m.credit_id}`} onClick={() => onMovieChange({ ...m, media_type: m.media_type || (m.title ? 'movie' : 'tv'), overview: m.overview || '' })} className="group">
+                  <img src={imgPath(m.poster_path, 'w185')} alt={m.title || m.name} className="w-full aspect-[2/3] object-cover rounded-lg border border-white/10 group-hover:border-red-500/50 transition" loading="lazy" />
+                  <p className="text-[9px] font-semibold mt-1 truncate">{m.title || m.name}</p>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

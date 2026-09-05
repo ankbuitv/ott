@@ -16,7 +16,7 @@ const CORS = {
 };
 
 export default {
-  // Cron: tự động refresh danh sách kênh (playlists/tv.m3u) + EPG cache
+  // Cron: tự động refresh danh sách kênh (playlists/tv.m3u) + EPG cache + dọn rác DB
   async scheduled(event, env, ctx) {
     console.error("[cron] refreshing channels + epg cache");
     ctx.waitUntil((async () => {
@@ -32,6 +32,20 @@ export default {
         await handleEPG(env, null);
       } catch (e) {
         console.error("[cron] epg refresh error:", e?.message || e);
+      }
+      // Dọn rác DB: session hết hạn, mã verify/reset cũ, login_attempts, analytics > 90 ngày, cache TMDB hết hạn
+      if (hasDB(env)) {
+        try {
+          await env.DB.batch([
+            env.DB.prepare("DELETE FROM sessions WHERE expires_at < ?").bind(Date.now()),
+            env.DB.prepare("DELETE FROM login_attempts WHERE created_at < datetime('now', '-1 day')"),
+            env.DB.prepare("DELETE FROM analytics WHERE created_at < datetime('now', '-90 days')"),
+            env.DB.prepare("DELETE FROM tmdb_cache WHERE expires_at < ?").bind(Math.floor(Date.now() / 1000)),
+            env.DB.prepare("UPDATE users SET verify_code = '', reset_token = '' WHERE verify_expires < ? AND reset_expires < ? AND (verify_code != '' OR reset_token != '')").bind(Math.floor(Date.now() / 1000) - 86400, Math.floor(Date.now() / 1000) - 86400),
+          ]);
+        } catch (e) {
+          console.error("[cron] cleanup error:", e?.message || e);
+        }
       }
     })());
   },
@@ -50,7 +64,7 @@ export default {
       // User API
       if (p.startsWith("/user/")) return await handleUser(p, request, env);
       // Admin API
-      if (p.startsWith("/admin/")) return await handleAdmin(p, request, env);
+      if (p.startsWith("/admin/")) return await handleAdmin(p, request, env, ctx);
       // WebSocket upgrade
       if (p === "/ws" && request.headers.get("Upgrade") === "websocket") {
         return handleWebSocket(request, env, ctx);
@@ -137,6 +151,229 @@ function verifyJWT(token) {
     if (data.exp < Date.now()) return null;
     return data.userId;
   } catch { return null; }
+}
+
+// ========== 2FA TOTP (RFC 6238, Google Authenticator compatible) ==========
+const B32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+function base32Encode(bytes) {
+  let bits = 0, value = 0, out = "";
+  for (const b of bytes) {
+    value = (value << 8) | b; bits += 8;
+    while (bits >= 5) { out += B32_ALPHABET[(value >>> (bits - 5)) & 31]; bits -= 5; }
+  }
+  if (bits > 0) out += B32_ALPHABET[(value << (5 - bits)) & 31];
+  return out;
+}
+
+function base32Decode(str) {
+  const clean = (str || "").toUpperCase().replace(/[^A-Z2-7]/g, "");
+  let bits = 0, value = 0;
+  const out = [];
+  for (const c of clean) {
+    value = (value << 5) | B32_ALPHABET.indexOf(c); bits += 5;
+    if (bits >= 8) { out.push((value >>> (bits - 8)) & 255); bits -= 8; }
+  }
+  return new Uint8Array(out);
+}
+
+function generateTOTPSecret() {
+  const bytes = new Uint8Array(20);
+  crypto.getRandomValues(bytes);
+  return base32Encode(bytes);
+}
+
+// Sinh mã TOTP 6 số tại bước thời gian hiện tại (+offset để kiểm tra window ±30s)
+async function totpCode(secretB32, offset = 0) {
+  try {
+    const key = base32Decode(secretB32);
+    if (key.length === 0) return "";
+    const counter = Math.floor(Date.now() / 30000) + offset;
+    const counterBuf = new ArrayBuffer(8);
+    const dv = new DataView(counterBuf);
+    dv.setUint32(0, Math.floor(counter / 0x100000000), false);
+    dv.setUint32(4, counter >>> 0, false);
+    const cryptoKey = await crypto.subtle.importKey("raw", key, { name: "HMAC", hash: "SHA-1" }, false, ["sign"]);
+    const sig = new Uint8Array(await crypto.subtle.sign("HMAC", cryptoKey, counterBuf));
+    const idx = sig[sig.length - 1] & 0xf;
+    const code = (((sig[idx] & 0x7f) << 24) | (sig[idx + 1] << 16) | (sig[idx + 2] << 8) | sig[idx + 3]) % 1000000;
+    return code.toString().padStart(6, "0");
+  } catch { return ""; }
+}
+
+async function verifyTOTP(secretB32, code) {
+  const target = String(code || "").trim();
+  if (!secretB32 || !/^\d{6}$/.test(target)) return false;
+  for (const off of [-1, 0, 1]) {
+    if ((await totpCode(secretB32, off)) === target) return true;
+  }
+  return false;
+}
+
+// ========== AUDIT LOG (nhật ký thao tác admin) ==========
+async function logAudit(env, userId, action, detail) {
+  try {
+    await env.DB.prepare("INSERT INTO audit_log (user_id, action, detail) VALUES (?, ?, ?)")
+      .bind(userId || 0, action, typeof detail === "string" ? detail : JSON.stringify(detail || {})).run();
+  } catch {}
+}
+
+// ========== WEB PUSH (VAPID, không payload — SW tự fetch nội dung) ==========
+const b64urlFromBytes = (bytes) => {
+  let s = "";
+  bytes.forEach((b) => { s += String.fromCharCode(b); });
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+};
+const b64urlToBytes = (s) => {
+  const pad = s.length % 4 ? 4 - (s.length % 4) : 0;
+  const raw = atob(s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat(pad));
+  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
+};
+const strToB64url = (str) => b64urlFromBytes(new TextEncoder().encode(str));
+
+// Lấy (hoặc tự sinh lần đầu) cặp khoá VAPID — lưu trong D1 push_config, có thể override bằng env
+async function getVapidKeys(env) {
+  if (env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_JWK) {
+    return { publicB64url: env.VAPID_PUBLIC_KEY, privateJwk: JSON.parse(env.VAPID_PRIVATE_JWK) };
+  }
+  if (hasDB(env)) {
+    try {
+      const { results } = await env.DB.prepare("SELECT key, value FROM push_config WHERE key IN ('vapid_public','vapid_private')").all();
+      const pub = results.find(r => r.key === 'vapid_public')?.value;
+      const priv = results.find(r => r.key === 'vapid_private')?.value;
+      if (pub && priv) return { publicB64url: pub, privateJwk: JSON.parse(priv) };
+    } catch {}
+    try {
+      const kp = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+      const privJwk = await crypto.subtle.exportKey("jwk", kp.privateKey);
+      // Public key dạng "uncompressed point" (0x04 || X || Y) base64url — thứ pushManager.subscribe cần
+      const x = b64urlToBytes(privJwk.x), y = b64urlToBytes(privJwk.y);
+      const raw = new Uint8Array(65);
+      raw[0] = 0x04; raw.set(x, 1); raw.set(y, 33);
+      const pubB64url = b64urlFromBytes(raw);
+      await env.DB.batch([
+        env.DB.prepare("INSERT OR REPLACE INTO push_config (key, value) VALUES ('vapid_public', ?)").bind(pubB64url),
+        env.DB.prepare("INSERT OR REPLACE INTO push_config (key, value) VALUES ('vapid_private', ?)").bind(JSON.stringify(privJwk)),
+      ]);
+      return { publicB64url: pubB64url, privateJwk: privJwk };
+    } catch (e) {
+      console.error("[push] keygen error:", e?.message || e);
+    }
+  }
+  return null;
+}
+
+// Ký JWT ES256 cho header Authorization của Web Push protocol
+async function vapidJWT(privateJwk, audience, subject) {
+  const header = strToB64url(JSON.stringify({ typ: "JWT", alg: "ES256" }));
+  const payload = strToB64url(JSON.stringify({ aud: audience, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: subject }));
+  const key = await crypto.subtle.importKey("jwk", privateJwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
+  const sig = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, new TextEncoder().encode(`${header}.${payload}`));
+  return `${header}.${payload}.${b64urlFromBytes(new Uint8Array(sig))}`;
+}
+
+// Gửi 1 push (không payload — service worker nhận sự kiện rồi tự lấy nội dung mới nhất)
+async function sendWebPush(sub, privateJwk) {
+  try {
+    const origin = new URL(sub.endpoint).origin;
+    const jwt = await vapidJWT(privateJwk, origin, "mailto:admin@chrtv.app");
+    const res = await fetch(sub.endpoint, {
+      method: "POST",
+      headers: { TTL: "3600", Urgency: "normal", Authorization: `vapid t=${jwt}, k=${sub._vapidPublic || ""}` },
+      body: null,
+    });
+    return res.status;
+  } catch (e) {
+    return 0;
+  }
+}
+
+// Fan-out push tới toàn bộ subscription (gọi khi admin tạo thông báo mới)
+async function pushNotifyAll(env) {
+  if (!hasDB(env)) return;
+  const keys = await getVapidKeys(env);
+  if (!keys) return;
+  try {
+    const { results } = await env.DB.prepare("SELECT endpoint FROM push_subscriptions").all();
+    if (!results || results.length === 0) return;
+    await Promise.allSettled(results.map(async (r) => {
+      const status = await sendWebPush({ endpoint: r.endpoint, _vapidPublic: keys.publicB64url }, keys.privateJwk);
+      if (status === 404 || status === 410) {
+        await env.DB.prepare("DELETE FROM push_subscriptions WHERE endpoint = ?").bind(r.endpoint).run();
+      }
+    }));
+  } catch (e) {
+    console.error("[push] fanout error:", e?.message || e);
+  }
+}
+
+// ========== TMDB PROXY (giấu api_key + cache ở edge) ==========
+const DEFAULT_TMDB_KEY = "c02e885e3955667731c6267bd30fa92d";
+
+async function handleTMDBProxy(request, env) {
+  const url = new URL(request.url);
+  const tmdbPath = url.searchParams.get("path") || "";
+  if (!tmdbPath.startsWith("/") || tmdbPath.includes("..") || !/^\/[a-zA-Z0-9_/.-]+$/.test(tmdbPath)) {
+    return json({ error: "Invalid TMDB path" }, 400);
+  }
+  const params = new URLSearchParams(url.search);
+  params.delete("path");
+  params.set("api_key", env.TMDB_KEY || DEFAULT_TMDB_KEY);
+  const cacheKey = tmdbPath + "?" + params.toString();
+
+  // 1) Cache D1 (TTL theo loại endpoint: search 30 phút, trending 1h, chi tiết 6h)
+  const ttlSec = tmdbPath.includes("/search/") ? 1800 : (tmdbPath.includes("/trending/") ? 3600 : 21600);
+  if (hasDB(env)) {
+    try {
+      const { results } = await env.DB.prepare("SELECT data, expires_at FROM tmdb_cache WHERE key = ?").bind(cacheKey).all();
+      if (results[0] && results[0].expires_at > Math.floor(Date.now() / 1000)) {
+        return new Response(results[0].data, { headers: { ...CORS, "Content-Type": "application/json", "X-Cache": "HIT" } });
+      }
+    } catch {}
+  }
+
+  // 2) Gọi TMDB server-side (giấu key khỏi client)
+  try {
+    const resp = await fetch(`https://api.themoviedb.org/3${tmdbPath}?${params.toString()}`, {
+      headers: { "User-Agent": "CHRTV-OTT/2.0", accept: "application/json" },
+    });
+    const text = await resp.text();
+    if (resp.ok && hasDB(env)) {
+      try {
+        await env.DB.prepare("INSERT OR REPLACE INTO tmdb_cache (key, data, expires_at) VALUES (?, ?, ?)")
+          .bind(cacheKey, text, Math.floor(Date.now() / 1000) + ttlSec).run();
+      } catch {}
+    }
+    return new Response(text, { status: resp.status, headers: { ...CORS, "Content-Type": "application/json", "X-Cache": "MISS" } });
+  } catch (e) {
+    return json({ error: "TMDB fetch failed: " + (e?.message || e) }, 502);
+  }
+}
+
+// ========== WEB PUSH API ==========
+async function handlePush(path, request, env) {
+  if (path === "/api/push/vapid-public" && request.method === "GET") {
+    const keys = await getVapidKeys(env);
+    if (!keys) return json({ error: "Push chưa khả dụng (cần D1)" }, 503);
+    return json({ success: true, publicKey: keys.publicB64url });
+  }
+  await ensureSchema(env);
+  const user = await getUser(request, env); // cho phép cả khách chưa đăng nhập (user_id = 0)
+
+  if (path === "/api/push/subscribe" && request.method === "POST") {
+    const { endpoint, keys } = await request.json().catch(() => ({}));
+    if (!endpoint || !keys?.p256dh || !keys?.auth) return json({ error: "Thiếu subscription" }, 400);
+    await env.DB.prepare("INSERT OR REPLACE INTO push_subscriptions (user_id, endpoint, p256dh, auth) VALUES (?, ?, ?, ?)")
+      .bind(user?.id || 0, endpoint, keys.p256dh, keys.auth).run();
+    return json({ success: true });
+  }
+  if (path === "/api/push/unsubscribe" && request.method === "POST") {
+    const { endpoint } = await request.json().catch(() => ({}));
+    if (!endpoint) return json({ error: "Thiếu endpoint" }, 400);
+    await env.DB.prepare("DELETE FROM push_subscriptions WHERE endpoint = ?").bind(endpoint).run();
+    return json({ success: true });
+  }
+  return json({ error: "Not found" }, 404);
 }
 
 // ========== EMAIL (Brevo / Sendinblue) ==========
@@ -267,6 +504,17 @@ const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS m3u_sources (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, url TEXT NOT NULL, is_active INTEGER DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS broadcasts (id INTEGER PRIMARY KEY AUTOINCREMENT, message TEXT NOT NULL, type TEXT DEFAULT 'info', is_active INTEGER DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, expires_at INTEGER DEFAULT 0)`,
   `CREATE TABLE IF NOT EXISTS user_profiles (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, name TEXT NOT NULL, avatar_url TEXT DEFAULT '', is_child INTEGER DEFAULT 0, pin_hash TEXT DEFAULT '', active INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS login_attempts (id INTEGER PRIMARY KEY AUTOINCREMENT, login TEXT NOT NULL, ip TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE INDEX IF NOT EXISTS idx_login_attempts ON login_attempts(login, created_at)`,
+  `CREATE TABLE IF NOT EXISTS audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER DEFAULT 0, action TEXT NOT NULL, detail TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS movie_watchlist (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, media_type TEXT DEFAULT 'movie', tmdb_id INTEGER NOT NULL, title TEXT DEFAULT '', poster_path TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, media_type, tmdb_id))`,
+  `CREATE TABLE IF NOT EXISTS push_subscriptions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER DEFAULT 0, endpoint TEXT UNIQUE NOT NULL, p256dh TEXT DEFAULT '', auth TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS push_config (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS tmdb_cache (key TEXT PRIMARY KEY, data TEXT NOT NULL, expires_at INTEGER NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS party_rooms (room TEXT PRIMARY KEY, channel_id TEXT DEFAULT '', channel_name TEXT DEFAULT '', updated_at INTEGER DEFAULT 0)`,
+  `CREATE TABLE IF NOT EXISTS party_members (room TEXT NOT NULL, name TEXT NOT NULL, last_seen INTEGER DEFAULT 0, PRIMARY KEY(room, name))`,
+  `CREATE TABLE IF NOT EXISTS party_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, room TEXT NOT NULL, from_name TEXT DEFAULT '', kind TEXT DEFAULT 'chat', text TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE INDEX IF NOT EXISTS idx_party_messages ON party_messages(room, id)`,
   `CREATE INDEX IF NOT EXISTS idx_watch_history_user ON watch_history(user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_favorites_user ON user_favorites(user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_notifications_target ON notifications(target)`,
@@ -296,6 +544,14 @@ async function ensureSchema(env) {
       await env.DB.prepare("ALTER TABLE channels ADD COLUMN is_active INTEGER DEFAULT 1").run();
     } catch (e) {
       // cột đã tồn tại hoặc lỗi khác — bỏ qua
+    }
+    // MIGRATION: users — banned (khoá tài khoản), totp (2FA)
+    for (const stmt of [
+      "ALTER TABLE users ADD COLUMN banned INTEGER DEFAULT 0",
+      "ALTER TABLE users ADD COLUMN totp_secret TEXT DEFAULT ''",
+      "ALTER TABLE users ADD COLUMN totp_enabled INTEGER DEFAULT 0",
+    ]) {
+      try { await env.DB.prepare(stmt).run(); } catch (e) { /* cột đã có — bỏ qua */ }
     }
     schemaReady = true;
     return true;
@@ -334,6 +590,9 @@ async function handleAPI(path, request, env, ctx) {
   if (path === "/api/history") return await handleHistory(request, env);
   if (path === "/api/rating") return await handleRating(request, env);
   if (path === "/api/notifications") return await handleNotifications(request, env);
+  if (path.startsWith("/api/push/")) return await handlePush(path, request, env);
+  if (path.startsWith("/api/party/")) return await handleParty(path, request, env);
+  if (path === "/api/tmdb") return await handleTMDBProxy(request, env);
   if (path === "/api/reminders") return await handleReminders(request, env);
   if (path === "/api/broadcasts") return await handleBroadcasts(env);
   if (path === "/api/channels") return await handleChannels(env);
@@ -651,12 +910,31 @@ async function handleAuth(path, request, env) {
   if (path === "/auth/login") {
     const { login, password } = body;
     if (!login || !password) return json({ error: "Thiếu thông tin" }, 400);
+    const ip = request.headers.get("CF-Connecting-IP") || "local";
+
+    // RATE LIMIT: sai ≥5 lần trong 15 phút (theo tài khoản hoặc IP) → khoá tạm
+    try {
+      const { results: fails } = await env.DB.prepare("SELECT COUNT(*) as c FROM login_attempts WHERE (login = ? OR ip = ?) AND created_at > datetime('now', '-15 minutes')").bind(login, ip).all();
+      if ((fails[0]?.c || 0) >= 5) {
+        return json({ error: "Đăng nhập sai quá nhiều lần. Tạm khoá 15 phút — thử lại sau hoặc đặt lại mật khẩu.", code: "RATE_LIMITED" }, 429);
+      }
+    } catch (e) { /* bảng chưa có — bỏ qua */ }
+
     const hash = hashPassword(password);
 
     try {
-      const { results } = await env.DB.prepare("SELECT id, username, email, display_name, avatar_url, role, email_verified FROM users WHERE (email = ? OR username = ?) AND password_hash = ?").bind(login, login, hash).all();
-      if (results.length === 0) return json({ error: "Sai tài khoản hoặc mật khẩu" }, 401);
+      const { results } = await env.DB.prepare("SELECT id, username, email, display_name, avatar_url, role, email_verified, banned, totp_secret, totp_enabled FROM users WHERE (email = ? OR username = ?) AND password_hash = ?").bind(login, login, hash).all();
+      if (results.length === 0) {
+        // Ghi nhận lần sai để rate limit
+        try { await env.DB.prepare("INSERT INTO login_attempts (login, ip) VALUES (?, ?)").bind(login, ip).run(); } catch {}
+        return json({ error: "Sai tài khoản hoặc mật khẩu" }, 401);
+      }
       const user = results[0];
+
+      // Tài khoản bị admin khoá
+      if (user.banned) {
+        return json({ error: "Tài khoản đã bị khoá bởi quản trị viên.", code: "BANNED" }, 403);
+      }
 
       // BẮT BUỘC xác minh email trước khi đăng nhập (trừ admin để không tự khoá chính mình)
       if (!user.email_verified && user.role !== "admin") {
@@ -667,6 +945,21 @@ async function handleAuth(path, request, env) {
           email: user.email,
         }, 403);
       }
+
+      // 2FA TOTP: bật thì bắt nhập mã từ Authenticator
+      if (user.totp_enabled) {
+        if (!body.totp) {
+          return json({ success: false, error: "Nhập mã 2FA (6 số) từ Google Authenticator.", code: "TOTP_REQUIRED", email: user.email }, 401);
+        }
+        const okTotp = await verifyTOTP(user.totp_secret, String(body.totp));
+        if (!okTotp) {
+          try { await env.DB.prepare("INSERT INTO login_attempts (login, ip) VALUES (?, ?)").bind(login, ip).run(); } catch {}
+          return json({ error: "Mã 2FA không đúng.", code: "TOTP_INVALID" }, 401);
+        }
+      }
+
+      // Đăng nhập OK → xoá nhật ký sai của tài khoản + IP này
+      try { await env.DB.prepare("DELETE FROM login_attempts WHERE login = ? OR ip = ?").bind(login, ip).run(); } catch {}
 
       const token = generateJWT(user.id);
       const expires = Date.now() + 30 * 24 * 3600 * 1000;
@@ -877,11 +1170,65 @@ async function handleUser(path, request, env) {
     return json({ error: "PIN sai" }, 401);
   }
 
+  // ========== 2FA TOTP ==========
+  if (path === "/user/2fa/status" && request.method === "GET") {
+    const { results } = await env.DB.prepare("SELECT totp_enabled FROM users WHERE id = ?").bind(user.id).all();
+    return json({ success: true, enabled: !!(results[0]?.totp_enabled) });
+  }
+
+  if (path === "/user/2fa/setup" && request.method === "POST") {
+    const secret = generateTOTPSecret();
+    await env.DB.prepare("UPDATE users SET totp_secret = ?, totp_enabled = 0 WHERE id = ?").bind(secret, user.id).run();
+    const otpauth = `otpauth://totp/CHRTV:${encodeURIComponent(user.username || user.email)}?secret=${secret}&issuer=CHRTV&algorithm=SHA1&digits=6&period=30`;
+    return json({ success: true, secret, otpauth });
+  }
+
+  if (path === "/user/2fa/verify" && request.method === "POST") {
+    const { code } = await request.json().catch(() => ({}));
+    const { results } = await env.DB.prepare("SELECT totp_secret FROM users WHERE id = ?").bind(user.id).all();
+    const secret = results[0]?.totp_secret || "";
+    if (!secret) return json({ error: "Chưa setup 2FA" }, 400);
+    if (!(await verifyTOTP(secret, code))) return json({ error: "Mã 2FA không đúng — thử lại." }, 401);
+    await env.DB.prepare("UPDATE users SET totp_enabled = 1 WHERE id = ?").bind(user.id).run();
+    await logAudit(env, user.id, "2fa.enable", { username: user.username });
+    return json({ success: true, message: "Đã bật 2FA! Từ giờ đăng nhập cần mã Authenticator." });
+  }
+
+  if (path === "/user/2fa/disable" && request.method === "POST") {
+    const { code } = await request.json().catch(() => ({}));
+    const { results } = await env.DB.prepare("SELECT totp_secret, totp_enabled FROM users WHERE id = ?").bind(user.id).all();
+    if (!results[0]?.totp_enabled) return json({ success: true });
+    if (!(await verifyTOTP(results[0].totp_secret, code))) return json({ error: "Mã 2FA không đúng." }, 401);
+    await env.DB.prepare("UPDATE users SET totp_secret = '', totp_enabled = 0 WHERE id = ?").bind(user.id).run();
+    await logAudit(env, user.id, "2fa.disable", { username: user.username });
+    return json({ success: true, message: "Đã tắt 2FA." });
+  }
+
+  // ========== WATCHLIST PHIM (My List) ==========
+  if (path === "/user/watchlist" && request.method === "GET") {
+    const { results } = await env.DB.prepare("SELECT media_type, tmdb_id, title, poster_path, created_at FROM movie_watchlist WHERE user_id = ? ORDER BY id DESC LIMIT 100").bind(user.id).all();
+    return json({ success: true, watchlist: results });
+  }
+  if (path === "/user/watchlist" && request.method === "POST") {
+    const { media_type, tmdb_id, title, poster_path } = await request.json().catch(() => ({}));
+    if (!tmdb_id) return json({ error: "Thiếu tmdb_id" }, 400);
+    await env.DB.prepare("INSERT OR REPLACE INTO movie_watchlist (user_id, media_type, tmdb_id, title, poster_path) VALUES (?, ?, ?, ?, ?)")
+      .bind(user.id, media_type === 'tv' ? 'tv' : 'movie', tmdb_id, title || "", poster_path || "").run();
+    return json({ success: true });
+  }
+  if (path === "/user/watchlist" && request.method === "DELETE") {
+    const { media_type, tmdb_id } = await request.json().catch(() => ({}));
+    if (!tmdb_id) return json({ error: "Thiếu tmdb_id" }, 400);
+    await env.DB.prepare("DELETE FROM movie_watchlist WHERE user_id = ? AND media_type = ? AND tmdb_id = ?")
+      .bind(user.id, media_type === 'tv' ? 'tv' : 'movie', tmdb_id).run();
+    return json({ success: true });
+  }
+
   return json({ error: "Not found" }, 404);
 }
 
 // ========== ADMIN ==========
-async function handleAdmin(path, request, env) {
+async function handleAdmin(path, request, env, ctx) {
   // Auth: chấp nhận JWT user có role=admin HOẶC master JWT_SECRET (bypass mạnh, ai biết secret = admin)
   if (!hasDB(env)) return dbUnavailable();
   await ensureSchema(env);
@@ -917,6 +1264,9 @@ async function handleAdmin(path, request, env) {
     const { title, body: msgBody, type, channel_id, target } = await request.json().catch(() => ({}));
     if (!title || !msgBody) return json({ error: "Thiếu tiêu đề/nội dung" }, 400);
     await env.DB.prepare("INSERT INTO notifications (title, body, type, channel_id, target, created_by) VALUES (?, ?, ?, ?, ?, ?)").bind(title, msgBody, type || "info", channel_id || "", target || "all", adminUser?.id || 0).run();
+    await logAudit(env, adminUser?.id || 0, "notify.send", { title, type: type || "info" });
+    // Web Push fan-out (không chặn response)
+    try { if (ctx && ctx.waitUntil) ctx.waitUntil(pushNotifyAll(env)); } catch {}
     return json({ success: true });
   }
 
@@ -937,6 +1287,7 @@ async function handleAdmin(path, request, env) {
     const ch = await request.json().catch(() => ({}));
     if (!ch.channel_id || !ch.name || !ch.stream_url) return json({ error: "Thiếu thông tin kênh" }, 400);
     await env.DB.prepare("INSERT OR REPLACE INTO channels (channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").bind(ch.channel_id, ch.name, ch.logo || "", ch.group_title || "", ch.stream_url, ch.catchup_type || "append", ch.catchup_days || 7, ch.is_active !== undefined ? ch.is_active : 1).run();
+    await logAudit(env, adminUser?.id || 0, "channel.upsert", { channel_id: ch.channel_id, name: ch.name });
     return json({ success: true });
   }
 
@@ -944,6 +1295,7 @@ async function handleAdmin(path, request, env) {
     const { channel_id } = await request.json().catch(() => ({}));
     if (!channel_id) return json({ error: "Thiếu channel_id" }, 400);
     await env.DB.prepare("DELETE FROM channels WHERE channel_id = ?").bind(channel_id).run();
+    await logAudit(env, adminUser?.id || 0, "channel.delete", { channel_id });
     return json({ success: true });
   }
 
@@ -953,6 +1305,7 @@ async function handleAdmin(path, request, env) {
     if (!message) return json({ error: "Thiếu nội dung" }, 400);
     const expiresAt = expires_in ? Math.floor(Date.now() / 1000) + expires_in : 0;
     await env.DB.prepare("INSERT INTO broadcasts (message, type, expires_at) VALUES (?, ?, ?)").bind(message, type || "info", expiresAt).run();
+    await logAudit(env, adminUser?.id || 0, "broadcast.send", { type: type || "info", message: (message || "").slice(0, 120) });
     return json({ success: true });
   }
 
@@ -989,10 +1342,70 @@ async function handleAdmin(path, request, env) {
     if (!channelId) return json({ error: "Thiếu channel_id" }, 400);
     try {
       await env.DB.prepare("DELETE FROM epg_overrides WHERE channel_id = ?").bind(channelId).run();
+      await logAudit(env, adminUser?.id || 0, "epg_override.delete", { channel_id: channelId });
       return json({ success: true });
     } catch (e) {
       return json({ error: "Lỗi xóa override: " + (e.message || e) }, 500);
     }
+  }
+
+  // ========== USER MANAGEMENT (ban/unban/promote/reset password) ==========
+  if (path === "/admin/users" && request.method === "GET") {
+    const { results } = await env.DB.prepare("SELECT id, username, email, role, email_verified, banned, totp_enabled, created_at FROM users ORDER BY id DESC LIMIT 200").all();
+    return json({ success: true, users: results });
+  }
+
+  if (path === "/admin/users/action" && request.method === "POST") {
+    const { id, action } = await request.json().catch(() => ({}));
+    if (!id || !action) return json({ error: "Thiếu id/action" }, 400);
+    const { results } = await env.DB.prepare("SELECT id, username, email, role, banned, totp_enabled FROM users WHERE id = ?").bind(id).all();
+    const target = results[0];
+    if (!target) return json({ error: "Không tìm thấy user" }, 404);
+    // Không cho admin tự ban/demote chính mình (tránh tự cách chân)
+    if (adminUser && target.id === adminUser.id && ["ban", "demote", "delete"].includes(action)) {
+      return json({ error: "Không thể tự thực hiện hành động này trên chính mình!" }, 400);
+    }
+    let extra = {};
+    if (action === "ban") { await env.DB.prepare("UPDATE users SET banned = 1 WHERE id = ?").bind(id).run(); await env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(id).run(); }
+    else if (action === "unban") { await env.DB.prepare("UPDATE users SET banned = 0 WHERE id = ?").bind(id).run(); }
+    else if (action === "promote") { await env.DB.prepare("UPDATE users SET role = 'admin' WHERE id = ?").bind(id).run(); }
+    else if (action === "demote") { await env.DB.prepare("UPDATE users SET role = 'user' WHERE id = ?").bind(id).run(); }
+    else if (action === "disable_2fa") { await env.DB.prepare("UPDATE users SET totp_secret = '', totp_enabled = 0 WHERE id = ?").bind(id).run(); }
+    else if (action === "reset_password") {
+      const temp = "chrtv-" + generateToken().slice(0, 8);
+      await env.DB.prepare("UPDATE users SET password_hash = ? WHERE id = ?").bind(hashPassword(temp), id).run();
+      await env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(id).run();
+      extra.tempPassword = temp; // admin tự chuyển cho user
+    } else if (action === "delete") {
+      await env.DB.batch([
+        env.DB.prepare("DELETE FROM users WHERE id = ?").bind(id),
+        env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM user_favorites WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM watch_history WHERE user_id = ?").bind(id),
+        env.DB.prepare("DELETE FROM user_profiles WHERE user_id = ?").bind(id),
+      ]);
+    } else {
+      return json({ error: "Action không hợp lệ" }, 400);
+    }
+    await logAudit(env, adminUser?.id || 0, "user." + action, { target: target.username, target_id: target.id });
+    return json({ success: true, ...(extra.tempPassword ? { tempPassword: extra.tempPassword } : {}) });
+  }
+
+  // ========== AUDIT LOG ==========
+  if (path === "/admin/audit" && request.method === "GET") {
+    const { results } = await env.DB.prepare("SELECT a.*, u.username FROM audit_log a LEFT JOIN users u ON u.id = a.user_id ORDER BY a.id DESC LIMIT 100").all();
+    return json({ success: true, audit: results });
+  }
+
+  // ========== ANALYTICS SUMMARY (cho biểu đồ) ==========
+  if (path === "/admin/analytics/summary" && request.method === "GET") {
+    const [viewsByDay, loginsByDay, topChannels, byEvent] = await Promise.all([
+      env.DB.prepare("SELECT DATE(created_at) as date, COUNT(*) as count FROM analytics WHERE event = 'view' AND created_at > datetime('now', '-14 days') GROUP BY date ORDER BY date ASC").all(),
+      env.DB.prepare("SELECT DATE(created_at) as date, COUNT(*) as count FROM analytics WHERE event = 'login' AND created_at > datetime('now', '-14 days') GROUP BY date ORDER BY date ASC").all(),
+      env.DB.prepare("SELECT channel_id, COUNT(*) as count FROM analytics WHERE event = 'view' AND channel_id != '' AND created_at > datetime('now', '-30 days') GROUP BY channel_id ORDER BY count DESC LIMIT 8").all(),
+      env.DB.prepare("SELECT event, COUNT(*) as count FROM analytics GROUP BY event ORDER BY count DESC LIMIT 8").all(),
+    ]);
+    return json({ success: true, viewsByDay: viewsByDay.results, loginsByDay: loginsByDay.results, topChannels: topChannels.results, byEvent: byEvent.results });
   }
 
   return json({ error: "Not found" }, 404);
@@ -1231,8 +1644,104 @@ async function handleAnalytics(request, env) {
   return json({ success: true });
 }
 
-// ========== WEBSOCKET ==========
+// ========== WATCH PARTY (D1 + polling — khong phu thuoc gioi han cross-request WebSocket cua workerd) ==========
+// Rooms + chat + reaction + trạng thái host lưu D1; client poll /api/party/feed mỗi ~2s.
+async function handleParty(path, request, env) {
+  if (!hasDB(env)) return json({ error: "Cần D1" }, 503);
+  await ensureSchema(env);
+  const body = await request.json().catch(() => ({}));
+
+  const touchMember = async (room, name) => {
+    await env.DB.prepare("INSERT OR REPLACE INTO party_members (room, name, last_seen) VALUES (?, ?, ?)").bind(room, name, Date.now()).run();
+  };
+
+  if (path === "/api/party/join" && request.method === "POST") {
+    const { room, name, channelId, channelName } = body;
+    if (!room || !name) return json({ error: "Thiếu room/name" }, 400);
+    // Host (người đầu tiên tạo phòng) ghi kênh đang xem
+    const { results: existing } = await env.DB.prepare("SELECT room FROM party_rooms WHERE room = ?").bind(room).all();
+    if (existing.length === 0 && channelId) {
+      await env.DB.prepare("INSERT OR REPLACE INTO party_rooms (room, channel_id, channel_name, updated_at) VALUES (?, ?, ?, ?)").bind(room, channelId, channelName || "", Date.now()).run();
+    }
+    await touchMember(room, name);
+    await env.DB.prepare("INSERT INTO party_messages (room, from_name, kind, text) VALUES (?, ?, 'join', ?)").bind(room, name, `${name} đã vào phòng`).run();
+    return json({ success: true });
+  }
+
+  if (path === "/api/party/heartbeat" && request.method === "POST") {
+    const { room, name } = body;
+    if (!room || !name) return json({ error: "Thiếu room/name" }, 400);
+    await touchMember(room, name);
+    return json({ success: true });
+  }
+
+  if (path === "/api/party/state" && request.method === "POST") {
+    const { room, channelId, channelName } = body;
+    if (!room) return json({ error: "Thiếu room" }, 400);
+    await env.DB.prepare("INSERT OR REPLACE INTO party_rooms (room, channel_id, channel_name, updated_at) VALUES (?, ?, ?, ?)").bind(room, channelId || "", channelName || "", Date.now()).run();
+    return json({ success: true });
+  }
+
+  if (path === "/api/party/say" && request.method === "POST") {
+    const { room, name, text } = body;
+    if (!room || !name || !text) return json({ error: "Thiếu room/name/text" }, 400);
+    await env.DB.prepare("INSERT INTO party_messages (room, from_name, kind, text) VALUES (?, ?, 'chat', ?)").bind(room, name, String(text).slice(0, 300)).run();
+    return json({ success: true });
+  }
+
+  if (path === "/api/party/react" && request.method === "POST") {
+    const { room, name, emoji } = body;
+    if (!room || !emoji) return json({ error: "Thiếu room/emoji" }, 400);
+    await env.DB.prepare("INSERT INTO party_messages (room, from_name, kind, text) VALUES (?, ?, 'reaction', ?)").bind(room, name || "Khách", String(emoji).slice(0, 8)).run();
+    return json({ success: true });
+  }
+
+  if (path === "/api/party/leave" && request.method === "POST") {
+    const { room, name } = body;
+    if (room && name) {
+      await env.DB.prepare("DELETE FROM party_members WHERE room = ? AND name = ?").bind(room, name).run();
+      await env.DB.prepare("INSERT INTO party_messages (room, from_name, kind, text) VALUES (?, ?, 'leave', ?)").bind(room, name, `${name} đã rời phòng`).run();
+    }
+    return json({ success: true });
+  }
+
+  if (path === "/api/party/feed" && request.method === "GET") {
+    const url = new URL(request.url);
+    const room = url.searchParams.get("room") || "";
+    const after = parseInt(url.searchParams.get("after") || "0", 10);
+    if (!room) return json({ error: "Thiếu room" }, 400);
+    const { results: messages } = await env.DB.prepare("SELECT id, from_name, kind, text, created_at FROM party_messages WHERE room = ? AND id > ? ORDER BY id ASC LIMIT 50").bind(room, after).all();
+    const { results: roomRow } = await env.DB.prepare("SELECT channel_id, channel_name, updated_at FROM party_rooms WHERE room = ?").bind(room).all();
+    const { results: members } = await env.DB.prepare("SELECT name FROM party_members WHERE room = ? AND last_seen > ? ORDER BY name ASC").bind(room, Date.now() - 45000).all();
+    return json({ success: true, messages, state: roomRow[0] ? { channelId: roomRow[0].channel_id, channelName: roomRow[0].channel_name, updatedAt: roomRow[0].updated_at } : null, members: members.map((m) => ({ name: m.name })) });
+  }
+
+  return json({ error: "Not found" }, 404);
+}
+
+// ========== WEBSOCKET (Watch Party + Reactions + Presence) ==========
+// wsClients: id -> { sock, rooms:Set, name }
+// roomStates: room -> trang thai sync moi nhat cua host (kenh dang xem, play/pause...)
 const wsClients = new Map();
+const roomStates = new Map();
+
+function wsBroadcastRoom(room, msg, exceptId = null) {
+  const data = JSON.stringify(msg);
+  for (const [id, c] of wsClients.entries()) {
+    if (id === exceptId) continue;
+    if (c.rooms && c.rooms.has(room)) {
+      try { c.sock.send(data); } catch (e) { console.error("[ws] send error:", e?.message || e); }
+    }
+  }
+}
+
+function wsBroadcastPresence(room) {
+  const members = [];
+  for (const c of wsClients.values()) {
+    if (c.rooms && c.rooms.has(room)) members.push({ name: c.name || "Khach" });
+  }
+  wsBroadcastRoom(room, { type: "presence", room, members, count: members.length });
+}
 
 function handleWebSocket(request, env, ctx) {
   const pair = new WebSocketPair();
@@ -1240,27 +1749,93 @@ function handleWebSocket(request, env, ctx) {
 
   server.accept();
   const id = crypto.randomUUID();
-  wsClients.set(id, server);
+  wsClients.set(id, { sock: server, rooms: new Set(), name: "Khach" });
 
-  server.send(JSON.stringify({ type: "welcome", message: "CHRTV Connected" }));
+  server.send(JSON.stringify({ type: "welcome", message: "CHRTV Connected", id }));
 
   // Broadcast pending notifications
   env.DB?.prepare("SELECT * FROM notifications WHERE target = 'all' AND created_at > datetime('now', '-1 hour') ORDER BY created_at DESC LIMIT 5").all()
     .then(({ results }) => { if (results.length) server.send(JSON.stringify({ type: "notifications", data: results })); })
     .catch(() => {});
 
-  server.addEventListener("message", async (event) => {
-    try {
-      const msg = JSON.parse(event.data);
-      if (msg.type === "ping") server.send(JSON.stringify({ type: "pong", ts: Date.now() }));
-      if (msg.type === "subscribe") {
-        // Subscribe to channel updates
+  server.addEventListener("message", (event) => {
+    let msg;
+    try { msg = JSON.parse(event.data); } catch { return; }
+    const me = wsClients.get(id);
+    if (!me) return;
+
+    switch (msg.type) {
+      case "ping":
+        server.send(JSON.stringify({ type: "pong", ts: Date.now() }));
+        break;
+
+      case "subscribe":
         server.send(JSON.stringify({ type: "subscribed", channel: msg.channel }));
+        break;
+
+      // Vao phong watch party (room vd: "party:abc123" hoac "ch:VTV3.vn" cho reaction nhanh)
+      case "join": {
+        const room = String(msg.room || "").slice(0, 64);
+        if (!room) return;
+        if (me.room) { me.rooms.delete(me.room); wsBroadcastPresence(me.room); }
+        me.room = room;
+        me.rooms.add(room);
+        me.name = String(msg.name || "Khach").slice(0, 24);
+        server.send(JSON.stringify({ type: "joined", room, name: me.name, state: roomStates.get(room) || null }));
+        wsBroadcastRoom(room, { type: "chat", room, from: "He thong", text: `${me.name} da vao phong`, sys: true }, id);
+        wsBroadcastPresence(room);
+        break;
       }
-    } catch {}
+
+      // Host dong bo trang thai phat (kenh, play/pause, vi tri catchup)
+      case "state": {
+        if (!me.room) return;
+        const st = { ...msg.state, ts: Date.now() };
+        roomStates.set(me.room, st);
+        if (roomStates.size > 50) { const first = roomStates.keys().next().value; roomStates.delete(first); }
+        wsBroadcastRoom(me.room, { type: "state", room: me.room, from: me.name, state: st }, id);
+        break;
+      }
+
+      // Chat trong phong
+      case "chat": {
+        if (!me.room) return;
+        const text = String(msg.text || "").slice(0, 300);
+        if (!text.trim()) return;
+        wsBroadcastRoom(me.room, { type: "chat", room: me.room, from: me.name, text }, id);
+        break;
+      }
+
+      // Reaction bay tren man hinh ca phong
+      case "reaction": {
+        if (!me.room) return;
+        const emoji = String(msg.emoji || "\u2764\uFE0F").slice(0, 8);
+        wsBroadcastRoom(me.room, { type: "reaction", room: me.room, emoji, from: me.name });
+        break;
+      }
+
+      case "leave": {
+        if (me.room) {
+          const r = me.room;
+          me.rooms.delete(r);
+          me.room = null;
+          wsBroadcastRoom(r, { type: "chat", room: r, from: "He thong", text: `${me.name} da roi phong`, sys: true });
+          wsBroadcastPresence(r);
+        }
+        break;
+      }
+    }
   });
 
-  server.addEventListener("close", () => { wsClients.delete(id); });
+  server.addEventListener("close", () => {
+    const me = wsClients.get(id);
+    if (me?.room) {
+      const r = me.room;
+      wsBroadcastRoom(r, { type: "chat", room: r, from: "He thong", text: `${me.name} da roi phong`, sys: true });
+      setTimeout(() => wsBroadcastPresence(r), 100);
+    }
+    wsClients.delete(id);
+  });
 
   return new Response(null, { status: 101, webSocket: client });
 }

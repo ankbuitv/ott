@@ -5,13 +5,19 @@ import {
   AlertTriangle, Radio, Clock, ArrowLeft,
   ChevronUp, ChevronDown, RefreshCw, Signal, Info, X, List,
   Settings, Monitor, Gauge, Wifi, Activity, Hash, Timer,
-  Camera, PictureInPicture2 as PiP, Volume1, Captions, AudioLines
+  Camera, PictureInPicture2 as PiP, Volume1, Captions, AudioLines,
+  Share2, Cast, Airplay, Users, Send, Smile, PartyPopper, Tv
 } from 'lucide-react';
 import FocusableWrapper from './FocusableWrapper';
 import { formatTimeHHMM, calculateProgramProgress } from '../utils/dateUtils';
 import SleepTimer from './SleepTimer';
 import { useDevice } from '../contexts/DeviceContext';
 import { useToast } from '../contexts/ToastContext';
+import { useSettings } from '../contexts/SettingsContext';
+import { useI18n } from '../contexts/I18nContext';
+import {
+  joinRoom, leaveRoom, sendPartyChat, sendPartyReaction, sendPartyState, onPartyMessage, PARTY_EMOJIS,
+} from '../services/watchParty';
 
 const FALLBACK_STREAM_URL_HTTP = "http://bore.pub:30113/hls/index.m3u8";
 const FALLBACK_STREAM_URL = (typeof window !== 'undefined' && window.location?.protocol === 'https:')
@@ -65,6 +71,9 @@ export default function VideoPlayer({
   isCatchupMode = false, catchupProgram = null,
   onNextChannel, onPrevChannel, onClose,
   allChannels = [], onOpenSettings,
+  epgLookup = null,           // (channelId) => {now, next} - strip "kenh khac dang chieu gi"
+  initialPartyRoom = null,    // vao thang phong party tu deep link ?party=
+  currentUserName = 'Khach',
 }) {
   const videoRef = useRef(null);
   const containerRef = useRef(null);
@@ -106,6 +115,22 @@ export default function VideoPlayer({
   // Channel quick-switch OSD
   const [quickSwitch, setQuickSwitch] = useState(null);
   const quickSwitchTimer = useRef(null);
+
+  // Data saver (ep <=480p) — bat trong Settings/quality menu
+  const { settings, updateSetting } = useSettings();
+  const dataSaver = !!settings.dataSaver;
+
+  // Watch party + reactions
+  const [showParty, setShowParty] = useState(!!initialPartyRoom);
+  const [partyRoom, setPartyRoom] = useState(initialPartyRoom || '');
+  const [isHost, setIsHost] = useState(!initialPartyRoom); // nguoi mo phong = host
+  const [partyChat, setPartyChat] = useState([]);
+  const [partyText, setPartyText] = useState('');
+  const [partyMembers, setPartyMembers] = useState([]);
+  const [reactions, setReactions] = useState([]); // emoji bay
+  const [showEpgStrip, setShowEpgStrip] = useState(false);
+  const [showEmojiBar, setShowEmojiBar] = useState(false);
+  const chatEndRef = useRef(null);
 
   const overlayTimerRef = useRef(null);
   const statsIntervalRef = useRef(null);
@@ -192,6 +217,160 @@ export default function VideoPlayer({
   }
 
   useEffect(() => { shaka.polyfill.installAll(); }, []);
+
+  // ============ DATA SAVER: gioi han do phan qua lai <=480p ============
+  useEffect(() => {
+    const p = shakaPlayerRef.current;
+    if (!p) return;
+    try {
+      p.configure({ abr: { maxHeight: dataSaver ? 480 : undefined } });
+      // Neu dang phat qua cao -> ha xuong ban ghi phu hop
+      const tracks = p.getVariantTracks?.() || [];
+      if (dataSaver) {
+        const active = tracks.find(t => t.active);
+        if (active && active.height && active.height > 480) {
+          const best = tracks.filter(t => t.height && t.height <= 480).sort((a, b) => b.height - a.height)[0];
+          if (best) { p.selectVariantTrack(best); addToast(`Tiết kiệm data: hạ về ${best.height}p`, 'info'); }
+        }
+      }
+    } catch {}
+  }, [dataSaver, addToast]);
+
+  // ============ WATCH PARTY (D1 + polling) ============
+  // Host: gui trang thai moi khi doi kenh; Guest: nhan state -> tu doi kenh theo host
+  useEffect(() => {
+    if (!partyRoom) return undefined;
+    joinRoom(partyRoom, currentUserName, isHost);
+    const off = onPartyMessage((msg) => {
+      if (msg.type === 'presence') {
+        setPartyMembers(msg.members || []);
+      } else if (msg.type === 'chat') {
+        setPartyChat((prev) => [...prev.slice(-80), { from: msg.from || '?', text: msg.text, sys: !!msg.sys }]);
+      } else if (msg.type === 'reaction') {
+        const id = Date.now() + Math.random();
+        setReactions((prev) => [...prev.slice(-14), { id, emoji: msg.emoji, from: msg.from }]);
+        setTimeout(() => setReactions((prev) => prev.filter((r) => r.id !== id)), 3500);
+      } else if (msg.type === 'state' && !isHost && msg.state) {
+        // Guest tu dong theo kenh host dang xem (kem luc vao phong giua chang)
+        const st = msg.state;
+        if (st.channelId && st.channelId !== channel?.channel_id) {
+          const ch = (allChannels || []).find((c) => c.channel_id === st.channelId);
+          if (ch && window.__chrtv_select_channel) window.__chrtv_select_channel(ch);
+        }
+      }
+    });
+    return () => { off(); leaveRoom(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [partyRoom]);
+
+  // Host phat tin hieu khi doi kenh
+  useEffect(() => {
+    if (isHost && partyRoom && channel) {
+      sendPartyState({ channelId: channel.channel_id, channelName: channel.name, stream: channel.stream_url || '' });
+    }
+  }, [isHost, partyRoom, channel?.channel_id]);
+
+  const createParty = () => {
+    const code = Math.random().toString(36).slice(2, 7).toUpperCase();
+    setPartyRoom(`party:${code}`);
+    setIsHost(true);
+    setShowParty(true);
+    setPartyChat([]);
+    // Effect [partyRoom] sẽ gọi joinRoom(room, name, isHost=true)
+    addToast(`Đã tạo phòng ${code} — chia sẻ link cho bạn bè!`, 'success');
+  };
+
+  const joinParty = (code) => {
+    const room = code.startsWith('party:') ? code : `party:${code.trim().toUpperCase()}`;
+    setPartyRoom(room);
+    setIsHost(false);
+    setShowParty(true);
+    setPartyChat([]);
+    addToast(`Đã vào phòng ${room.replace('party:', '')}`, 'success');
+  };
+
+  const leaveParty = () => {
+    leaveRoom();
+    setPartyRoom('');
+    setPartyMembers([]);
+    setPartyChat([]);
+    setShowParty(false);
+  };
+
+  const react = (emoji) => {
+    sendPartyReaction(emoji);
+    const id = Date.now() + Math.random();
+    setReactions((prev) => [...prev.slice(-14), { id, emoji, from: currentUserName }]);
+    setTimeout(() => setReactions((prev) => prev.filter((r) => r.id !== id)), 3500);
+    resetOverlayTimer();
+  };
+
+  // ============ SHARE DEEP LINK ============
+  const shareChannel = useCallback(async () => {
+    const base = window.location.origin + window.location.pathname;
+    const params = new URLSearchParams({ channel: channel?.channel_id || '' });
+    if (partyRoom) params.set('party', partyRoom.replace('party:', ''));
+    const url = `${base}?${params.toString()}`;
+    try {
+      if (navigator.share) await navigator.share({ title: channel?.name || 'CHRTV', url });
+      else {
+        await navigator.clipboard.writeText(url);
+        addToast('Đã copy link kênh — gửi qua Zalo/Messenger nhé!', 'success');
+      }
+    } catch {}
+    resetOverlayTimer();
+  }, [channel, partyRoom, addToast, resetOverlayTimer]);
+
+  // ============ CHROMECAST / AIRPLAY ============
+  const loadCastSdk = () => new Promise((resolve) => {
+    if (window.cast?.framework) return resolve(true);
+    if (document.getElementById('chrtv-cast-sdk')) return resolve(false);
+    const s = document.createElement('script');
+    s.id = 'chrtv-cast-sdk';
+    s.src = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1';
+    s.async = true;
+    s.onload = () => resolve(true);
+    s.onerror = () => resolve(false);
+    document.head.appendChild(s);
+  });
+
+  const toggleCast = useCallback(async () => {
+    addToast('Đang tìm thiết bị Cast…', 'info');
+    const ok = await loadCastSdk();
+    if (!ok || !window.cast?.framework) { addToast('Chromecast không khả dụng (cần Chrome)', 'error'); return; }
+    try {
+      const context = window.cast.framework.CastContext.getInstance();
+      context.setOptions({
+        receiverApplicationId: (window.chrome?.cast?.media && window.chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID) || 'CC1AD845',
+        autoJoinPolicy: 'any',
+      });
+      await context.requestSession();
+      const session = context.getCurrentSession();
+      if (session) {
+        const mimeType = isMpdUrl(activeUrl) ? 'application/dash+xml' : 'application/x-mpegurl';
+        const mediaInfo = new window.chrome.cast.media.MediaInfo(activeUrl, mimeType);
+        mediaInfo.metadata = new window.chrome.cast.media.GenericMediaMetadata();
+        mediaInfo.metadata.title = channel?.name || 'CHRTV';
+        const req = new window.chrome.cast.media.LoadRequest(mediaInfo);
+        await session.loadMedia(req);
+        addToast(`Đang chiếu ${channel?.name || ''} lên TV 📺`, 'success');
+      }
+    } catch (e) { addToast('Không kết nối được Cast', 'error'); }
+    resetOverlayTimer();
+  }, [activeUrl, channel, addToast, resetOverlayTimer, isMpdUrl]);
+
+  const toggleAirPlay = useCallback(() => {
+    const v = videoRef.current;
+    if (v && v.webkitShowPlaybackTargetPicker) {
+      v.webkitShowPlaybackTargetPicker();
+    } else {
+      addToast('AirPlay chỉ hỗ trợ trên Safari (iPhone/iPad/Mac)', 'info');
+    }
+    resetOverlayTimer();
+  }, [addToast, resetOverlayTimer]);
+
+  const hasAirPlay = typeof window !== 'undefined' && !!(HTMLVideoElement.prototype && HTMLVideoElement.prototype.webkitShowPlaybackTargetPicker);
+
 
   // Initialize Shaka Player + load stream
   useEffect(() => {
@@ -467,6 +646,12 @@ export default function VideoPlayer({
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e) => {
+      // Dang go trong input/textarea (chat party, tim kiem) -> khong bat phim tat player
+      const tag = (e.target?.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea') {
+        if (e.key === 'Escape' && e.target.blur) e.target.blur();
+        return;
+      }
       resetOverlayTimer();
       const key = e.key;
       switch (key) {
@@ -677,7 +862,24 @@ export default function VideoPlayer({
             <button onClick={(e) => { e.stopPropagation(); setShowAudioMenu(prev=>!prev); setShowQualityMenu(false); setShowSubtitleMenu(false); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${showAudioMenu ? 'bg-blue-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`} title="Audio">
               <AudioLines className="w-3.5 h-3.5" />
             </button>
-            <button onClick={(e) => { e.stopPropagation(); toggleSubtitles(); resetOverlayTimer(); }} className="p-1.5 rounded-full bg-black/50 text-slate-300 hover:bg-black/70" title="Phụ đề">
+            <button onClick={shareChannel} className="p-1.5 rounded-full bg-black/50 text-slate-300 hover:bg-black/70 transition-all" title="Chia sẻ kênh (deep link)">
+              <Share2 className="w-3.5 h-3.5" />
+            </button>
+            <button onClick={toggleCast} className="p-1.5 rounded-full bg-black/50 text-slate-300 hover:bg-black/70 transition-all hidden md:block" title="Chiếu lên Chromecast">
+              <Cast className="w-3.5 h-3.5" />
+            </button>
+            {hasAirPlay && (
+              <button onClick={toggleAirPlay} className="p-1.5 rounded-full bg-black/50 text-slate-300 hover:bg-black/70 transition-all" title="AirPlay">
+                <Airplay className="w-3.5 h-3.5" />
+              </button>
+            )}
+            <button onClick={() => { setShowParty(prev => !prev); setShowEpgStrip(false); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${showParty ? 'bg-purple-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`} title="Xem chung (Watch Party)">
+              <Users className="w-3.5 h-3.5" />
+            </button>
+            <button onClick={() => { setShowEpgStrip(prev => !prev); setShowParty(false); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${showEpgStrip ? 'bg-blue-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`} title="Kênh khác đang chiếu gì">
+              <Tv className="w-3.5 h-3.5" />
+            </button>
+            <button onClick={(e) => { e.stopPropagation(); if (textTracks.length > 1) { setShowSubtitleMenu(prev => !prev); setShowAudioMenu(false); setShowQualityMenu(false); } else { toggleSubtitles(); } resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${showSubtitleMenu ? 'bg-blue-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`} title="Phụ đề">
               <Captions className="w-3.5 h-3.5" />
             </button>
             <button onClick={(e) => { e.stopPropagation(); setShowQualityMenu(prev=>!prev); setShowAudioMenu(false); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${showQualityMenu ? 'bg-blue-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`}>
@@ -749,6 +951,16 @@ export default function VideoPlayer({
                 <div className="font-medium">Tự động</div>
                 <div className="text-[9px] opacity-70">ADB chọn phù hợp</div>
               </button>
+              {/* Data saver */}
+              <button onClick={() => { updateSetting('dataSaver', !dataSaver); resetOverlayTimer(); }} className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] transition-all flex items-center justify-between ${dataSaver ? 'bg-emerald-600/20 text-emerald-300' : 'text-slate-300 hover:bg-slate-800'}`}>
+                <div>
+                  <div className="font-medium">🌱 Tiết kiệm data</div>
+                  <div className="text-[9px] opacity-70">{dataSaver ? 'Đang giới hạn ≤ 480p' : 'Giới hạn độ phân giải ≤ 480p'}</div>
+                </div>
+                <span className={`w-7 h-4 rounded-full relative transition-all shrink-0 ${dataSaver ? 'bg-emerald-500' : 'bg-slate-600'}`}>
+                  <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${dataSaver ? 'left-3.5' : 'left-0.5'}`}></span>
+                </span>
+              </button>
               {availableTracks.map(t => (
                 <button key={t.id} onClick={() => selectTrack(t)} className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] transition-all ${selectedTrackId === t.id ? 'bg-red-600 text-white font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}>
                   <div className="font-medium">{qualityLabel(t)}</div>
@@ -775,6 +987,118 @@ export default function VideoPlayer({
                 </button>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Subtitle Language Menu */}
+        {showSubtitleMenu && (
+          <div className="absolute top-12 right-3 z-20 w-48 bg-black/85 backdrop-blur-md rounded-xl border border-slate-700/40 p-2 pointer-events-auto shadow-2xl">
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="flex items-center gap-1.5 text-[10px] font-semibold text-blue-400 uppercase tracking-wider"><Captions className="w-3 h-3" /> Phụ đề</div>
+              <button onClick={() => setShowSubtitleMenu(false)} className="p-0.5 rounded hover:bg-slate-700/50"><X className="w-3 h-3 text-slate-400" /></button>
+            </div>
+            <div className="space-y-0.5 max-h-52 overflow-y-auto">
+              <button onClick={() => { const p = shakaPlayerRef.current; try { p?.setTextTrackVisibility(false); } catch {} setSelectedTextId(-2); setShowSubtitleMenu(false); resetOverlayTimer(); }} className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] transition-all ${selectedTextId === -2 ? 'bg-red-600 text-white font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}>
+                Tắt phụ đề
+              </button>
+              {textTracks.map((t) => (
+                <button key={t.id} onClick={() => selectSubtitle(t.id)} className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] transition-all ${selectedTextId === t.id ? 'bg-red-600 text-white font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}>
+                  {t.label}
+                </button>
+              ))}
+              {textTracks.length === 0 && <div className="text-[10px] text-slate-500 text-center py-2">Stream không có phụ đề</div>}
+            </div>
+          </div>
+        )}
+
+        {/* EPG strip: kênh khác đang chiếu gì */}
+        {showEpgStrip && (
+          <div className="absolute top-12 left-3 z-20 w-80 max-h-[70%] bg-black/90 backdrop-blur-md rounded-xl border border-slate-700/40 flex flex-col pointer-events-auto shadow-2xl">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700/40">
+              <div className="flex items-center gap-1.5 text-[10px] font-semibold text-blue-400 uppercase tracking-wider"><Tv className="w-3 h-3" /> Đang chiếu lúc này</div>
+              <button onClick={() => setShowEpgStrip(false)} className="p-0.5 rounded hover:bg-slate-700/50"><X className="w-3 h-3 text-slate-400" /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-1.5 py-1.5 space-y-0.5">
+              {allChannels.filter(ch => ch.channel_id !== channel?.channel_id).slice(0, 40).map((ch) => {
+                const epg = epgLookup ? epgLookup(ch.channel_id) : { now: null };
+                return (
+                  <button key={ch.channel_id} onClick={() => { window.__chrtv_select_channel && window.__chrtv_select_channel(ch); setShowEpgStrip(false); resetOverlayTimer(); }} className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-800/60 text-left transition-all">
+                    <img src={ch.logo || ''} alt="" className="w-7 h-7 object-contain rounded bg-slate-900/60 p-0.5 shrink-0" onError={e => { e.target.style.display = 'none'; }} />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[11px] font-semibold text-slate-200 truncate">{ch.name}</div>
+                      <div className="text-[9px] text-slate-500 truncate">{epg?.now ? `${formatTimeHHMM(epg.now.start)} · ${epg.now.title}` : 'Chưa có EPG'}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Watch Party panel */}
+        {showParty && (
+          <div className="absolute top-12 right-3 bottom-24 z-20 w-80 bg-black/90 backdrop-blur-md rounded-xl border border-purple-700/40 flex flex-col pointer-events-auto shadow-2xl">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700/40">
+              <div className="flex items-center gap-1.5 text-[10px] font-semibold text-purple-400 uppercase tracking-wider"><PartyPopper className="w-3 h-3" /> Xem chung {partyRoom && `· Phòng ${partyRoom.replace('party:', '')}`}</div>
+              <button onClick={() => setShowParty(false)} className="p-0.5 rounded hover:bg-slate-700/50"><X className="w-3 h-3 text-slate-400" /></button>
+            </div>
+
+            {!partyRoom ? (
+              <div className="flex-1 flex flex-col items-center justify-center gap-3 p-4 text-center">
+                <Users className="w-10 h-10 text-purple-400/60" />
+                <p className="text-[11px] text-slate-400">Tạo phòng để xem cùng bạn bè — cùng kênh, chat realtime, thả reaction.</p>
+                <button onClick={createParty} className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold rounded-xl">🎉 Tạo phòng mới</button>
+                <div className="flex items-center gap-1.5 w-full">
+                  <input id="chrtv-join-code" placeholder="Nhập mã phòng (VD: K3X9Q)" maxLength={10} className="flex-1 px-2.5 py-2 bg-slate-800/60 border border-slate-700/40 rounded-lg text-[11px] text-white placeholder:text-slate-600 focus:outline-none focus:border-purple-500/60" />
+                  <button onClick={() => { const el = document.getElementById('chrtv-join-code'); if (el?.value.trim()) joinParty(el.value); }} className="px-3 py-2 bg-slate-700 hover:bg-slate-600 text-white text-[11px] font-bold rounded-lg">Vào</button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="px-3 py-1.5 border-b border-slate-700/40 flex items-center justify-between">
+                  <div className="text-[10px] text-slate-400 truncate">{partyMembers.length} người: {partyMembers.map(m => m.name).join(', ') || '…'}</div>
+                  <button onClick={shareChannel} className="text-[10px] text-purple-300 hover:text-purple-200 shrink-0 font-bold">Copy link</button>
+                </div>
+                <div className="flex-1 overflow-y-auto px-2 py-1.5 space-y-1">
+                  {partyChat.map((c, i) => (
+                    <div key={i} className={`text-[11px] rounded-lg px-2 py-1 ${c.sys ? 'text-slate-500 italic text-center' : 'bg-slate-800/60'}`}>
+                      {!c.sys && <span className="text-purple-300 font-bold">{c.from}: </span>}
+                      <span className="text-slate-200">{c.text}</span>
+                    </div>
+                  ))}
+                  <div ref={(el) => { if (el) el.scrollIntoView({ block: 'end' }); }}></div>
+                </div>
+                {/* Reaction bar */}
+                <div className="px-2 py-1 border-t border-slate-700/40 flex items-center gap-1 justify-center">
+                  {PARTY_EMOJIS.map((em) => (
+                    <button key={em} onClick={() => react(em)} className="text-base hover:scale-125 transition-transform p-0.5" title={`Thả ${em}`}>{em}</button>
+                  ))}
+                </div>
+                <div className="px-2 py-2 border-t border-slate-700/40 flex items-center gap-1.5">
+                  <input
+                    value={partyText}
+                    onChange={(e) => setPartyText(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && partyText.trim()) { sendPartyChat(partyText.trim()); setPartyText(''); } }}
+                    placeholder="Nhắn tin cho phòng…"
+                    className="flex-1 px-2.5 py-1.5 bg-slate-800/60 border border-slate-700/40 rounded-lg text-[11px] text-white placeholder:text-slate-600 focus:outline-none focus:border-purple-500/60"
+                  />
+                  <button onClick={() => { if (partyText.trim()) { sendPartyChat(partyText.trim()); setPartyText(''); } }} className="p-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white"><Send className="w-3.5 h-3.5" /></button>
+                  <button onClick={leaveParty} className="text-[10px] text-slate-500 hover:text-red-400 font-bold shrink-0">Rời</button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Reactions bay (floating) */}
+        {reactions.length > 0 && (
+          <div className="absolute inset-x-0 bottom-24 z-30 pointer-events-none overflow-hidden h-64">
+            <style>{`@keyframes chrtv-floatup { 0% { transform: translateY(0) scale(0.7); opacity: 0; } 10% { opacity: 1; } 100% { transform: translateY(-220px) scale(1.35); opacity: 0; } }`}</style>
+            {reactions.map((r) => (
+              <span key={r.id} className="absolute text-3xl" style={{ left: `${15 + Math.random() * 65}%`, bottom: 0, animation: 'chrtv-floatup 3.2s ease-out forwards', textShadow: '0 2px 12px rgba(0,0,0,0.8)' }}>
+                {r.emoji}
+              </span>
+            ))}
           </div>
         )}
 
@@ -855,6 +1179,16 @@ export default function VideoPlayer({
             </div>
           </div>
 
+          {/* Emoji bar (reaction nhanh) */}
+          {showEmojiBar && (
+            <div className="mb-2 flex items-center gap-1.5 justify-center bg-black/60 backdrop-blur-md rounded-xl border border-purple-700/30 px-3 py-1.5 w-fit mx-auto">
+              {PARTY_EMOJIS.map((em) => (
+                <button key={em} onClick={() => react(em)} className="text-xl hover:scale-125 transition-transform" title={`Thả ${em}`}>{em}</button>
+              ))}
+              {partyRoom && <span className="text-[9px] text-slate-500 ml-2">phòng {partyRoom.replace('party:', '')}</span>}
+            </div>
+          )}
+
           {/* Controls */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
@@ -876,6 +1210,9 @@ export default function VideoPlayer({
                   <span className="text-[10px] font-bold">EXT</span>
                 </button>
               )}
+              <button onClick={() => { setShowEmojiBar(prev => !prev); if (!partyRoom) { setShowParty(true); createParty(); } resetOverlayTimer(); }} className={`p-2 rounded-full transition-all ${showEmojiBar ? 'bg-purple-600 text-white' : 'bg-black/50 text-slate-200 hover:bg-black/70'}`} title="Thả reaction">
+                <Smile className="w-3.5 h-3.5" />
+              </button>
               <button onClick={takeScreenshot} className="p-2 rounded-full bg-black/50 text-slate-200 hover:bg-black/70" title="Chụp màn (S)">
                 <Camera className="w-3.5 h-3.5" />
               </button>

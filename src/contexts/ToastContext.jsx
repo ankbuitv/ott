@@ -13,7 +13,7 @@ const TOAST_ICONS = {
 
 const TOAST_COLORS = {
   success: 'bg-emerald-600/90',
-  error: 'bg-red-600/90',
+  error: 'bg-[#f36f21]/90',
   info: 'bg-slate-700/90',
   volume: 'bg-slate-700/90',
   channel: 'bg-blue-600/90',

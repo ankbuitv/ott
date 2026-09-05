@@ -133,7 +133,7 @@ export default function AuthScreen() {
             {email && <p className="text-xs text-stone-300 mb-4">📬 {t('auth.verify.sent_to')} <span className="text-white font-bold">{email}</span></p>}
             {!email && <div className="mb-4"></div>}
             <form onSubmit={handleVerify} className="space-y-3">
-              {error && <div className="px-3 py-2 bg-red-600/15 border border-red-600/30 rounded-xl text-xs text-red-400">{error}</div>}
+              {error && <div className="px-3 py-2 bg-[#f36f21]/15 border border-[#f36f21]/30 rounded-xl text-xs text-[#ff9a3d]">{error}</div>}
               {success && <div className="px-3 py-2 bg-emerald-600/15 border border-emerald-600/30 rounded-xl text-xs text-emerald-400">{success}</div>}
               {devCode && (
                 <div className="px-3 py-2 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs text-amber-300">
@@ -142,12 +142,12 @@ export default function AuthScreen() {
                 </div>
               )}
               {(!error && !success && !email) && (
-                <input type="email" placeholder={t('auth.email')} onChange={e => setEmail(e.target.value)} className="w-full bg-white/10 border border-white/15 rounded-lg px-3 py-2 text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-red-500" />
+                <input type="email" placeholder={t('auth.email')} onChange={e => setEmail(e.target.value)} className="w-full bg-white/10 border border-white/15 rounded-lg px-3 py-2 text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-[#f36f21]" />
               )}
-              <input type="text" value={verifyCode} onChange={e => setVerifyCode(e.target.value)} placeholder="000000" maxLength={6} className="w-full bg-white/10 border border-white/15 rounded-lg px-3 py-3 text-2xl tracking-[0.5em] font-mono text-center text-white focus:outline-none focus:border-red-500" />
-              <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-lg">{t('auth.btn.verify')}</button>
+              <input type="text" value={verifyCode} onChange={e => setVerifyCode(e.target.value)} placeholder="000000" maxLength={6} className="w-full bg-white/10 border border-white/15 rounded-lg px-3 py-3 text-2xl tracking-[0.5em] font-mono text-center text-white focus:outline-none focus:border-[#f36f21]" />
+              <button type="submit" className="w-full bg-[#f36f21] hover:bg-[#f36f21] text-white font-bold py-2.5 rounded-lg">{t('auth.btn.verify')}</button>
               <div className="flex items-center justify-between gap-2">
-                <button type="button" onClick={handleResend} disabled={resendIn > 0 || !email} className="text-xs text-red-400 hover:text-red-300 disabled:opacity-40 disabled:cursor-not-allowed">
+                <button type="button" onClick={handleResend} disabled={resendIn > 0 || !email} className="text-xs text-[#ff9a3d] hover:text-[#ffb37a] disabled:opacity-40 disabled:cursor-not-allowed">
                   {resendIn > 0 ? t('auth.verify.resend_in', { s: resendIn }) : `↻ ${t('auth.btn.resend')}`}
                 </button>
                 <button type="button" onClick={() => setView('login')} className="text-xs text-stone-500 hover:text-white">{t('common.back')} {t('auth.title.login')}</button>
@@ -169,8 +169,8 @@ export default function AuthScreen() {
       </div>
 
       {/* Decorative gradients */}
-      <div className="absolute top-20 right-20 w-[500px] h-[500px] bg-gradient-to-bl from-red-900/30 via-purple-900/20 to-transparent rounded-full blur-3xl pointer-events-none"></div>
-      <div className="absolute bottom-20 left-20 w-[400px] h-[400px] bg-gradient-to-tr from-rose-900/30 to-transparent rounded-full blur-3xl pointer-events-none"></div>
+      <div className="absolute top-20 right-20 w-[500px] h-[500px] bg-gradient-to-bl from-[#7a2f0e]/30 via-purple-900/20 to-transparent rounded-full blur-3xl pointer-events-none"></div>
+      <div className="absolute bottom-20 left-20 w-[400px] h-[400px] bg-gradient-to-tr from-[#7a2f0e]/30 to-transparent rounded-full blur-3xl pointer-events-none"></div>
 
       {/* Card */}
       <div className="relative w-full max-w-md">
@@ -207,7 +207,7 @@ export default function AuthScreen() {
             <p className="text-xs text-stone-400 mb-5">{t('auth.register.help')}</p>
           )}
 
-          {error && <div className="mb-3 px-3 py-2 bg-red-600/15 border border-red-600/30 rounded-xl text-xs text-red-400">{error}</div>}
+          {error && <div className="mb-3 px-3 py-2 bg-[#f36f21]/15 border border-[#f36f21]/30 rounded-xl text-xs text-[#ff9a3d]">{error}</div>}
           {success && <div className="mb-3 px-3 py-2 bg-emerald-600/15 border border-emerald-600/30 rounded-xl text-xs text-emerald-400">{success}</div>}
 
           {/* Login form */}
@@ -215,11 +215,11 @@ export default function AuthScreen() {
             <form onSubmit={handleLogin} className="space-y-3">
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
-                <input type="text" value={loginVal} onChange={e => setLoginVal(e.target.value)} placeholder={t('auth.email_or_username')} required className="w-full pl-10 pr-3 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-red-500 focus:bg-white/10 transition-colors" />
+                <input type="text" value={loginVal} onChange={e => setLoginVal(e.target.value)} placeholder={t('auth.email_or_username')} required className="w-full pl-10 pr-3 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-[#f36f21] focus:bg-white/10 transition-colors" />
               </div>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
-                <input type={showPass ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder={t('auth.password')} required className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-red-500 focus:bg-white/10 transition-colors" />
+                <input type={showPass ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder={t('auth.password')} required className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-[#f36f21] focus:bg-white/10 transition-colors" />
                 <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-stone-500 hover:text-stone-300">
                   {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
@@ -228,9 +228,9 @@ export default function AuthScreen() {
                 <input type="text" value={totpCode} onChange={e => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Mã 2FA (6 số)" inputMode="numeric" required className="w-full px-3 py-3 bg-amber-500/5 border border-amber-500/30 rounded-xl text-sm font-mono tracking-[0.3em] text-center text-amber-200 placeholder:text-amber-700 focus:outline-none focus:border-amber-500" />
               )}
               <div className="flex items-center justify-between text-[11px]">
-                <button type="button" onClick={() => { setView('forgot'); setError(''); setSuccess(''); }} className="text-red-400 hover:text-red-300">{t('auth.link.forgot')}</button>
+                <button type="button" onClick={() => { setView('forgot'); setError(''); setSuccess(''); }} className="text-[#ff9a3d] hover:text-[#ffb37a]">{t('auth.link.forgot')}</button>
               </div>
-              <button type="submit" disabled={loading} className="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-bold text-sm rounded-xl shadow-lg shadow-red-600/30 transition-all flex items-center justify-center gap-2 mt-2">
+              <button type="submit" disabled={loading} className="w-full py-3 bg-gradient-to-r from-[#f36f21] to-[#c2570f] hover:from-[#f36f21] hover:to-[#f36f21] text-white font-bold text-sm rounded-xl shadow-lg shadow-[#f36f21]/30 transition-all flex items-center justify-center gap-2 mt-2">
                 {loading ? t('app.loading') : <>{t('auth.btn.login')} <ArrowRight className="w-4 h-4" /></>}
               </button>
             </form>
@@ -241,20 +241,20 @@ export default function AuthScreen() {
             <form onSubmit={handleRegister} className="space-y-3">
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
-                <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder={t('auth.username')} required maxLength={20} className="w-full pl-10 pr-3 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-red-500 focus:bg-white/10" />
+                <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder={t('auth.username')} required maxLength={20} className="w-full pl-10 pr-3 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-[#f36f21] focus:bg-white/10" />
               </div>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder={t('auth.email')} required className="w-full pl-10 pr-3 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-red-500 focus:bg-white/10" />
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder={t('auth.email')} required className="w-full pl-10 pr-3 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-[#f36f21] focus:bg-white/10" />
               </div>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
-                <input type={showPass ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder={t('auth.password_hint')} required minLength={6} className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-red-500 focus:bg-white/10" />
+                <input type={showPass ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder={t('auth.password_hint')} required minLength={6} className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-[#f36f21] focus:bg-white/10" />
                 <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-stone-500 hover:text-stone-300">
                   {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-              <button type="submit" disabled={loading} className="w-full py-3 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white font-bold text-sm rounded-xl shadow-lg shadow-red-600/30 transition-all flex items-center justify-center gap-2 mt-2">
+              <button type="submit" disabled={loading} className="w-full py-3 bg-gradient-to-r from-[#f36f21] to-[#c2570f] hover:from-[#f36f21] hover:to-[#f36f21] text-white font-bold text-sm rounded-xl shadow-lg shadow-[#f36f21]/30 transition-all flex items-center justify-center gap-2 mt-2">
                 {loading ? t('app.loading') : <>{t('auth.btn.register')} <ArrowRight className="w-4 h-4" /></>}
               </button>
               <p className="text-[10px] text-stone-500 leading-relaxed text-center pt-2">
@@ -268,9 +268,9 @@ export default function AuthScreen() {
             <form onSubmit={handleForgot} className="space-y-3">
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder={t('auth.email')} required className="w-full pl-10 pr-3 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-red-500" />
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder={t('auth.email')} required className="w-full pl-10 pr-3 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-[#f36f21]" />
               </div>
-              <button type="submit" className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2">
+              <button type="submit" className="w-full py-3 bg-[#f36f21] hover:bg-[#f36f21] text-white font-bold text-sm rounded-xl flex items-center justify-center gap-2">
                 <RotateCcw className="w-4 h-4" /> {t('auth.btn.send_reset')}
               </button>
               <button type="button" onClick={() => { setView('login'); setError(''); setSuccess(''); }} className="w-full text-xs text-stone-500 hover:text-white">{t('common.back')} {t('auth.title.login')}</button>
@@ -280,15 +280,15 @@ export default function AuthScreen() {
           {/* Reset */}
           {view === 'reset' && (
             <form onSubmit={handleReset} className="space-y-3">
-              <input type="text" value={verifyCode} onChange={e => setVerifyCode(e.target.value)} placeholder={t('auth.reset_code')} required className="w-full px-3 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white text-center font-mono placeholder:text-stone-500 focus:outline-none focus:border-red-500" />
+              <input type="text" value={verifyCode} onChange={e => setVerifyCode(e.target.value)} placeholder={t('auth.reset_code')} required className="w-full px-3 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white text-center font-mono placeholder:text-stone-500 focus:outline-none focus:border-[#f36f21]" />
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-500" />
-                <input type={showPass ? 'text' : 'password'} value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder={t('auth.new_password_hint')} required minLength={6} className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-red-500" />
+                <input type={showPass ? 'text' : 'password'} value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder={t('auth.new_password_hint')} required minLength={6} className="w-full pl-10 pr-10 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-[#f36f21]" />
                 <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-stone-500 hover:text-stone-300">
                   {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-              <button type="submit" className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-bold text-sm rounded-xl">{t('auth.btn.reset')}</button>
+              <button type="submit" className="w-full py-3 bg-[#f36f21] hover:bg-[#f36f21] text-white font-bold text-sm rounded-xl">{t('auth.btn.reset')}</button>
             </form>
           )}
         </div>

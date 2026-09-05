@@ -3,7 +3,7 @@ import { useI18n } from '../contexts/I18nContext';
 
 export default function LiveStrip() {
   return (
-    <div className="bg-gradient-to-r from-red-600 via-red-700 to-rose-700 py-1.5 px-6 flex items-center gap-3 text-xs shrink-0">
+    <div className="bg-gradient-to-r from-[#f36f21] via-[#c2570f] to-[#c2570f] py-1.5 px-6 flex items-center gap-3 text-xs shrink-0">
       <span className="live-dot"></span>
       <span className="font-bold tracking-wider">KÊNH ĐANG TRỰC TIẾP</span>
       <span className="opacity-90 hidden md:inline">· VTV1 · VTV3 · HTV7 · ON Sports</span>

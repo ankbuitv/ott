@@ -1,25 +1,14 @@
 import { API_BASE } from "./config";
+import { authHeaders } from "./session";
 
 const BASE_WORKER_URL = API_BASE;
-
-// Token đăng nhập (AuthContext lưu bằng JSON.stringify) — cần gửi kèm để
-// favorites / lịch sử xem đồng bộ được lên server thay vì luôn rơi về localStorage.
-function authHeaders() {
-  try {
-    const raw = localStorage.getItem("chrtv_token");
-    const token = raw ? JSON.parse(raw) : "";
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  } catch {
-    return {};
-  }
-}
 
 export const DEFAULT_FALLBACK_STREAM = "http://bore.pub:30113/hls/index.m3u8";
 export const CHRTV_LOGO_URL = "https://i.ibb.co/HDmcxzMK/Gemini-Generated-Image-v7i9yav7i9yav7i9-removebg-preview.png";
 
 export async function fetchChannels() {
   try {
-    const res = await fetch(`${BASE_WORKER_URL}/api/playlist`, { headers: { Accept: "application/json" } });
+    const res = await fetch(`${BASE_WORKER_URL}/api/playlist`, { headers: { Accept: "application/json", ...authHeaders() } });
     if (res.ok) {
       const json = await res.json();
       if (json && json.data && json.data.length > 0) return json.data;
@@ -41,7 +30,8 @@ export async function fetchChannels() {
 
 export async function fetchEPGData() {
   try {
-    const res = await fetch(`${BASE_WORKER_URL}/api/epg`, { headers: { Accept: "application/json" } });
+    const headers = { Accept: "application/json", ...authHeaders() };
+    const res = await fetch(`${BASE_WORKER_URL}/api/epg`, { headers });
     if (res.ok) {
       const json = await res.json();
       if (json && json.data) {
@@ -107,12 +97,6 @@ function parseXMLTV(xml) {
     });
   });
   return { channels, programmes };
-}
-
-export function getProxyStreamUrl(streamUrl) {
-  if (!streamUrl) return DEFAULT_FALLBACK_STREAM;
-  if (streamUrl === DEFAULT_FALLBACK_STREAM) return DEFAULT_FALLBACK_STREAM;
-  return `${BASE_WORKER_URL}/api/proxy?url=${encodeURIComponent(streamUrl)}`;
 }
 
 export async function fetchFavorites() {

@@ -108,7 +108,7 @@ export default function MoviePlayerModal({ movie, onClose }) {
       {/* Header */}
       <div className="flex items-center justify-between px-4 md:px-6 py-3 bg-black/95 border-b border-white/10 shrink-0">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center shrink-0">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#f36f21] to-[#c2570f] flex items-center justify-center shrink-0">
             <Play className="w-4 h-4 fill-current" />
           </div>
           <div className="min-w-0">
@@ -162,6 +162,13 @@ export default function MoviePlayerModal({ movie, onClose }) {
 
         {/* Player area */}
         <div className="flex-1 relative bg-black flex items-center justify-center min-h-0">
+          {!current && (
+            <div className="z-10 max-w-sm text-center px-6">
+              <p className="text-3xl mb-3">🎬</p>
+              <h3 className="text-sm font-bold text-white mb-1">Chưa có nguồn phát hợp lệ</h3>
+              <p className="text-xs text-stone-500">Nội dung này sẽ phát trực tiếp khi CHRTV có nguồn bản quyền. Theo dõi mục Tin tức để biết thêm.</p>
+            </div>
+          )}
           {current && (
             <iframe
               // key chứa cả reloadKey + adBlock: đổi trạng thái là iframe mount lại
@@ -180,9 +187,9 @@ export default function MoviePlayerModal({ movie, onClose }) {
           )}
 
           {/* Loading overlay */}
-          {loading && !error && (
+          {current && loading && !error && (
             <div className="absolute inset-0 z-10 bg-black/80 backdrop-blur flex flex-col items-center justify-center">
-              <div className="w-14 h-14 border-4 border-red-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+              <div className="w-14 h-14 border-4 border-[#f36f21] border-t-transparent rounded-full animate-spin mb-4"></div>
               <p className="text-xs text-stone-400">Đang tải {current?.name}…</p>
               <p className="text-[10px] text-stone-600 mt-1">Nếu lâu quá, chuyển server bên dưới (tự báo lỗi sau 20 giây)</p>
             </div>
@@ -200,7 +207,7 @@ export default function MoviePlayerModal({ movie, onClose }) {
                   : ' Thử chuyển server khác bên dưới, hoặc bấm "Mở tab mới" để xem trực tiếp trên trang nguồn.'}
               </p>
               <div className="flex items-center gap-2 flex-wrap justify-center">
-                <button onClick={nextSource} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5">
+                <button onClick={nextSource} className="px-4 py-2 bg-[#f36f21] hover:bg-[#f36f21] text-white text-xs font-bold rounded-xl flex items-center gap-1.5">
                   <SkipForward className="w-3.5 h-3.5" /> Server kế tiếp
                 </button>
                 <button onClick={reload} className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl flex items-center gap-1.5">
@@ -234,7 +241,7 @@ export default function MoviePlayerModal({ movie, onClose }) {
                 onClick={() => switchSource(i)}
                 className={`px-3.5 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all flex items-center gap-1 ${
                   i === sourceIdx
-                    ? 'bg-red-600 text-white shadow-lg shadow-red-600/30'
+                    ? 'bg-[#f36f21] text-white shadow-lg shadow-[#f36f21]/30'
                     : 'bg-white/5 hover:bg-white/10 text-stone-400 hover:text-white border border-white/10'
                 }`}
               >

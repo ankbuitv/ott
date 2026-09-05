@@ -73,8 +73,8 @@ export default function ProfileGate() {
                 onClick={() => setEditing('new')}
                 className="group flex flex-col items-center gap-3 transition-transform hover:scale-105"
               >
-                <div className="w-24 h-24 md:w-32 md:h-32 rounded-lg bg-stone-800/40 border-2 border-dashed border-stone-700 flex items-center justify-center group-hover:border-red-500/50 group-hover:bg-stone-800/60 transition-colors">
-                  <Plus className="w-10 h-10 text-stone-600 group-hover:text-red-500" strokeWidth={2} />
+                <div className="w-24 h-24 md:w-32 md:h-32 rounded-lg bg-stone-800/40 border-2 border-dashed border-stone-700 flex items-center justify-center group-hover:border-[#f36f21]/50 group-hover:bg-stone-800/60 transition-colors">
+                  <Plus className="w-10 h-10 text-stone-600 group-hover:text-[#f36f21]" strokeWidth={2} />
                 </div>
                 <p className="text-sm font-semibold text-stone-400 group-hover:text-white">Them ho so</p>
               </button>
@@ -147,10 +147,10 @@ function PinModal({ profile, error, onSuccess, onCancel, onVerify }) {
         <input
           type="password" autoFocus value={pin} maxLength={6}
           onChange={e => setPin(e.target.value)} onKeyDown={e => e.key === 'Enter' && submit()}
-          className="w-full bg-stone-900 border border-stone-700 rounded-xl px-4 py-3 text-center text-2xl tracking-[0.5em] font-mono text-white focus:outline-none focus:border-red-500 mb-2"
+          className="w-full bg-stone-900 border border-stone-700 rounded-xl px-4 py-3 text-center text-2xl tracking-[0.5em] font-mono text-white focus:outline-none focus:border-[#f36f21] mb-2"
         />
-        {error && <p className="text-xs text-red-400 mb-2">{error}</p>}
-        <button onClick={submit} disabled={submitting} className="w-full mt-2 bg-red-600 disabled:opacity-50 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl text-sm">Mo khoa</button>
+        {error && <p className="text-xs text-[#ff9a3d] mb-2">{error}</p>}
+        <button onClick={submit} disabled={submitting} className="w-full mt-2 bg-[#f36f21] disabled:opacity-50 hover:bg-[#f36f21] text-white font-bold py-2.5 rounded-xl text-sm">Mo khoa</button>
       </div>
     </div>
   );
@@ -192,7 +192,7 @@ function ProfileEditModal({ profile, onSave, onDelete, onCancel }) {
               key={a.id}
               onClick={() => setAvatarId(a.id)}
               className={`aspect-square rounded-lg bg-gradient-to-br ${a.color} flex items-center justify-center text-3xl transition-transform hover:scale-105 ${
-                avatarId === a.id ? 'ring-2 ring-red-500 scale-105' : 'opacity-60'
+                avatarId === a.id ? 'ring-2 ring-[#f36f21] scale-105' : 'opacity-60'
               }`}
               title={a.label}
             >
@@ -207,7 +207,7 @@ function ProfileEditModal({ profile, onSave, onDelete, onCancel }) {
             <input
               type="text" value={name} onChange={e => setName(e.target.value)} maxLength={20}
               placeholder="Vd: Tre em, Bo Me..."
-              className="w-full bg-stone-900 border border-stone-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-red-500"
+              className="w-full bg-stone-900 border border-stone-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-[#f36f21]"
             />
           </div>
 
@@ -219,7 +219,7 @@ function ProfileEditModal({ profile, onSave, onDelete, onCancel }) {
             <button
               type="button"
               onClick={() => setIsChild(!isChild)}
-              className={`w-11 h-6 rounded-full transition-all ${isChild ? 'bg-red-600' : 'bg-stone-700'}`}
+              className={`w-11 h-6 rounded-full transition-all ${isChild ? 'bg-[#f36f21]' : 'bg-stone-700'}`}
             >
               <div className={`w-5 h-5 rounded-full bg-white shadow transition-transform ${isChild ? 'translate-x-5' : 'translate-x-0.5'}`} />
             </button>
@@ -231,7 +231,7 @@ function ProfileEditModal({ profile, onSave, onDelete, onCancel }) {
               <input
                 type="password" value={pin} onChange={e => setPin(e.target.value)} maxLength={6}
                 placeholder="4-6 so"
-                className="w-full bg-stone-900 border border-stone-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-red-500 text-center tracking-widest"
+                className="w-full bg-stone-900 border border-stone-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-[#f36f21] text-center tracking-widest"
               />
             </div>
           )}
@@ -241,13 +241,13 @@ function ProfileEditModal({ profile, onSave, onDelete, onCancel }) {
           {!isNew && (
             <button
               onClick={() => { if (confirm('Xoa ho so nay?')) onDelete(); }}
-              className="px-3 py-2.5 bg-red-600/15 text-red-400 border border-red-600/30 rounded-xl text-sm font-semibold hover:bg-red-600/20"
+              className="px-3 py-2.5 bg-[#f36f21]/15 text-[#ff9a3d] border border-[#f36f21]/30 rounded-xl text-sm font-semibold hover:bg-[#f36f21]/20"
             >
               <Trash2 className="w-4 h-4" />
             </button>
           )}
           <button onClick={onCancel} className="flex-1 px-3 py-2.5 bg-stone-800 rounded-xl text-sm font-semibold hover:bg-stone-700">Huy</button>
-          <button onClick={handleSave} disabled={!name || saving} className="flex-1 px-3 py-2.5 bg-red-600 disabled:opacity-50 rounded-xl text-sm font-bold hover:bg-red-700">
+          <button onClick={handleSave} disabled={!name || saving} className="flex-1 px-3 py-2.5 bg-[#f36f21] disabled:opacity-50 rounded-xl text-sm font-bold hover:bg-[#f36f21]">
             {saving ? '...' : (isNew ? 'Tao' : 'Luu')}
           </button>
         </div>

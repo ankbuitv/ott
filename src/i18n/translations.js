@@ -29,6 +29,46 @@ const T = {
   'nav.profile': { vi: 'Hồ Sơ', en: 'Profile', zh: '个人资料', fil: 'Profile', fr: 'Profil' },
   'nav.login': { vi: 'Đăng Nhập', en: 'Sign In', zh: '登录', fil: 'Mag-sign In', fr: 'Se connecter' },
   'nav.logout': { vi: 'Đăng Xuất', en: 'Sign Out', zh: '退出', fil: 'Mag-sign Out', fr: 'Se déconnecter' },
+  'nav.shortcuts': { vi: 'Shorts', en: 'Shorts', zh: '短视频', fil: 'Shorts', fr: 'Shorts' },
+  'nav.plans': { vi: 'Mua Gói', en: 'Plans', zh: '套餐', fil: 'Mga Plan', fr: 'Offres' },
+  'nav.notifications': { vi: 'Thông báo', en: 'Notifications', zh: '通知', fil: 'Mga Abiso', fr: 'Notifications' },
+  'nav.read_all': { vi: 'Đọc hết', en: 'Mark all read', zh: '全部已读', fil: 'Mark all read', fr: 'Tout marquer lu' },
+  'nav.no_notifs': { vi: 'Chưa có thông báo nào', en: 'No notifications yet', zh: '暂无通知', fil: 'Wala pang abiso', fr: 'Aucune notification' },
+  'nav.push_on': { vi: 'Thông báo đẩy: ĐANG BẬT — bấm để tắt', en: 'Push: ON — tap to turn off', zh: '推送通知：已开启（点按关闭）', fil: 'Push: NAKABITAW — pindutin para i-off', fr: 'Push : ACTIVÉES — toucher pour couper' },
+  'nav.push_off': { vi: 'Bật thông báo đẩy (nhận tin cả khi đóng tab)', en: 'Enable push (alerts even with tab closed)', zh: '开启推送（关闭页面也能收通知）', fil: 'I-on ang push (may abiso kahit sarado ang tab)', fr: 'Activer le push (même onglet fermé)' },
+  'app.watch': { vi: 'Xem', en: 'Watch', zh: '观看', fil: 'Panoorin', fr: 'Regarder' },
+  'app.watch_now': { vi: 'Xem ngay', en: 'Watch now', zh: '立即观看', fil: 'Panoorin na', fr: 'Regarder' },
+  'app.favorites': { vi: 'Yêu thích', en: 'Favorites', zh: '收藏', fil: 'Mga Paborito', fr: 'Favoris' },
+
+  // ============== SHORTS ==============
+  'shorts.title': { vi: '🎬 Shorts', en: '🎬 Shorts', zh: '🎬 短视频', fil: '🎬 Shorts', fr: '🎬 Shorts' },
+  'shorts.sub': { vi: 'Clip ngắn & chương trình đang phát — lướt ngang để khám phá', en: 'Short clips & live moments — swipe to explore', zh: '短视频与直播片段 — 滑动浏览', fil: 'Mga maikling clip & live — i-swipe para makita', fr: 'Clips courts & moments live — faites défiler' },
+  'shorts.live_now': { vi: 'Đang phát trên', en: 'Now on', zh: '正在播出', fil: 'Nasa air na sa', fr: 'En direct sur' },
+  'shorts.trending': { vi: '🔥 Phim & Series Thịnh Hành', en: '🔥 Trending Movies & Shows', zh: '🔥 热门影视', fil: '🔥 Mga Trending na Pelikula at Show', fr: '🔥 Films & séries tendance' },
+  'shorts.follow': { vi: 'Theo dõi', en: 'Follow', zh: '关注', fil: 'Sundan', fr: 'Suivre' },
+  'shorts.share': { vi: 'Chia sẻ', en: 'Share', zh: '分享', fil: 'I-share', fr: 'Partager' },
+
+  // ============== WELCOME ==============
+  'welcome.title': { vi: 'Chào mừng đến CHRTV', en: 'Welcome to CHRTV', zh: '欢迎使用 CHRTV', fil: 'Maligayang pagdating sa CHRTV', fr: 'Bienvenue sur CHRTV' },
+  'welcome.sub': { vi: 'Truyền hình • Phim • Thể thao — xem miễn phí ngay', en: 'Live TV • Movies • Sports — watch free now', zh: '电视 • 电影 • 体育 — 立即免费观看', fil: 'Live TV • Pelikula • Sports — libre pang panoorin', fr: 'TV • Films • Sport — regardez gratuitement' },
+  'welcome.f1': { vi: 'Hàng trăm kênh truyền hình trong nước & quốc tế', en: 'Hundreds of local & international channels', zh: '数百个国内与国际电视频道', fil: 'Daang-daang channel sa Pilipinas at global', fr: 'Des centaines de chaînes locales et internationales' },
+  'welcome.f2': { vi: 'Phim & series mới — cập nhật liên tục', en: 'New movies & series — updated daily', zh: '最新电影与剧集 — 每日更新', fil: 'Mga bagong pelikula at series — araw-araw', fr: 'Nouveaux films et séries — chaque jour' },
+  'welcome.f3': { vi: 'Bóng đá & thể thao trực tiếp + xem lại (catch-up 7 ngày)', en: 'Live football & sports + 7-day catch-up', zh: '足球与体育直播 + 7天回放', fil: 'Live football at sports + 7-day catch-up', fr: 'Football & sport en direct + reprise 7 jours' },
+  'welcome.f4': { vi: 'Gói VIP — hiện đang MIỄN PHÍ kích hoạt', en: 'VIP plans — currently FREE to activate', zh: 'VIP 套餐 — 目前免费开通', fil: 'VIP plans — kasalukuyang LIBRE i-activate', fr: 'Offres VIP — actuellement GRATUITES' },
+  'welcome.cta': { vi: 'Bắt đầu xem ngay', en: 'Start watching now', zh: '立即开始观看', fil: 'Magsimula na sa panonood', fr: 'Commencer maintenant' },
+  'welcome.later': { vi: 'Để sau', en: 'Maybe later', zh: '稍后再说', fil: 'Susunod', fr: 'Plus tard' },
+  'welcome.hello': { vi: 'Xin chào', en: 'Hello', zh: '你好', fil: 'Kumusta', fr: 'Bonjour' },
+
+  // ============== HOME ==============
+  'home.picked_for_you': { vi: 'Dành cho bạn', en: 'Picked for you', zh: '为你推荐', fil: 'Pang-ikaw', fr: 'Pour vous' },
+  'home.channels': { vi: 'kênh', en: 'channels', zh: '频道', fil: 'channel', fr: 'chaînes' },
+  'app.watching': { vi: 'Đang xem: ', en: 'Now playing: ', zh: '正在观看：', fil: 'Nanood ngay: ', fr: 'En cours : ' },
+
+  // ============== FAVORITES / HISTORY ==============
+  'fav.title': { vi: 'Kênh yêu thích', en: 'Favorite channels', zh: '收藏频道', fil: 'Mga paboritong channel', fr: 'Chaînes favorites' },
+  'fav.empty': { vi: 'Chưa có kênh yêu thích', en: 'No favorite channels yet', zh: '暂无收藏频道', fil: 'Wala pang paboritong channel', fr: 'Aucune chaîne favorite' },
+  'hist.title': { vi: 'Lịch sử xem', en: 'Watch history', zh: '观看历史', fil: 'Mga kinapanood', fr: 'Historique de visionnage' },
+  'hist.empty': { vi: 'Chưa có lịch sử xem', en: 'No watch history yet', zh: '暂无观看历史', fil: 'Wala pang history', fr: 'Aucun historique' },
 
   // ============== AUTH ==============
   'auth.title.login':    { vi: 'Đăng Nhập',        en: 'Sign In',         zh: '登录',         fil: 'Mag-sign In',     fr: 'Se connecter' },
@@ -147,7 +187,6 @@ const T = {
   'settings.confirm_reset': { vi: 'Xác nhận xóa tất cả?', en: 'Confirm reset all?', zh: '确认重置所有？', fil: 'Kumpirmahin ang reset?', fr: 'Confirmer la réinitialisation ?' },
   'settings.reset_default': { vi: 'Đặt lại mặc định', en: 'Reset to default', zh: '重置为默认', fil: 'I-reset sa default', fr: 'Réinitialiser' },
   'settings.current_lang':   { vi: 'Ngôn ngữ hiện tại',    en: 'Current language',   zh: '当前语言',     fil: 'Kasalukuyang wika', fr: 'Langue actuelle' },
-  'settings.auto':           { vi: 'Tự động',              en: 'Auto',               zh: '自动',         fil: 'Awtomatiko',       fr: 'Auto' },
   'settings.detected':       { vi: 'Tự động phát hiện',    en: 'Auto-detected',      zh: '自动检测',     fil: 'Awtomatikong na-detect', fr: 'Détection auto' },
   'settings.region_label':   { vi: 'Khu vực phát hiện',    en: 'Detected region',    zh: '检测到的地区', fil: 'Na-detect na region', fr: 'Région détectée' },
   'settings.show_stats':     { vi: 'Hiện thông số kỹ thuật khi xem', en: 'Show tech stats while watching', zh: '观看时显示技术参数', fil: 'Ipakita ang tech stats habang nanonood', fr: 'Afficher les stats techniques' },
@@ -180,6 +219,7 @@ const T = {
   'epg.title':           { vi: 'EPG & Xem Lại',         en: 'EPG & Replay',      zh: '电子节目单与回看',         fil: 'EPG & Replay',    fr: 'EPG & Replay' },
   'epg.today':           { vi: 'Hôm Nay',                en: 'Today',             zh: '今天',                    fil: 'Ngayon',          fr: "Aujourd'hui" },
   'epg.yesterday':       { vi: 'Hôm Qua',                en: 'Yesterday',         zh: '昨天',                    fil: 'Kahapon',         fr: 'Hier' },
+  'epg.tomorrow':        { vi: 'Ngày Mai',               en: 'Tomorrow',          zh: '明天',                    fil: 'Bukas',           fr: 'Demain' },
   'epg.no_channel_found':{ vi: 'Không tìm thấy kênh.',   en: 'No channel found.', zh: '未找到频道。',            fil: 'Walang nahanap na channel.', fr: 'Aucune chaîne trouvée.' },
   'epg.back':            { vi: 'Xem lại',                en: 'Replay',            zh: '回看',                    fil: 'Replay',          fr: 'Replay' },
 
@@ -191,6 +231,21 @@ const T = {
   'player.fullscreen':    { vi: 'Toàn màn hình',      en: 'Fullscreen',            zh: '全屏',     fil: 'Fullscreen', fr: 'Plein écran' },
   'player.exit_fullscreen':{vi: 'Thoát toàn màn hình', en: 'Exit fullscreen',     zh: '退出全屏', fil: 'Lumabas sa fullscreen', fr: 'Quitter plein écran' },
   'player.up_next':       { vi: 'Tiếp theo',          en: 'Up next',               zh: '下一个',   fil: 'Susunod',    fr: 'À suivre' },
+  'player.stats':         { vi: 'Thông số',           en: 'Stats',                 zh: '参数',     fil: 'Impormasyon', fr: 'Infos' },
+  'player.resolution':    { vi: 'Độ phân giải',       en: 'Resolution',            zh: '分辨率',   fil: 'Resolusyon',  fr: 'Résolution' },
+  'player.dropped':       { vi: 'Frame rớt',          en: 'Dropped frames',        zh: '丢帧',     fil: 'Naibagang frame', fr: 'Images perdues' },
+  'player.quality':       { vi: 'Chất lượng',         en: 'Quality',               zh: '画质',     fil: 'Kalidad',     fr: 'Qualité' },
+  'player.auto_quality':  { vi: 'Tự động',            en: 'Automatic',             zh: '自动',     fil: 'Otomatik',    fr: 'Automatique' },
+  'player.language':      { vi: 'Ngôn ngữ',           en: 'Language',              zh: '语言',     fil: 'Wika',        fr: 'Langue' },
+  'player.subtitles':     { vi: 'Phụ đề',             en: 'Subtitles',             zh: '字幕',     fil: 'Mga Subtitles', fr: 'Sous-titres' },
+  'player.channel_list':  { vi: 'Danh sách kênh',     en: 'Channel list',          zh: '频道列表', fil: 'Listahan ng channel', fr: 'Liste des chaînes' },
+  'player.search_channel':{ vi: 'Tìm kênh...',        en: 'Search channels...',    zh: '搜索频道...', fil: 'Maghanap ng channel...', fr: 'Rechercher...' },
+  'player.sleep':         { vi: 'Tự động tắt',        en: 'Sleep timer',           zh: '睡眠定时器', fil: 'Sleep timer',  fr: 'Minuterie' },
+  'player.copy_link':     { vi: 'Đã copy link kênh — gửi qua Messenger/Zalo nhé!', en: 'Channel link copied — share it!', zh: '链接已复制', fil: 'Nakopya na ang link!', fr: 'Lien copié — partagez-le !' },
+  'player.sleep_done':    { vi: 'Tự tắt sau sleep timer', en: 'Auto-off after sleep timer', zh: '睡眠后已自动关闭', fil: 'Otawid auto ng sleep timer', fr: 'Arrêt auto (minuterie)' },
+  'player.watching_together': { vi: 'Xem chung (Watch Party)', en: 'Watch Party', zh: '一起看', fil: 'Watch Party', fr: 'Regarder ensemble' },
+  'player.ff':            { vi: 'Phát nhanh',         en: 'Fast forward',          zh: '快进',     fil: 'Mabilis na pabalik', fr: 'Avance rapide' },
+  'player.rw':            { vi: 'Phát lùi',           en: 'Rewind',                zh: '回退',     fil: 'Bumalik',     fr: 'Retour' },
 
   // ============== LANGUAGE PICKER ==============
   'langpicker.title':   { vi: 'Chọn ngôn ngữ của bạn', en: 'Choose your language', zh: '选择您的语言', fil: 'Piliin ang iyong wika', fr: 'Choisissez votre langue' },

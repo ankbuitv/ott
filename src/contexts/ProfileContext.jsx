@@ -105,14 +105,14 @@ export const useProfile = () => useContext(ProfileContext);
 
 // Predefined avatar set (Netflix-style)
 export const AVATAR_OPTIONS = [
-  { id: 'red', color: 'from-red-500 to-red-700', emoji: '🦁', label: 'Sư tử' },
+  { id: 'red', color: 'from-[#f36f21] to-[#c2570f]', emoji: '🦁', label: 'Sư tử' },
   { id: 'blue', color: 'from-blue-500 to-blue-700', emoji: '🐋', label: 'Cá voi' },
   { id: 'green', color: 'from-emerald-500 to-emerald-700', emoji: '🐉', label: 'Rồng' },
   { id: 'yellow', color: 'from-amber-500 to-orange-600', emoji: '🦊', label: 'Cáo' },
   { id: 'purple', color: 'from-purple-500 to-purple-700', emoji: '🦄', label: 'Kỳ lân' },
-  { id: 'pink', color: 'from-pink-500 to-rose-700', emoji: '🌸', label: 'Hoa' },
+  { id: 'pink', color: 'from-pink-500 to-[#c2570f]', emoji: '🌸', label: 'Hoa' },
   { id: 'cyan', color: 'from-cyan-500 to-blue-600', emoji: '🐬', label: 'Cá heo' },
-  { id: 'orange', color: 'from-orange-500 to-red-600', emoji: '🦁', label: 'Hổ' },
+  { id: 'orange', color: 'from-orange-500 to-[#f36f21]', emoji: '🦁', label: 'Hổ' },
   { id: 'teal', color: 'from-teal-500 to-emerald-700', emoji: '🐢', label: 'Rùa' },
   { id: 'indigo', color: 'from-indigo-500 to-purple-700', emoji: '🦉', label: 'Cú' },
 ];

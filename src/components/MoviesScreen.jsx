@@ -282,7 +282,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
           <div className="relative h-full flex items-end pb-14 px-8 md:px-12 max-w-4xl">
             <div>
               <div className="flex items-center gap-2 mb-3 flex-wrap">
-                <span className="px-2 py-0.5 bg-red-600 text-[10px] font-bold rounded flex items-center gap-1">
+                <span className="px-2 py-0.5 bg-[#f36f21] text-[10px] font-bold rounded flex items-center gap-1">
                   <TrendingUp className="w-3 h-3" /> {t('movies.hero.featured')}
                 </span>
                 <span className="px-2 py-0.5 bg-white/10 border border-white/15 backdrop-blur text-[10px] font-bold rounded flex items-center gap-1">
@@ -324,7 +324,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
       )}
 
       {/* Search bar — sticky */}
-      <div className="sticky top-0 z-30 bg-black/85 glass border-b border-white/5 px-6 md:px-8 py-3">
+      <div className="sticky top-0 z-30 topbar-mytv px-6 md:px-8 py-3">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center gap-3">
           <h2 className="text-lg md:text-xl font-black tracking-tight hidden md:block shrink-0">{t('movies.title')}</h2>
           <div className="flex-1 md:max-w-xl relative">
@@ -332,10 +332,10 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
             <input
               type="text" value={search} onChange={e => setSearch(e.target.value)}
               placeholder={t('movies.search.placeholder')}
-              className="w-full pl-10 pr-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-red-500 focus:bg-white/10 transition"
+              className="w-full pl-10 pr-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-[#f36f21] focus:bg-white/10 transition"
             />
             {searching && (
-              <div className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-red-500 border-t-transparent rounded-full animate-spin"></div>
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-[#f36f21] border-t-transparent rounded-full animate-spin"></div>
             )}
           </div>
           <div className="flex items-center gap-2 text-[11px] text-stone-500 shrink-0 relative">
@@ -368,7 +368,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
                         <button
                           key={cc}
                           onClick={() => applyRegion(cc)}
-                          className={`flex flex-col items-center gap-0.5 px-1 py-1.5 rounded-lg text-[10px] font-bold transition-colors ${active ? 'bg-red-600 text-white' : 'text-stone-400 hover:bg-white/10 hover:text-white'}`}
+                          className={`flex flex-col items-center gap-0.5 px-1 py-1.5 rounded-lg text-[10px] font-bold transition-colors ${active ? 'bg-[#f36f21] text-white' : 'text-stone-400 hover:bg-white/10 hover:text-white'}`}
                           title={info.name}
                         >
                           <span className="text-base leading-none">{info.flag}</span>
@@ -415,7 +415,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
               </button>
             </div>
             {keyMsg && (
-              <p className={`text-[11px] mt-1.5 ${keyMsg.ok ? 'text-emerald-400' : 'text-red-400'}`}>{keyMsg.text}</p>
+              <p className={`text-[11px] mt-1.5 ${keyMsg.ok ? 'text-emerald-400' : 'text-[#ff9a3d]'}`}>{keyMsg.text}</p>
             )}
             <p className="text-[10px] text-stone-600 mt-1">Key miễn phí tại <span className="text-stone-500">themoviedb.org/settings/api</span> — dán vào đây, app lưu ngay trên trình duyệt bạn.</p>
           </div>
@@ -427,7 +427,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
             <button
               onClick={() => setSelectedGenre('all')}
               className={`px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all ${
-                selectedGenre === 'all' ? 'bg-red-600 text-white shadow-lg shadow-red-600/25' : 'bg-white/5 hover:bg-white/10 text-stone-400 hover:text-white border border-white/10'
+                selectedGenre === 'all' ? 'bg-[#f36f21] text-white shadow-lg shadow-[#f36f21]/25' : 'bg-white/5 hover:bg-white/10 text-stone-400 hover:text-white border border-white/10'
               }`}
             >
               {t('movies.genre.all')}
@@ -437,7 +437,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
                 key={g.id}
                 onClick={() => { setSelectedGenre(String(g.id)); setVisibleCount(CATALOG_PAGE); }}
                 className={`px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all ${
-                  selectedGenre === String(g.id) ? 'bg-red-600 text-white shadow-lg shadow-red-600/25' : 'bg-white/5 hover:bg-white/10 text-stone-400 hover:text-white border border-white/10'
+                  selectedGenre === String(g.id) ? 'bg-[#f36f21] text-white shadow-lg shadow-[#f36f21]/25' : 'bg-white/5 hover:bg-white/10 text-stone-400 hover:text-white border border-white/10'
                 }`}
               >
                 {g.name}
@@ -494,7 +494,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
           <section className="px-6 md:px-8">
             <div className="flex items-end justify-between mb-4">
               <div>
-                <p className="text-[10px] text-red-400 font-bold uppercase tracking-widest mb-1">Thư viện</p>
+                <p className="text-[10px] text-[#ff9a3d] font-bold uppercase tracking-widest mb-1">Thư viện</p>
                 <h3 className="text-xl md:text-2xl font-black tracking-tight">
                   {selectedGenre === 'all' ? 'Tất Cả Phim & TV Shows' : genres.find(g => String(g.id) === selectedGenre)?.name || 'Phim'}
                 </h3>
@@ -572,7 +572,7 @@ function MovieCard({ movie, onClick }) {
   return (
     <button
       onClick={() => onClick(movie)}
-      className="group relative aspect-[2/3] rounded-xl overflow-hidden bg-stone-900 border border-white/5 transition-all duration-300 hover:scale-[1.04] hover:z-10 hover:border-red-500/40 hover:shadow-2xl hover:shadow-red-600/20"
+      className="group relative aspect-[2/3] rounded-xl overflow-hidden bg-stone-900 border border-white/5 transition-all duration-300 hover:scale-[1.04] hover:z-10 hover:border-[#f36f21]/40 hover:shadow-2xl hover:shadow-[#f36f21]/20"
     >
       <img
         src={imgPath(movie.poster_path, 'w342')}
@@ -588,7 +588,7 @@ function MovieCard({ movie, onClick }) {
         </span>
       )}
       {/* Type badge */}
-      <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded-md bg-red-600/90 text-[9px] font-bold uppercase tracking-wide">
+      <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded-md bg-[#f36f21]/90 text-[9px] font-bold uppercase tracking-wide">
         {movie.media_type === 'tv' ? 'TV' : 'Phim'}
       </span>
 
@@ -596,7 +596,7 @@ function MovieCard({ movie, onClick }) {
       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/70 to-transparent p-2.5 pt-8 opacity-0 group-hover:opacity-100 transition-opacity">
         <p className="text-[11px] font-bold leading-tight line-clamp-2">{movie.title || movie.name}</p>
         <div className="flex items-center gap-2 mt-1.5">
-          <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-red-600 text-[9px] font-bold">
+          <span className="flex items-center gap-1 px-2 py-1 rounded-md bg-[#f36f21] text-[9px] font-bold">
               <Play className="w-2.5 h-2.5 fill-current" /> {t('movies.btn.play')}
           </span>
           <span className="text-[9px] text-stone-400">{(movie.release_date || movie.first_air_date || '').substring(0, 4)}</span>
@@ -649,7 +649,7 @@ function MovieDetailModal({ movie, trailer, trailerLoading, onClose, onPlay, onM
               <div className="absolute inset-0 bg-gradient-to-t from-stone-900 to-transparent"></div>
               {trailerLoading && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/70">
-                  <div className="w-12 h-12 border-3 border-red-500 border-t-transparent rounded-full animate-spin"></div>
+                  <div className="w-12 h-12 border-3 border-[#f36f21] border-t-transparent rounded-full animate-spin"></div>
                 </div>
               )}
             </>
@@ -679,14 +679,14 @@ function MovieDetailModal({ movie, trailer, trailerLoading, onClose, onPlay, onM
             <div className="flex gap-2">
               <button
                 onClick={onPlay}
-                className="flex-1 px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition"
+                className="flex-1 px-6 py-3 bg-[#f36f21] hover:bg-[#f36f21] text-white font-bold rounded-xl flex items-center justify-center gap-2 transition"
               >
                 <Play className="w-4 h-4 fill-current" />
                 {t('movies.btn.play')}
               </button>
               <button
                 onClick={toggleList}
-                className={`px-4 py-3 font-bold rounded-xl flex items-center gap-2 border transition ${inList ? 'bg-red-600/20 text-red-400 border-red-600/40' : 'bg-white/5 text-stone-300 border-white/10 hover:bg-white/10'}`}
+                className={`px-4 py-3 font-bold rounded-xl flex items-center gap-2 border transition ${inList ? 'bg-[#f36f21]/20 text-[#ff9a3d] border-[#f36f21]/40' : 'bg-white/5 text-stone-300 border-white/10 hover:bg-white/10'}`}
                 title={inList ? 'Bỏ khỏi Danh sách của tôi' : 'Thêm vào Danh sách của tôi'}
               >
                 {inList ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
@@ -713,7 +713,7 @@ function MovieDetailModal({ movie, trailer, trailerLoading, onClose, onPlay, onM
                     <img
                       src={c.profile_path ? imgPath(c.profile_path, 'w185') : 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="80" height="120"%3E%3Crect fill="%23272727" width="80" height="120"/%3E%3C/svg%3E'}
                       alt={c.name}
-                      className="w-20 h-28 object-cover rounded-lg border border-white/10 group-hover:border-red-500/50 transition"
+                      className="w-20 h-28 object-cover rounded-lg border border-white/10 group-hover:border-[#f36f21]/50 transition"
                       loading="lazy"
                     />
                     <p className="text-[10px] font-bold mt-1 truncate">{c.name}</p>
@@ -731,7 +731,7 @@ function MovieDetailModal({ movie, trailer, trailerLoading, onClose, onPlay, onM
               <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-none">
                 {collection.parts.filter((m) => m.poster_path).sort((a, b) => (a.release_date || '').localeCompare(b.release_date || '')).map((m) => (
                   <button key={m.id} onClick={() => onMovieChange?.({ ...m, media_type: 'movie', overview: m.overview || '' })} className="w-24 shrink-0 group">
-                    <img src={imgPath(m.poster_path, 'w185')} alt={m.title} className="w-24 h-36 object-cover rounded-lg border border-white/10 group-hover:border-red-500/50 transition" loading="lazy" />
+                    <img src={imgPath(m.poster_path, 'w185')} alt={m.title} className="w-24 h-36 object-cover rounded-lg border border-white/10 group-hover:border-[#f36f21]/50 transition" loading="lazy" />
                     <p className="text-[10px] font-semibold mt-1 truncate">{m.title}</p>
                   </button>
                 ))}
@@ -746,7 +746,7 @@ function MovieDetailModal({ movie, trailer, trailerLoading, onClose, onPlay, onM
               <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-none">
                 {recs.map((m) => (
                   <button key={`${m.media_type || 'movie'}-${m.id}`} onClick={() => onMovieChange?.({ ...m, media_type: m.media_type || (m.title ? 'movie' : 'tv'), overview: m.overview || '' })} className="w-24 shrink-0 group">
-                    <img src={imgPath(m.poster_path, 'w185')} alt={m.title || m.name} className="w-24 h-36 object-cover rounded-lg border border-white/10 group-hover:border-red-500/50 transition" loading="lazy" />
+                    <img src={imgPath(m.poster_path, 'w185')} alt={m.title || m.name} className="w-24 h-36 object-cover rounded-lg border border-white/10 group-hover:border-[#f36f21]/50 transition" loading="lazy" />
                     <p className="text-[10px] font-semibold mt-1 truncate">{m.title || m.name}</p>
                   </button>
                 ))}
@@ -806,7 +806,7 @@ function PersonModal({ person, onClose, onMovieChange }) {
             <div className="grid grid-cols-3 sm:grid-cols-6 gap-2.5">
               {credits.map((m) => (
                 <button key={`${m.id}-${m.credit_id}`} onClick={() => onMovieChange({ ...m, media_type: m.media_type || (m.title ? 'movie' : 'tv'), overview: m.overview || '' })} className="group">
-                  <img src={imgPath(m.poster_path, 'w185')} alt={m.title || m.name} className="w-full aspect-[2/3] object-cover rounded-lg border border-white/10 group-hover:border-red-500/50 transition" loading="lazy" />
+                  <img src={imgPath(m.poster_path, 'w185')} alt={m.title || m.name} className="w-full aspect-[2/3] object-cover rounded-lg border border-white/10 group-hover:border-[#f36f21]/50 transition" loading="lazy" />
                   <p className="text-[9px] font-semibold mt-1 truncate">{m.title || m.name}</p>
                 </button>
               ))}

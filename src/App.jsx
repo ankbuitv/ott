@@ -23,6 +23,7 @@ import HomePage from './components/HomePage';
 import BroadcastBanner from './components/BroadcastBanner';
 import FocusableWrapper from './components/FocusableWrapper';
 import MoviesScreen from './components/MoviesScreen';
+import ShortsScreen from './components/ShortsScreen';
 import { SkeletonGrid } from './components/SkeletonLoader';
 
 import { DeviceProvider, useDevice } from './contexts/DeviceContext';
@@ -34,6 +35,8 @@ import { I18nProvider, useI18n } from './contexts/I18nContext';
 import LanguagePicker from './components/LanguagePicker';
 
 import { fetchChannels, fetchEPGData, fetchFavorites, toggleFavoriteApi, recordWatchHistory, DEFAULT_FALLBACK_STREAM } from './services/api';
+import { requestStreamAccess } from './services/streamGuard';
+import { parseEpgDate } from './utils/dateUtils';
 import { getFavorites, setFavorites as saveFavs, getHistory, setHistory as saveHistory } from './hooks/useStorage';
 import { findEpgForChannel } from './utils/epgMatch';
 
@@ -45,7 +48,7 @@ function AppContent() {
   const { addToast } = useToast();
   const { user, isAuthenticated, token } = useAuth();
   const { currentProfile } = useProfile();
-  const { hasPicked, resetPicker } = useI18n();
+  const { hasPicked, resetPicker, t } = useI18n();
   const guestMode = !isAuthenticated || !user;
   const effUser = guestMode ? GUEST_USER : user;
   const promptLogin = useCallback((msg) => {
@@ -145,8 +148,44 @@ function AppContent() {
     });
   }, [channels, selectedCategory, searchQuery, settings]);
 
+  // P0-B: URL phát được xin TỪ SERVER (kèm JWT + kiểm tra gói phía server) —
+  // client không còn giữ stream_url gốc, không tự build URL stream nữa.
+  const openChannel = useCallback(async (channel, { catchup = null, at = 0 } = {}) => {
+    if (!channel) return;
+    try {
+      const url = await requestStreamAccess(channel, { at });
+      if (!url) throw Object.assign(new Error('NO_URL'), { code: 'TOKEN_ERROR' });
+      setCurrentChannel(channel);
+      setActiveStreamUrl(url);
+      setIsCatchupMode(!!catchup);
+      setCatchupProgram(catchup || null);
+      setIsPlayerOpen(true);
+      recordWatchHistory(channel.channel_id);
+      setWatchHistory(prev => {
+        const updated = prev.filter(h => h.channel_id !== channel.channel_id);
+        updated.unshift({ channel_id: channel.channel_id, position: 0, updated_at: new Date().toISOString() });
+        if (updated.length > 30) updated.length = 30;
+        saveHistory(updated);
+        return updated;
+      });
+      addToast(`${t('app.watching')} ${channel.name}`, 'channel');
+    } catch (e) {
+      const code = e?.code || String(e?.message || '');
+      if (code === 'LOGIN_REQUIRED') {
+        promptLogin(catchup
+          ? 'Xem chương trình đã phát cần đăng nhập — miễn phí nhé!'
+          : `"${channel.name}" cần đăng nhập để xem — đăng ký miễn phí nhé!`);
+      } else if (code === 'PLAN_REQUIRED') {
+        addToast(`"${channel.name}" thuộc gói cao hơn — vào Mua Gói kích hoạt (tạm miễn phí)`, 'error');
+        setActiveTab('plans');
+      } else if (code !== 'NO_SESSION') {
+        addToast('Không tải được luồng kênh — thử lại nhé', 'error');
+      }
+    }
+  }, [addToast, promptLogin, t]);
+
   const handleSelectChannel = useCallback((channel) => {
-    // GATING: khách = Standard (chỉ kênh VN); user = theo gói đã kích hoạt
+    // GATING phía client (UX nhanh) — SERVER vẫn là nơi xác nhận cuối cùng (entitlement)
     if (channel && guestMode && !planAllows('standard', channel.group_title)) {
       promptLogin(`"${channel.name}" cần đăng nhập để xem — đăng ký miễn phí nhé!`);
       return;
@@ -156,41 +195,25 @@ function AppContent() {
       setActiveTab('plans');
       return;
     }
-    setCurrentChannel(channel);
-    setActiveStreamUrl(channel.stream_url || DEFAULT_FALLBACK_STREAM);
-    setIsCatchupMode(false);
-    setCatchupProgram(null);
-    setIsPlayerOpen(true);
-    recordWatchHistory(channel.channel_id);
-    setWatchHistory(prev => {
-      const updated = prev.filter(h => h.channel_id !== channel.channel_id);
-      updated.unshift({ channel_id: channel.channel_id, position: 0, updated_at: new Date().toISOString() });
-      if (updated.length > 30) updated.length = 30;
-      saveHistory(updated);
-      return updated;
-    });
-    addToast(`Đang xem: ${channel.name}`, 'channel');
-  }, [addToast, user?.plan, guestMode, promptLogin]);
+    openChannel(channel);
+  }, [addToast, user?.plan, guestMode, promptLogin, openChannel]);
 
-  const handlePlayCatchup = useCallback((channel, program, catchupUrl) => {
+  const handlePlayCatchup = useCallback((channel, program) => {
     // Xem CHƯƠNG TRÌNH đã phát (catchup) => bắt buộc đăng nhập
     if (guestMode) {
       promptLogin('Xem chương trình đã phát cần đăng nhập — miễn phí nhé!');
       return;
     }
-    setCurrentChannel(channel);
-    setActiveStreamUrl(catchupUrl);
     // Catchup cũng phải đúng gói của kênh đó
     if (!planAllows(user?.plan, channel?.group_title)) {
       addToast(`"${channel.name}" thuộc gói cao hơn — vào Mua Gói kích hoạt (tạm miễn phí)`, 'error');
       setActiveTab('plans');
       return;
     }
-    setIsCatchupMode(true);
-    setCatchupProgram(program);
-    setIsPlayerOpen(true);
-    recordWatchHistory(channel.channel_id);
-  }, [addToast, user?.plan, guestMode, promptLogin]);
+    let at = 0;
+    try { at = Math.floor(parseEpgDate(program?.start).getTime() / 1000); } catch {}
+    openChannel(channel, { catchup: program, at });
+  }, [addToast, user?.plan, guestMode, promptLogin, openChannel]);
 
   const handleToggleFavorite = useCallback(async (channelId) => {
     const isFav = favorites.includes(channelId);
@@ -291,6 +314,13 @@ function AppContent() {
         <main className="flex-1 flex flex-col h-full overflow-y-auto pb-16 md:pb-0">
           {activeTab === 'epg' ? (
             <EpgGridTimeline channels={channels} epgData={epgData} onPlayCatchup={handlePlayCatchup} onSelectChannel={handleSelectChannel} />
+          ) : activeTab === 'shorts' ? (
+            <ShortsScreen
+              channels={channels}
+              epgData={epgData}
+              onSelectChannel={handleSelectChannel}
+              onSelectMovie={(m) => { setMovieToOpen(m); setActiveTab('movies'); }}
+            />
           ) : showSettings ? (
             <SettingsPage onClose={() => setShowSettings(false)} />
           ) : activeTab === 'plans' ? (
@@ -316,24 +346,24 @@ function AppContent() {
               ) : (
                 <div className="max-w-[1400px] mx-auto px-8 py-8">
                   <h1 className="text-2xl font-black mb-6">
-                    {activeTab === 'favorites' ? 'Kênh yêu thích' : 'Lịch sử xem'}
+                    {activeTab === 'favorites' ? t('fav.title') : t('hist.title')}
                   </h1>
                   {isLoading ? <SkeletonGrid count={6} /> : filteredChannels.length === 0 ? (
                     <div className="text-center py-12 bg-white/[0.02] rounded-2xl border border-white/[0.04]">
-                      <p className="text-sm text-slate-400">{activeTab === 'favorites' ? 'Chưa có kênh yêu thích' : 'Chưa có lịch sử xem'}</p>
+                      <p className="text-sm text-slate-400">{activeTab === 'favorites' ? t('fav.empty') : t('hist.empty')}</p>
                     </div>
                   ) : (
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                       {filteredChannels.map(ch => (
-                        <FocusableWrapper key={ch.channel_id} onClick={() => handleSelectChannel(ch)} className="card rounded-2xl bg-stone-900/40 border border-stone-800 hover:border-red-500/40 overflow-hidden cursor-pointer">
+                        <FocusableWrapper key={ch.channel_id} onClick={() => handleSelectChannel(ch)} className="card rounded-2xl bg-stone-900/40 border border-stone-800 hover:border-[#f36f21]/40 overflow-hidden cursor-pointer">
                           <div className="relative aspect-[4/3] bg-gradient-to-br from-stone-700 to-stone-900 flex items-center justify-center">
                             <img src={ch.logo} alt="" className="w-16 h-16 object-contain" onError={e => { e.target.style.display = 'none'; }} />
-                            <div className="absolute top-3 left-3 px-2 py-0.5 bg-red-600 text-[10px] font-bold rounded">LIVE</div>
+                            <div className="absolute top-3 left-3 px-2 py-0.5 bg-[#f36f21] text-[10px] font-bold rounded">LIVE</div>
                           </div>
                           <div className="p-4">
                             <p className="font-bold text-base">{ch.name}</p>
                             <p className="text-[11px] text-stone-500">{ch.group_title}</p>
-                            <button className="mt-3 w-full py-1.5 bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold rounded-lg transition">Xem</button>
+                            <button className="mt-3 w-full py-1.5 btn-orange text-white text-[10px] font-bold rounded-lg transition">{t('app.watch')}</button>
                           </div>
                         </FocusableWrapper>
                       ))}
@@ -372,7 +402,7 @@ function AppContent() {
       <KeyboardShortcuts open={showKeyboardShortcuts} onClose={() => setShowKeyboardShortcuts(false)} />
       <AuthModal open={showAuth} onClose={() => setShowAuth(false)} />
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
-      <OnboardingTour />
+      <OnboardingTour onLogin={isAuthenticated} />
     </div>
   );
 }

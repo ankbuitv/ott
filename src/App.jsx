@@ -2,6 +2,13 @@ import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { initNavigation } from '@noriginmedia/react-spatial-navigation';
 
 import Sidebar from './components/Sidebar';
+import PlansScreen from './components/PlansScreen';
+import AuthModal from './components/AuthModal';
+
+// Khách vãng lai (chưa đăng nhập): vẫn vào web + xem kênh VN bình thường (mức Standard).
+// Xem chương trình đã phát (catchup), phim, hoặc kênh vượt gói => mới yêu cầu đăng nhập.
+const GUEST_USER = { id: 0, username: 'khach', display_name: 'Khách', role: 'guest', plan: '', guest: true };
+import { planAllows } from './services/plans';
 import TopNav from './components/TopNav';
 import VideoPlayer from './components/VideoPlayer';
 import EpgGridTimeline from './components/EpgGridTimeline';
@@ -39,6 +46,12 @@ function AppContent() {
   const { user, isAuthenticated, token } = useAuth();
   const { currentProfile } = useProfile();
   const { hasPicked, resetPicker } = useI18n();
+  const guestMode = !isAuthenticated || !user;
+  const effUser = guestMode ? GUEST_USER : user;
+  const promptLogin = useCallback((msg) => {
+    if (msg) addToast(msg, 'info');
+    setShowAuth(true);
+  }, [addToast]);
   const [showLangPicker, setShowLangPicker] = useState(!hasPicked());
   const [showAuth, setShowAuth] = useState(false);
   const [movieToOpen, setMovieToOpen] = useState(null); // phim được chọn từ TopNav search
@@ -67,6 +80,23 @@ function AppContent() {
   const [channelInfoModal, setChannelInfoModal] = useState(null);
 
   useEffect(() => { localStorage.setItem('chrtv_tab', activeTab); }, [activeTab]);
+
+  // ============ DEEP LINK: ?channel=ID&party=CODE (share từ player) ============
+  const [deepPartyRoom, setDeepPartyRoom] = useState(null);
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search || (window.location.hash || '').split('?')[1] || '');
+      const chId = params.get('channel');
+      const party = params.get('party');
+      if (party) setDeepPartyRoom(`party:${party.toUpperCase()}`);
+      if (chId && channels.length > 0) {
+        const ch = channels.find((c) => c.channel_id === chId);
+        if (ch && (!currentChannel || currentChannel.channel_id !== chId)) {
+          handleSelectChannel(ch);
+        }
+      }
+    } catch {}
+  }, [channels]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const root = document.documentElement;
@@ -116,6 +146,16 @@ function AppContent() {
   }, [channels, selectedCategory, searchQuery, settings]);
 
   const handleSelectChannel = useCallback((channel) => {
+    // GATING: khách = Standard (chỉ kênh VN); user = theo gói đã kích hoạt
+    if (channel && guestMode && !planAllows('standard', channel.group_title)) {
+      promptLogin(`"${channel.name}" cần đăng nhập để xem — đăng ký miễn phí nhé!`);
+      return;
+    }
+    if (channel && !guestMode && !planAllows(user?.plan, channel.group_title)) {
+      addToast(`"${channel.name}" thuộc gói cao hơn — vào Mua Gói kích hoạt (tạm miễn phí)`, 'error');
+      setActiveTab('plans');
+      return;
+    }
     setCurrentChannel(channel);
     setActiveStreamUrl(channel.stream_url || DEFAULT_FALLBACK_STREAM);
     setIsCatchupMode(false);
@@ -130,16 +170,27 @@ function AppContent() {
       return updated;
     });
     addToast(`Đang xem: ${channel.name}`, 'channel');
-  }, [addToast]);
+  }, [addToast, user?.plan, guestMode, promptLogin]);
 
   const handlePlayCatchup = useCallback((channel, program, catchupUrl) => {
+    // Xem CHƯƠNG TRÌNH đã phát (catchup) => bắt buộc đăng nhập
+    if (guestMode) {
+      promptLogin('Xem chương trình đã phát cần đăng nhập — miễn phí nhé!');
+      return;
+    }
     setCurrentChannel(channel);
     setActiveStreamUrl(catchupUrl);
+    // Catchup cũng phải đúng gói của kênh đó
+    if (!planAllows(user?.plan, channel?.group_title)) {
+      addToast(`"${channel.name}" thuộc gói cao hơn — vào Mua Gói kích hoạt (tạm miễn phí)`, 'error');
+      setActiveTab('plans');
+      return;
+    }
     setIsCatchupMode(true);
     setCatchupProgram(program);
     setIsPlayerOpen(true);
     recordWatchHistory(channel.channel_id);
-  }, []);
+  }, [addToast, user?.plan, guestMode, promptLogin]);
 
   const handleToggleFavorite = useCallback(async (channelId) => {
     const isFav = favorites.includes(channelId);
@@ -187,16 +238,8 @@ function AppContent() {
     return <LanguagePicker onClose={() => setShowLangPicker(false)} />;
   }
 
-  if (!isAuthenticated || !user) {
-    return (
-      <>
-        <AuthScreen />
-        <KeyboardShortcuts open={showKeyboardShortcuts} onClose={() => setShowKeyboardShortcuts(false)} />
-      </>
-    );
-  }
-
-  if (!currentProfile) {
+  // Khách: KHÔNG chặn cổng — vào web xem bình thường (UI như user đã đăng nhập)
+  if (!guestMode && !currentProfile) {
     return <ProfileGate />;
   }
 
@@ -208,7 +251,7 @@ function AppContent() {
           channels={channels}
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}
-          user={user}
+          user={effUser}
           currentProfile={currentProfile}
           setActiveTab={setActiveTab}
           activeTab={activeTab}
@@ -220,7 +263,7 @@ function AppContent() {
         <div className="flex flex-1 overflow-hidden">
           <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onShowSettings={() => setShowSettings(true)} onShowAdmin={() => setShowAdmin(true)} />
           <main className="flex-1 flex flex-col h-full overflow-y-auto pb-16 md:pb-0">
-            {showSettings ? <SettingsPage onClose={() => setShowSettings(false)} /> : <MoviesScreen openMovie={movieToOpen} onOpenMovieHandled={() => setMovieToOpen(null)} />}
+            {showSettings ? <SettingsPage onClose={() => setShowSettings(false)} /> : <MoviesScreen openMovie={movieToOpen} onOpenMovieHandled={() => setMovieToOpen(null)} onRequireLogin={() => promptLogin('Đăng nhập để xem phim nhé — miễn phí!')} />}
           </main>
         </div>
       </div>
@@ -233,7 +276,7 @@ function AppContent() {
         channels={channels}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
-        user={user}
+        user={effUser}
         currentProfile={currentProfile}
         setActiveTab={setActiveTab}
         activeTab={activeTab}
@@ -250,6 +293,8 @@ function AppContent() {
             <EpgGridTimeline channels={channels} epgData={epgData} onPlayCatchup={handlePlayCatchup} onSelectChannel={handleSelectChannel} />
           ) : showSettings ? (
             <SettingsPage onClose={() => setShowSettings(false)} />
+          ) : activeTab === 'plans' ? (
+            <PlansScreen />
           ) : (
             <>
               {activeTab === 'channels' ? (
@@ -314,6 +359,9 @@ function AppContent() {
             onPrevChannel={handlePrevChannel}
             onClose={() => setIsPlayerOpen(false)}
             allChannels={channels}
+            epgLookup={getEpgForChannel}
+            initialPartyRoom={deepPartyRoom}
+            currentUserName={currentProfile?.name || effUser?.display_name || effUser?.username || 'Khách'}
           />
         </div>
       )}
@@ -322,6 +370,7 @@ function AppContent() {
         <ChannelInfoModal channel={channelInfoModal.channel} epgNow={channelInfoModal.epgNow} epgNext={channelInfoModal.epgNext} isFavorite={channelInfoModal.isFav} onPlay={handleSelectChannel} onToggleFavorite={handleToggleFavorite} onClose={() => setChannelInfoModal(null)} />
       )}
       <KeyboardShortcuts open={showKeyboardShortcuts} onClose={() => setShowKeyboardShortcuts(false)} />
+      <AuthModal open={showAuth} onClose={() => setShowAuth(false)} />
       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
       <OnboardingTour />
     </div>

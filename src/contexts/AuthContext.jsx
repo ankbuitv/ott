@@ -28,13 +28,13 @@ export function AuthProvider({ children }) {
     removeStorage('chrtv_token');
   }, [token]);
 
-  const login = useCallback(async (loginStr, password) => {
+  const login = useCallback(async (loginStr, password, totp) => {
     setLoading(true);
     try {
       const res = await fetch(`${BASE}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ login: loginStr, password })
+        body: JSON.stringify({ login: loginStr, password, totp: totp || undefined })
       });
       const data = await res.json();
       setLoading(false);
@@ -42,7 +42,8 @@ export function AuthProvider({ children }) {
         setAuth(data.user, data.token);
         return { success: true, user: data.user };
       }
-      return { success: false, error: data.error || 'Đăng nhập thất bại' };
+      // code === 'EMAIL_NOT_VERIFIED' → UI chuyển sang màn xác minh + gửi lại mã
+      return { success: false, error: data.error || 'Đăng nhập thất bại', code: data.code, email: data.email };
     } catch (e) {
       setLoading(false);
       return { success: false, error: 'Lỗi kết nối server' };

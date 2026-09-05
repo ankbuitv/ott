@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CHRTV — Trang chủ</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ===== TOPBAR ===== -->
+<header class="topbar">
+  <button class="burger" onclick="document.querySelector('.rail').classList.toggle('open')">☰</button>
+  <a class="brand" href="index.html">
+    <img src="https://i.ibb.co/h1BtzkVr/logo.png" alt="CHRTV" onerror="this.outerHTML='<span style=&quot;font-weight:900;font-size:22px&quot;>CHR<span style=&quot;color:#f36f21&quot;>TV</span></span>'">
+  </a>
+  <div class="tb-spacer"></div>
+  <a class="mua-goi" href="mua-goi.html">Mua gói</a>
+  <div class="tb-icons">
+    <a class="tb-icon" href="tim-kiem.html" title="Tìm kiếm">🔍</a>
+    <a class="tb-icon" href="shorts.html" title="Shorts">▶️</a>
+    <button class="tb-icon" onclick="toggleDD('dd-notif')" title="Thông báo">🔔<i class="dot">3</i></button>
+    <button class="tb-avatar" onclick="toggleDD('dd-auth')">M</button>
+  </div>
+
+  <!-- Dropdown thông báo (admin gửi -> user nhận) -->
+  <div class="dd center" id="dd-notif">
+    <div class="bell-big">🔔</div>
+    <p>Bạn chưa có thông báo nào.<br>Đăng nhập để nhận thông báo chương trình &amp; khuyến mãi!</p>
+    <button class="cta-full">Đăng nhập / Đăng ký</button>
+  </div>
+
+  <!-- Dropdown khuyến khích đăng nhập -->
+  <div class="dd" id="dd-auth">
+    <h3>🧑‍💻 Đăng nhập để có trải nghiệm tốt hơn</h3>
+    <p class="sub">Tận hưởng hàng nghìn nội dung đỉnh cao bom tấn</p>
+    <div class="feat"><span class="ic">📺</span> Hàng nghìn kênh truyền hình trong nước &amp; quốc tế</div>
+    <div class="feat"><span class="ic">🎬</span> Kho phim chiếu rạp cập nhật liên tục</div>
+    <div class="feat"><span class="ic">⚽</span> Những trận cầu đỉnh cao hấp dẫn — trực tiếp &amp; highlight</div>
+    <div class="feat"><span class="ic">📺</span> Xem lại chương trình đã phát (catch-up 7 ngày)</div>
+    <button class="cta-full">Đăng nhập / Đăng ký</button>
+  </div>
+</header>
+
+<!-- ===== RAIL ===== -->
+<nav class="rail open">
+  <a class="on" href="index.html"><span class="ic">🏠</span><span class="lbl">Trang chủ</span></a>
+  <a href="truyen-hinh.html"><span class="ic">📺</span><span class="lbl">Truyền hình</span></a>
+  <a href="#"><span class="ic">🎬</span><span class="lbl">Phim truyện</span></a>
+  <a href="#"><span class="ic">⚽</span><span class="lbl">Thể thao</span></a>
+  <a href="shorts.html"><span class="ic">▶️</span><span class="lbl">Shorts</span></a>
+  <div class="grow"></div>
+  <div class="foot">
+    Giới thiệu CHRTV<br>Tin tức<br>Liên hệ<br>Hướng dẫn sử dụng<br>Điều khoản &amp; Điều kiện
+  </div>
+  <div class="socials"><span>f</span><span>▶</span><span>🎵</span><span>📷</span></div>
+</nav>
+
+<div class="tbadge">⭐ MyTV Style — Trang chủ</div>
+
+<!-- ===== HERO CAROUSEL ===== -->
+<section class="hero" id="hero">
+  <div class="art" id="hero-art"></div>
+  <div class="shade"></div>
+  <div class="info">
+    <div class="time-big" id="hero-time"></div>
+    <div class="live-row">
+      <span class="st"><span class="eq"><i></i><i></i><i></i></span> <span id="hero-status">Đang phát song</span></span>
+      <span class="p-badge">P</span>
+    </div>
+    <div class="title-art" id="hero-title"></div>
+    <div class="ep-tag"><span class="t" id="hero-ep"></span></div>
+    <p class="desc" id="hero-desc"></p>
+    <div class="cta">
+      <button class="btn-watch">▶ Xem ngay</button>
+      <button class="btn-list">＋ Thêm danh sách</button>
+    </div>
+  </div>
+  <div class="dots" id="hero-dots"></div>
+</section>
+
+<!-- ===== ROWS ===== -->
+<section class="sec">
+  <h2>Thịnh hành</h2>
+  <div class="hrow">
+    <div class="hcard"><div class="art" style="background:linear-gradient(135deg,#123057,#0a1526)"><span class="big">⚽</span><span class="dq">ĐỘC<br>QUYỀN</span><span class="time">23:00 | 5.9</span><span class="cap">INTER vs NAPOLI</span></div><h4>Serie A 2026/27 — Vòng 3</h4><p>Trực tiếp · SPOTV</p></div>
+    <div class="hcard"><div class="art" style="background:linear-gradient(135deg,#7a1f0e,#2b0a05)"><span class="big">🎭</span><span class="time">19h00 | 5.9</span><span class="cap">TRỐN THOÁT KHỎI MẶT THẬT 8</span></div><h4>Trốn Thoát Khỏi Mặt Thật — Tập 7B</h4><p>Gameshow · VTV3</p></div>
+    <div class="hcard"><div class="art" style="background:linear-gradient(135deg,#5e0b0b,#1a0505)"><span class="big">🔴</span><span class="time">1:45 | 6.9</span><span class="cap">ROMA vs ATALANTA</span></div><h4>Serie A — Đại chiến Olimpico</h4><p>Trực tiếp · SPOTV2</p></div>
+    <div class="hcard"><div class="art" style="background:linear-gradient(135deg,#1b5e20,#0a1f0c)"><span class="big">🏌️</span><span class="cap">GOLF5 LADIES TOURNAMENT</span></div><h4>Golf5 Ladies — Round 3</h4><p>Thể thao</p></div>
+    <div class="hcard"><div class="art" style="background:linear-gradient(135deg,#4a148c,#120428)"><span class="big">👑</span><span class="cap">HOA HẬU CHÂU Á 2026</span></div><h4>Đêm chung kết Hoa hậu Châu Á</h4><p>Sự kiện · Trực tiếp</p></div>
+    <div class="hcard"><div class="art" style="background:linear-gradient(135deg,#880e4f,#200510)"><span class="big">🎥</span><span class="cap">THIÊN ĐƯỜNG MÁU</span></div><h4>Thiên Đường Máu</h4><p>Phim truyện · Tập 14</p></div>
+  </div>
+</section>
+
+<section class="sec">
+  <h2>Trực tiếp hôm nay</h2>
+  <div class="hrow">
+    <div class="hcard"><div class="art" style="background:linear-gradient(135deg,#c62828,#3e0707)"><span class="big">📺</span><span class="pill"><span class="dotr"></span> LIVE</span><span class="cap" style="font-size:20px">VTV1</span></div><h4>VTV1 HD</h4><p>19:00 Thời sự · Đang phát</p></div>
+    <div class="hcard"><div class="art" style="background:linear-gradient(135deg,#1565c0,#071a33)"><span class="big">📺</span><span class="pill"><span class="dotr"></span> LIVE</span><span class="cap" style="font-size:20px">VTV3</span></div><h4>VTV3 HD</h4><p>19:00 Trốn thoát 8 · Đang phát</p></div>
+    <div class="hcard"><div class="art" style="background:linear-gradient(135deg,#00695c,#02201b)"><span class="big">📺</span><span class="pill"><span class="dotr"></span> LIVE</span><span class="cap" style="font-size:20px">HTV7</span></div><h4>HTV7 HD</h4><p>Người phán xử · Đang phát</p></div>
+    <div class="hcard"><div class="art" style="background:linear-gradient(135deg,#2e7d32,#0c2410)"><span class="big">📺</span><span class="pill"><span class="dotr"></span> LIVE</span><span class="cap" style="font-size:20px">ON SPORTS</span></div><h4>ON Sports+ HD</h4><p>Bóng đá tối nay · Đang phát</p></div>
+    <div class="hcard"><div class="art" style="background:linear-gradient(135deg,#4527a0,#14052e)"><span class="big">📺</span><span class="pill"><span class="dotr"></span> LIVE</span><span class="cap" style="font-size:20px">SPOTV</span></div><h4>SPOTV HD</h4><p>Serie A Preshow · Đang phát</p></div>
+    <a class="hcard" href="truyen-hinh.html"><div class="art" style="background:#17171a;border:1px dashed #3a3a42"><span class="big" style="font-size:30px">→</span><span class="cap" style="font-style:normal;font-weight:700;font-size:13px">Xem tất cả kênh</span></div><h4>Toàn bộ 200+ kênh</h4><p>Kèm lịch phát sóng EPG</p></a>
+  </div>
+</section>
+
+<section class="sec" style="padding-bottom:46px">
+  <h2>Phim đề xuất</h2>
+  <div class="hrow">
+    <div class="hcard"><div class="art" style="background:linear-gradient(160deg,#e53935,#210404)"><span class="big">🗡️</span><span class="cap">ĐẢO THIÊN ĐƯỜNG</span></div><h4>Đảo Thiên Đường</h4><p>Hành động · ★ 8.2</p></div>
+    <div class="hcard"><div class="art" style="background:linear-gradient(160deg,#1e88e5,#04101f)"><span class="big">🚁</span><span class="cap">GIẢI CỨU TỔNG THỐNG</span></div><h4>Giải Cứu Tổng Thống</h4><p>Ly kỳ · ★ 7.9</p></div>
+    <div class="hcard"><div class="art" style="background:linear-gradient(160deg,#d81b60,#2a0512)"><span class="big">🌸</span><span class="cap">TUỔI THANH XUÂN</span></div><h4>Tuổi Thanh Xuân</h4><p>Tình cảm · ★ 8.5</p></div>
+    <div class="hcard"><div class="art" style="background:linear-gradient(160deg,#43a047,#0a1f0c)"><span class="big">🚀</span><span class="cap">VỆ BINH NGÂN HÀ</span></div><h4>Vệ Binh Ngân Hà</h4><p>Viễn tưởng · ★ 8.0</p></div>
+    <div class="hcard"><div class="art" style="background:linear-gradient(160deg,#fb8c00,#2b1502)"><span class="big">🏜️</span><span class="cap">BÃO TỐ CỒN CÁT</span></div><h4>Bão Tố Cồn Cát</h4><p>Phiêu lưu · ★ 7.6</p></div>
+    <div class="hcard"><div class="art" style="background:linear-gradient(160deg,#5e35b1,#14052e)"><span class="big">👻</span><span class="cap">KÝ SINH TRÙNG</span></div><h4>Ký Sinh Trùng</h4><p>Kinh dị · ★ 8.7</p></div>
+  </div>
+</section>
+
+<div class="tnav">
+  <a href="gallery.html">☰ Mục lục bộ mẫu</a>
+  <a href="admin.html">🛠 Admin</a>
+</div>
+
+<script>
+const SLIDES = [
+  { time:'19h00 | 05.9.2026', status:'Đã phát song', title:'TRỐN THOÁT KHỎI MẶT THẬT 8', ep:'Tập 7B', art:'linear-gradient(100deg,#3a1508 0%,#7a2f0e 45%,#c8571d 78%,#e8a25c 100%)',
+    desc:'19h | 5/9. Phần cuối phó bản Phù đặc Vân Ý đầy kịch tính và cảm xúc. Sư phụ tà độc bị vạch trần.' },
+  { time:'23:00 - 5.9.2026', status:'Chưa phát', title:'INTER vs NAPOLI', ep:'SERIE A 2026/27', art:'linear-gradient(100deg,#061630 0%,#0b2a5e 50%,#14418f 80%,#2f6fd0 100%)',
+    desc:'Những cuộc đối đầu lớn nhất của Serie A trở lại! Inter – Napoli. Hai thế lực, một cuộc chiến.' },
+  { time:'1:45 - 6.9.2026', status:'Đang phát song', title:'ROMA vs ATALANTA', ep:'SERIE A 2026/27', art:'linear-gradient(100deg,#2b0505 0%,#5e0b0b 45%,#8f1a10 80%,#c0392b 100%)',
+    desc:'Serie A 2026/27 – Vòng 3: Roma vs Atalanta. Đại chiến tại Olimpico, cuộc chiến của những tham vọng lớn.' },
+];
+let cur = 0;
+const art = document.getElementById('hero-art');
+function render(i){
+  const s = SLIDES[i];
+  art.style.background = s.art;
+  document.getElementById('hero-time').textContent = s.time;
+  document.getElementById('hero-status').textContent = s.status;
+  document.getElementById('hero-title').textContent = s.title;
+  document.getElementById('hero-ep').textContent = s.ep;
+  document.getElementById('hero-desc').textContent = s.desc;
+  document.querySelectorAll('#hero-dots span').forEach((d,k)=>d.classList.toggle('on',k===i));
+}
+const dots = document.getElementById('hero-dots');
+SLIDES.forEach((_,i)=>{ const sp=document.createElement('span'); sp.onclick=()=>{cur=i;render(i);}; dots.appendChild(sp); });
+render(0);
+setInterval(()=>{ cur=(cur+1)%SLIDES.length; render(cur); }, 6000);
+
+function toggleDD(id){
+  ['dd-notif','dd-auth'].forEach(x=>{ const el=document.getElementById(x); if(x!==id) el.classList.remove('open'); });
+  document.getElementById(id).classList.toggle('open');
+}
+document.addEventListener('click', (e)=>{
+  if(!e.target.closest('.tb-icon') && !e.target.closest('.tb-avatar') && !e.target.closest('.dd'))
+    document.querySelectorAll('.dd').forEach(d=>d.classList.remove('open'));
+});
+</script>
+<script src="protect.js"></script>
+</body></html>

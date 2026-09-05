@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
-import { Settings, RotateCcw, Eye, EyeOff, Globe, Database, Shield, Monitor, Trash2, Languages, Moon, Sun, MapPin, Info, Cpu } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Settings, RotateCcw, Eye, EyeOff, Globe, Database, Shield, Monitor, Trash2, Languages, Moon, Sun, MapPin, Info, Cpu, Leaf, Copy, CheckCircle2, ShieldOff } from 'lucide-react';
+import { API_BASE } from '../services/config';
 import { useSettings } from '../contexts/SettingsContext';
 import { useDevice } from '../contexts/DeviceContext';
 import { useI18n } from '../contexts/I18nContext';
 import { detectCountry } from '../i18n/translations';
 import { COUNTRY_INFO } from '../services/tmdb';
 import { removeStorage } from '../hooks/useStorage';
+import { useAuth } from '../contexts/AuthContext';
 
 // Toggle chung
 function Toggle({ on, onClick, label }) {
@@ -28,6 +30,52 @@ export default function SettingsPage({ onClose }) {
   const [pin, setPin] = useState('');
   const [showPin, setShowPin] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+
+  // ===== 2FA (TOTP) =====
+  const [twoFa, setTwoFa] = useState({ loading: true, enabled: false });
+  const [twoFaSetup, setTwoFaSetup] = useState(null); // {secret, otpauth}
+  const [twoFaCode, setTwoFaCode] = useState('');
+  const [twoFaMsg, setTwoFaMsg] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  const { token } = useAuth();
+  useEffect(() => {
+    if (!token) return;
+    fetch(`${API_BASE}/user/2fa/status`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.json())
+      .then((d) => setTwoFa({ loading: false, enabled: !!d.enabled }))
+      .catch(() => setTwoFa({ loading: false, enabled: false }));
+  }, [token]);
+
+  const startSetup2Fa = async () => {
+    setTwoFaMsg('');
+    try {
+      const r = await fetch(`${API_BASE}/user/2fa/setup`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+      const d = await r.json();
+      if (d.success) setTwoFaSetup(d);
+      else setTwoFaMsg(d.error || 'Lỗi tạo secret');
+    } catch { setTwoFaMsg('Lỗi kết nối server'); }
+  };
+
+  const confirm2Fa = async () => {
+    setTwoFaMsg('');
+    try {
+      const r = await fetch(`${API_BASE}/user/2fa/verify`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ code: twoFaCode }) });
+      const d = await r.json();
+      if (d.success) { setTwoFa({ loading: false, enabled: true }); setTwoFaSetup(null); setTwoFaCode(''); setTwoFaMsg('Đã bật 2FA! ✅'); }
+      else setTwoFaMsg(d.error || 'Mã sai');
+    } catch { setTwoFaMsg('Lỗi kết nối server'); }
+  };
+
+  const disable2Fa = async () => {
+    setTwoFaMsg('');
+    try {
+      const r = await fetch(`${API_BASE}/user/2fa/disable`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ code: twoFaCode }) });
+      const d = await r.json();
+      if (d.success) { setTwoFa({ loading: false, enabled: false }); setTwoFaCode(''); setTwoFaMsg('Đã tắt 2FA.'); }
+      else setTwoFaMsg(d.error || 'Mã sai');
+    } catch { setTwoFaMsg('Lỗi kết nối server'); }
+  };
 
   const country = detectCountry();
   const countryInfo = COUNTRY_INFO[country] || COUNTRY_INFO.US;
@@ -194,6 +242,13 @@ export default function SettingsPage({ onClose }) {
             <span className="text-xs text-slate-400">{t('settings.parental_enable')}</span>
             <Toggle on={!!settings.parentalEnabled} onClick={() => updateSetting('parentalEnabled', !settings.parentalEnabled)} label={t('settings.parental_enable')} />
           </div>
+          <div className="flex items-center justify-between py-2">
+            <div>
+              <p className="text-xs font-medium text-slate-200 flex items-center gap-1.5"><Leaf className="w-3.5 h-3.5 text-emerald-400" /> Tiết kiệm data</p>
+              <p className="text-[10px] text-slate-500">Giới hạn độ phân giải video ≤ 480p (tiết kiệm 3G/4G)</p>
+            </div>
+            <Toggle on={!!settings.dataSaver} onClick={() => updateSetting('dataSaver', !settings.dataSaver)} label="Data saver" />
+          </div>
           {settings.parentalEnabled && (
             <div className="flex items-center gap-2">
               <span className="text-xs text-slate-400">PIN:</span>
@@ -261,6 +316,48 @@ export default function SettingsPage({ onClose }) {
             <label className="text-xs text-slate-400 block"><Database className="w-3 h-3 inline mr-1" /> {t('settings.database_status')}</label>
             <p className="text-[10px] text-slate-600 leading-relaxed">{t('settings.database_desc')}</p>
           </div>
+        </div>
+
+        {/* ===== BẢO MẬT (2FA) ===== */}
+        <div className="bg-[#13151c] border border-slate-800/40 rounded-xl p-5 space-y-3">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2"><Shield className="w-4 h-4 text-emerald-400" /> Bảo mật — Xác thực 2 lớp (2FA)</h3>
+          {twoFa.loading ? (
+            <p className="text-xs text-slate-500">Đang tải…</p>
+          ) : !twoFa.enabled ? (
+            !twoFaSetup ? (
+              <div className="space-y-2">
+                <p className="text-[11px] text-slate-400">Bật 2FA để bảo vệ tài khoản bằng mã 6 số từ Google Authenticator / Authy. Đăng nhập sẽ cần thêm mã này.</p>
+                <button onClick={startSetup2Fa} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl">Bật 2FA</button>
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                <p className="text-[11px] text-slate-400">1. Mở Google Authenticator → thêm tài khoản → dán URL hoặc nhập secret:</p>
+                <div className="bg-black/40 rounded-lg p-2.5 text-[10px] font-mono text-emerald-300 break-all select-all">{twoFaSetup.otpauth}</div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-slate-400">Secret:</span>
+                  <code className="text-[11px] font-mono text-slate-200">{twoFaSetup.secret}</code>
+                  <button onClick={() => { navigator.clipboard.writeText(twoFaSetup.secret).catch(() => {}); setCopied(true); setTimeout(() => setCopied(false), 1500); }} className="text-slate-400 hover:text-white">
+                    {copied ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-400">2. Nhập mã 6 số hiện trong app để xác nhận:</p>
+                <div className="flex gap-2">
+                  <input value={twoFaCode} onChange={(e) => setTwoFaCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" inputMode="numeric" className="w-32 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm font-mono tracking-widest text-white text-center focus:outline-none focus:border-emerald-500" />
+                  <button onClick={confirm2Fa} disabled={twoFaCode.length !== 6} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-bold rounded-xl">Xác nhận</button>
+                  <button onClick={() => { setTwoFaSetup(null); setTwoFaMsg(''); }} className="px-3 py-2 text-xs text-slate-500 hover:text-white">Hủy</button>
+                </div>
+              </div>
+            )
+          ) : (
+            <div className="space-y-2.5">
+              <p className="text-[11px] text-emerald-400 flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4" /> 2FA đang BẬT — tài khoản của bạn được bảo vệ 2 lớp.</p>
+              <div className="flex gap-2">
+                <input value={twoFaCode} onChange={(e) => setTwoFaCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Mã 2FA để tắt" inputMode="numeric" className="w-40 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm font-mono tracking-widest text-white text-center focus:outline-none focus:border-red-500" />
+                <button onClick={disable2Fa} disabled={twoFaCode.length !== 6} className="px-4 py-2 bg-red-600/90 hover:bg-red-600 disabled:opacity-40 text-white text-xs font-bold rounded-xl flex items-center gap-1.5"><ShieldOff className="w-3.5 h-3.5" /> Tắt 2FA</button>
+              </div>
+            </div>
+          )}
+          {twoFaMsg && <p className="text-[11px] text-amber-400">{twoFaMsg}</p>}
         </div>
 
         {/* ===== VỀ APP + RESET ===== */}

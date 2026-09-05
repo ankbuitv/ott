@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CHRTV — Truyền hình</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <button class="burger" onclick="document.querySelector('.rail').classList.toggle('open')">☰</button>
+  <a class="brand" href="index.html">
+    <img src="https://i.ibb.co/h1BtzkVr/logo.png" alt="CHRTV" onerror="this.outerHTML='<span style=&quot;font-weight:900;font-size:22px&quot;>CHR<span style=&quot;color:#f36f21&quot;>TV</span></span>'">
+  </a>
+  <div class="tb-spacer"></div>
+  <a class="mua-goi" href="mua-goi.html">Mua gói</a>
+  <div class="tb-icons">
+    <a class="tb-icon" href="tim-kiem.html" title="Tìm kiếm">🔍</a>
+    <a class="tb-icon" href="shorts.html" title="Shorts">⬇️</a>
+    <button class="tb-icon" onclick="toggleDD('dd-notif')">🔔<i class="dot">3</i></button>
+    <button class="tb-avatar" onclick="toggleDD('dd-auth')">M</button>
+  </div>
+  <div class="dd center" id="dd-notif">
+    <div class="bell-big">🔔</div>
+    <p>Bạn chưa có thông báo nào.<br>Đăng nhập để nhận thông báo chương trình &amp; khuyến mãi!</p>
+    <button class="cta-full">Đăng nhập / Đăng ký</button>
+  </div>
+  <div class="dd" id="dd-auth">
+    <h3>🧑‍💻 Đăng nhập để có trải nghiệm tốt hơn</h3>
+    <p class="sub">Xem lại chương trình 7 ngày · Nhận nhắc lịch phát sóng</p>
+    <div class="feat"><span class="ic">↺</span> Catch-up: xem lại đã phát tới 7 ngày</div>
+    <div class="feat"><span class="ic">🔔</span> Hẹn giờ nhắc chương trình sắp phát</div>
+    <div class="feat"><span class="ic">❤️</span> Lưu kênh yêu thích đồng bộ mọi thiết bị</div>
+    <button class="cta-full">Đăng nhập / Đăng ký</button>
+  </div>
+</header>
+
+<nav class="rail">
+  <a href="index.html"><span class="ic">🏠</span><span class="lbl">Trang chủ</span></a>
+  <a class="on" href="truyen-hinh.html"><span class="ic">📺</span><span class="lbl">Truyền hình</span></a>
+  <a href="#"><span class="ic">🎬</span><span class="lbl">Phim truyện</span></a>
+  <a href="#"><span class="ic">⚽</span><span class="lbl">Thể thao</span></a>
+  <a href="shorts.html"><span class="ic">▶️</span><span class="lbl">Shorts</span></a>
+  <div class="grow"></div>
+  <div class="foot">Giới thiệu CHRTV<br>Tin tức<br>Liên hệ<br>Hướng dẫn sử dụng</div>
+  <div class="socials"><span>f</span><span>▶</span><span>🎵</span><span>📷</span></div>
+</nav>
+
+<div class="tbadge">⭐ MyTV Style — Xem kênh + EPG</div>
+
+<div class="page">
+  <!-- PLAYER + EPG -->
+  <div class="watch">
+    <div class="player">
+      <div class="screen">
+        <span class="chlogo" style="background:linear-gradient(135deg,#e53935,#1e88e5,#43a047);-webkit-background-clip:text;background-clip:text;color:transparent">VTV1</span>
+        <span style="font-size:.4em;font-weight:800;opacity:.75;align-self:flex-end;margin:0 0 1.2em -8px">HD</span>
+        <span class="playc">▶</span>
+      </div>
+    </div>
+    <aside class="epg">
+      <div class="epg-tabs">
+        <span class="arr">‹</span>
+        <span class="dt">03/09</span>
+        <span class="dt">04/09</span>
+        <span class="dt on">Hôm nay</span>
+        <span class="arr">›</span>
+      </div>
+      <div class="epg-list">
+        <div class="epg-item"><span class="t">17:30</span><span class="n">Chuyển động 24h</span></div>
+        <div class="epg-item"><span class="t">18:00</span><span class="n">Việt Nam hôm nay</span></div>
+        <div class="epg-item"><span class="t">19:00</span><span class="n">Thời sự</span></div>
+        <div class="epg-item now"><span class="rd"></span><span class="t">19:40</span><span class="n">Thể thao 24/7</span></div>
+        <div class="epg-item"><span class="t">20:00</span><span class="n">S - Việt Nam: Chiếc lược máy</span><span class="bell">🔔</span></div>
+        <div class="epg-item"><span class="t">20:10</span><span class="n">Phim tài liệu: Người gánh ước mơ</span><span class="bell">🔔</span></div>
+        <div class="epg-item"><span class="t">20:45</span><span class="n">Talk VietNam: Dấu chân Việt trên 7 đỉnh núi</span><span class="bell">🔔</span></div>
+        <div class="epg-item"><span class="t">21:45</span><span class="n">Bản tin 21h45</span><span class="bell">🔔</span></div>
+        <div class="epg-item"><span class="t">22:00</span><span class="n">Phim: Hà Nội trong mắt em</span><span class="bell">🔔</span></div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- CATEGORY TABS -->
+  <div class="chbar">
+    <a class="on" href="#">Nổi bật</a><a href="#">Tất cả</a><a href="#">Kênh đề xuất</a><a href="#">SCTV</a><a href="#">VTVCab</a><a href="#">VTV</a><a href="#">Quốc tế</a><a href="#">SPOTV</a><a href="#">HTV</a><a href="#">Thể thao</a><a href="#">Thiếu nhi</a><a href="#">Phim</a><a href="#">Âm nhạc</a>
+  </div>
+
+  <!-- CHANNEL GRID -->
+  <div class="chgrid">
+    <div class="chcard"><span class="on-air"><i></i><i></i><i></i></span><span class="lg" style="color:#e53935">VTV<small>1</small><span style="color:#aaa;font-size:.6em"> HD</span></span></div>
+    <div class="chcard"><span class="cu">↺</span><span class="lg" style="color:#c62828">VTV<small>3</small><span style="color:#aaa;font-size:.6em"> HD</span></span></div>
+    <div class="chcard"><span class="cu">↺</span><span class="lg" style="color:#8e9bb5">HTV<span style="color:#e53935;font-size:.6em"> THỂ THAO</span></span></div>
+    <div class="chcard"><span class="cu">↺</span><span class="lg" style="color:#d32f2f">THVL<small>1</small><span style="color:#1565c0;font-size:.6em"> HD</span></span></div>
+    <div class="chcard"><span class="cu">↺</span><span class="lg" style="color:#fbc02d">SCTV<small>9</small><span style="color:#fff;font-size:.6em"> HD</span></span></div>
+    <div class="chcard"><span class="cu">↺</span><span class="lg" style="color:#1565c0">THVL<small>3</small><span style="color:#fff;font-size:.6em"> HD</span></span></div>
+    <div class="chcard"><span class="cu">↺</span><span class="lg" style="color:#f44336">ANTV</span></div>
+    <div class="chcard"><span class="cu">↺</span><span class="lg" style="color:#e53935">ON<span style="color:#fff;background:#e53935;border-radius:4px;padding:0 5px;margin-left:4px">SPORTS</span></span></div>
+    <div class="chcard"><span class="cu">↺</span><span class="lg" style="color:#43a047">ON<span style="color:#fff;background:#2e7d32;border-radius:4px;padding:0 5px;margin-left:4px">FOOTBALL</span><span style="color:#e53935;font-size:.6em"> HD</span></span></div>
+    <div class="chcard"><span class="cu">↺</span><span class="lg" style="color:#fff">SPOTV<span style="color:#aaa;font-size:.6em"> HD</span></span></div>
+    <div class="chcard"><span class="cu">↺</span><span class="lg" style="color:#fff">SPOTV2<span style="color:#aaa;font-size:.6em"> HD</span></span></div>
+    <div class="chcard"><span class="cu">↺</span><span class="lg" style="color:#e0e0e0;font-style:italic;font-weight:700">Hollywood <span style="color:#fdd835">Classics</span></span></div>
+    <div class="chcard"><span class="lg" style="color:#fdd835">BOX<span style="color:#fff">HITS</span><span style="color:#aaa;font-size:.6em"> HD</span></span></div>
+    <div class="chcard"><span class="lg" style="color:#ec407a">WOMAN<span style="color:#aaa;font-size:.6em"> HD</span></span></div>
+    <div class="chcard"><span class="cu">↺</span><span class="lg" style="color:#ef5350">SCTV<span style="color:#fff">15</span><small style="color:#aaa;font-size:.5em"> SPORT2</small></span></div>
+    <div class="chcard"><span class="cu">↺</span><span class="lg" style="color:#ef5350">SCTV<span style="color:#fff">17</span><small style="color:#aaa;font-size:.5em"> SPORT</small></span></div>
+    <div class="chcard"><span class="cu">↺</span><span class="lg" style="color:#ef5350">SCTV<span style="color:#fff">22</span><small style="color:#aaa;font-size:.5em"> SPORT1</small></span></div>
+    <div class="chcard"><span class="lg" style="color:#fff">MUSIC<span style="color:#fdd835;font-size:.6em"> HD</span></span></div>
+  </div>
+</div>
+
+<div class="tnav">
+  <a href="index.html">← Trang chủ</a>
+  <a href="admin.html">🛠 Admin</a>
+  <a href="../index.html">☰ Gallery</a>
+</div>
+
+<script>
+function toggleDD(id){
+  ['dd-notif','dd-auth'].forEach(x=>{ const el=document.getElementById(x); if(x!==id) el.classList.remove('open'); });
+  document.getElementById(id).classList.toggle('open');
+}
+document.addEventListener('click',(e)=>{
+  if(!e.target.closest('.tb-icon')&&!e.target.closest('.tb-avatar')&&!e.target.closest('.dd'))
+    document.querySelectorAll('.dd').forEach(d=>d.classList.remove('open'));
+});
+</script>
+<script src="protect.js"></script>
+</body></html>

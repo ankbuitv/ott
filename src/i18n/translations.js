@@ -76,6 +76,11 @@ const T = {
   'auth.terms_link':    { vi: 'Điều khoản',               en: 'Terms of Service',   zh: '服务条款',     fil: 'Mga Tuntunin',   fr: "Conditions d'utilisation" },
   'auth.no_access':      { vi: 'Bạn cần tài khoản Admin', en: 'Admin account required', zh: '需要管理员账户', fil: 'Kailangan ng Admin account', fr: 'Compte administrateur requis' },
   'auth.no_access.desc': { vi: 'Đăng nhập bằng tài khoản Admin để truy cập.', en: 'Please sign in with an admin account.', zh: '请使用管理员账户登录。', fil: 'Mag-sign in gamit ang Admin account.', fr: 'Connectez-vous avec un compte admin.' },
+  'auth.verify.sent_to':    { vi: 'Mã xác minh 6 số đã gửi tới', en: 'A 6-digit code was sent to', zh: '6位验证码已发送至', fil: 'Ang 6-digit code ay naipadala sa', fr: 'Un code à 6 chiffres a été envoyé à' },
+  'auth.verify.not_received': { vi: 'Chưa nhận được email?', en: "Didn't get the email?", zh: '没有收到邮件？', fil: 'Walang dumating na email?', fr: 'Email non reçu ?' },
+  'auth.verify.resend_in':  { vi: 'Gửi lại sau {{s}}s', en: 'Resend in {{s}}s', zh: '{{s}}秒后可重发', fil: 'Muling ipadala sa {{s}}s', fr: 'Renvoyer dans {{s}}s' },
+  'auth.msg.email_fail':    { vi: '⚠️ Server CHƯA gửi được email xác minh (chưa cấu hình Brevo trên Worker). Dùng mã dev dưới đây để hoàn tất — đã cấu hình email thì mã chỉ gửi qua email.', en: '⚠️ Verification email could NOT be sent (Brevo not configured on the Worker). Use the dev code below to finish — once email is configured, codes are only sent by email.', zh: '⚠️ 验证邮件发送失败（Worker 未配置 Brevo）。请使用下方开发代码完成注册。', fil: '⚠️ Hindi naipadala ang verification email (walang Brevo config sa Worker). Gamitin ang dev code sa ibaba.', fr: '⚠️ Email de vérification non envoyé (Brevo non configuré). Utilisez le code dev ci-dessous.' },
+  'auth.error.not_verified': { vi: 'Tài khoản chưa xác minh email. Nhập mã trong email hoặc bấm gửi lại.', en: 'Account email not verified. Enter the code from your email or resend it.', zh: '账户邮箱未验证。请输入邮件中的验证码或重新发送。', fil: 'Hindi pa na-verify ang email. Ilagay ang code o ipadala muli.', fr: "Email du compte non vérifié. Saisissez le code reçu ou renvoyez-le." },
 
   'profile.who_is_watching': { vi: 'Ai đang xem?', en: 'Who is watching?', zh: '谁在看？', fil: 'Sino ang nanonood?', fr: 'Qui regarde ?' },
   'profile.select_profile': { vi: 'Chọn hồ sơ để tiếp tục', en: 'Select a profile to continue', zh: '选择个人资料继续', fil: 'Pumili ng profile para magpatuloy', fr: 'Choisissez un profil pour continuer' },
@@ -94,6 +99,11 @@ const T = {
   'movies.row.top_rated':          { vi: '⭐ Đánh Giá Cao Nhất',    en: '⭐ Top Rated',             zh: '⭐ 最高评分',                 fil: '⭐ Pinakamataas na Rating',         fr: '⭐ Les mieux notés' },
   'movies.row.upcoming':           { vi: '📅 Sắp Chiếu',            en: '📅 Upcoming',              zh: '📅 即将上映',                 fil: '📅 Pupunta',                       fr: '📅 À venir' },
   'movies.row.popular_tv':         { vi: '📺 TV Shows Phổ Biến',    en: '📺 Popular TV Shows',      zh: '📺 热门电视剧',                fil: '📺 Sikat na TV Shows',              fr: '📺 Séries TV populaires' },
+  'movies.row.now_playing_in':     { vi: '🎬 Đang Chiếu Tại {{country}}', en: '🎬 Now Playing in {{country}}', zh: '🎬 {{country}}正在热映', fil: '🎬 Sinehan sa {{country}}', fr: '🎬 Au cinéma en {{country}}' },
+  'movies.row.local_tv':           { vi: '📺 TV Show {{country}}',  en: '📺 TV Shows from {{country}}', zh: '📺 {{country}}电视剧', fil: '📺 TV Shows mula {{country}}', fr: '📺 Séries de {{country}}' },
+  'movies.region.label':           { vi: 'Khu vực phim',            en: 'Movie region',             zh: '电影地区',                   fil: 'Rehiyon ng pelikula',               fr: 'Région des films' },
+  'movies.region.auto':            { vi: 'Tự động (theo vị trí của bạn)', en: 'Auto (your location)', zh: '自动（根据你的位置）',        fil: 'Auto (ayon sa lokasyon mo)',        fr: 'Auto (votre position)' },
+
   'movies.row.featured':           { vi: '✨ Đề Xuất',              en: '✨ Featured',              zh: '✨ 推荐',                     fil: '✨ Itinatampok',                   fr: '✨ En vedette' },
   'movies.genre.all':              { vi: 'Tất cả',                  en: 'All',                     zh: '全部',                       fil: 'Lahat',                           fr: 'Tous' },
   'movies.load_more':              { vi: 'Xem thêm',                en: 'Load more',               zh: '加载更多',                   fil: 'Mag-load pa',                     fr: 'Voir plus' },
@@ -214,7 +224,18 @@ export function detectLang() {
 }
 
 // ========== GEO-DETECT: mã quốc gia từ timezone/browser (dùng cho banner phim theo vùng) ==========
+// Ưu tiên: override tay → cache kết quả /api/geo (Cloudflare IP geo) → timezone heuristic.
+// (resolveCountry trong services/geo.js mới là hàm đầy đủ — hàm này chỉ fallback nhanh, đồng bộ.)
 export function detectCountry() {
+  try {
+    const ov = (localStorage.getItem('chrtv_region_override') || '').toUpperCase();
+    if (/^[A-Z]{2}$/.test(ov)) return ov;
+    const raw = localStorage.getItem('chrtv_geo_country');
+    if (raw) {
+      const { cc } = JSON.parse(raw);
+      if (/^[A-Z]{2}$/.test(cc || '')) return cc;
+    }
+  } catch {}
   try {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
     const locale = (navigator.language || 'en').toLowerCase();
@@ -226,6 +247,24 @@ export function detectCountry() {
     if (['Asia/Shanghai','Asia/Hong_Kong','Asia/Taipei','Asia/Chongqing','Asia/Harbin'].includes(tz) || locale.startsWith('zh')) return 'CN';
     // Pháp / Bỉ / Thuỵ Sĩ / Canada (Pháp ngữ)
     if (['Europe/Paris','Europe/Brussels','Europe/Zurich','America/Montreal'].includes(tz) || locale.startsWith('fr')) return 'FR';
+    // Nhóm mở rộng
+    if (['Asia/Tokyo'].includes(tz) || locale.startsWith('ja')) return 'JP';
+    if (['Asia/Seoul'].includes(tz) || locale.startsWith('ko')) return 'KR';
+    if (['Asia/Bangkok'].includes(tz) || locale.startsWith('th')) return 'TH';
+    if (['Asia/Jakarta'].includes(tz) || locale.startsWith('id')) return 'ID';
+    if (['Asia/Kuala_Lumpur','Asia/Kuching'].includes(tz) || locale.startsWith('ms')) return 'MY';
+    if (['Asia/Singapore'].includes(tz) || locale === 'en-sg') return 'SG';
+    if (['Asia/Kolkata','Asia/Calcutta','Asia/Colombo'].includes(tz) || ['hi','ta','te','bn','mr'].some(l => locale.startsWith(l))) return 'IN';
+    if (['Europe/Berlin','Europe/Vienna','Europe/Zurich'].includes(tz) || locale.startsWith('de')) return 'DE';
+    if (['Europe/London','Europe/Dublin','Europe/Manchester'].includes(tz) || locale === 'en-gb') return 'GB';
+    if (['Europe/Madrid','Europe/Lisbon'].includes(tz) || locale.startsWith('es')) return 'ES';
+    if (['Europe/Rome'].includes(tz) || locale.startsWith('it')) return 'IT';
+    if (['America/Sao_Paulo','America/Recife','America/Bahia'].includes(tz) || locale.startsWith('pt')) return 'BR';
+    if (['America/Mexico_City','America/Monterrey','America/Tijuana'].includes(tz)) return 'MX';
+    if (['Europe/Moscow','Europe/Samara','Asia/Novosibirsk'].includes(tz) || locale.startsWith('ru')) return 'RU';
+    if (['Europe/Istanbul'].includes(tz) || locale.startsWith('tr')) return 'TR';
+    if (['Australia/Sydney','Australia/Melbourne','Australia/Brisbane','Australia/Perth'].includes(tz)) return 'AU';
+    if (['America/Toronto','America/Vancouver','America/Edmonton','America/Halifax'].includes(tz) || locale === 'en-ca') return 'CA';
     // Mặc định: quốc tế
     return 'US';
   } catch { return 'US'; }

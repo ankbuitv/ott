@@ -315,6 +315,18 @@ function dbUnavailable() {
 
 // ========== API ROUTER ==========
 async function handleAPI(path, request, env, ctx) {
+  // Geo theo IP (Cloudflare tự gắn request.cf) — client dùng để đổi poster phim theo quốc gia.
+  // Không cần DB — trả trước để luôn hoạt động.
+  if (path === "/api/geo") {
+    const cf = request.cf || {};
+    return json({
+      country: (cf.country || "").toString().toUpperCase(),
+      city: cf.city || "",
+      region: cf.region || "",
+      timezone: cf.timezone || "",
+      source: "cloudflare",
+    });
+  }
   if (path === "/api/playlist") return await handlePlaylist(env, request);
   if (path === "/api/epg") return await handleEPG(env, request);
   if (path === "/api/proxy") return await handleProxy(request, env);
@@ -608,22 +620,31 @@ async function handleAuth(path, request, env) {
       console.error("register INSERT error:", e?.message || e);
       return json({ error: "Lỗi đăng ký: " + (e?.message || "database") }, 500);
     }
-    // Gửi email — bọc try riêng để nếu Brevo fail thì user vẫn đăng ký được
+    // Gửi email qua Brevo — KHÔNG trả mã về client khi gửi email thành công
     let emailSent = false;
+    let emailError = "";
     try {
       const tmpl = emailTemplateVerify(verifyCode);
       const sent = await sendBrevoEmail(env, { to: email, subject: tmpl.subject, html: tmpl.html });
       emailSent = sent.ok;
+      if (!sent.ok) emailError = sent.reason || sent.error || "unknown";
     } catch (e) {
-      console.error("Brevo send error (non-blocking):", e?.message || e);
+      emailError = e?.message || String(e);
+      console.error("Brevo send error (non-blocking):", emailError);
     }
-    console.log(`[AUTH/register] user=${username} email=${email} emailSent=${emailSent}`);
-    return json({
+    console.log(`[AUTH/register] user=${username} email=${email} emailSent=${emailSent}${emailError ? " err=" + emailError : ""}`);
+    // Khi gửi email THÀNH CÔNG: không bao giờ trả verifyCode về response (tránh lộ mã qua F12).
+    // Khi gửi THẤT BẠI (chưa cấu hình BREVO_API_KEY / Brevo lỗi): trả devCode kèm cảnh báo
+    // để người dùng không bị kẹt ở bước xác minh — thêm key env là flow email tự bật lại.
+    const resp = {
       success: true,
-      message: emailSent ? "Đăng ký thành công! Kiểm tra email để lấy mã xác minh." : "Đăng ký thành công! Email tạm chưa gửi được — báo admin cấu hình Brevo.",
-      verifyCode, // Dev F12 thấy; production chỉ gửi qua email
-      emailSent
-    });
+      emailSent,
+      message: emailSent
+        ? "Đăng ký thành công! Mã xác minh 6 số đã được gửi đến email của bạn."
+        : "Đăng ký thành công nhưng CHƯA gửi được email xác minh (" + (emailError || "lỗi không rõ") + "). Hãy cấu hình BREVO_API_KEY trên Worker.",
+    };
+    if (!emailSent) resp.devCode = verifyCode;
+    return json(resp);
   }
 
   // Login
@@ -636,6 +657,16 @@ async function handleAuth(path, request, env) {
       const { results } = await env.DB.prepare("SELECT id, username, email, display_name, avatar_url, role, email_verified FROM users WHERE (email = ? OR username = ?) AND password_hash = ?").bind(login, login, hash).all();
       if (results.length === 0) return json({ error: "Sai tài khoản hoặc mật khẩu" }, 401);
       const user = results[0];
+
+      // BẮT BUỘC xác minh email trước khi đăng nhập (trừ admin để không tự khoá chính mình)
+      if (!user.email_verified && user.role !== "admin") {
+        return json({
+          success: false,
+          error: "Tài khoản chưa xác minh email. Kiểm tra hộp thư (cả Spam) hoặc bấm \"Gửi lại mã\".",
+          code: "EMAIL_NOT_VERIFIED",
+          email: user.email,
+        }, 403);
+      }
 
       const token = generateJWT(user.id);
       const expires = Date.now() + 30 * 24 * 3600 * 1000;
@@ -712,13 +743,20 @@ async function handleAuth(path, request, env) {
     if (!email) return json({ error: "Thiếu email" }, 400);
     const code = String(Math.floor(100000 + Math.random() * 900000));
     try {
+      // Chống spam resend: nếu mã cũ còn mới (< 60s) thì bắt đợi thêm
+      const { results: recent } = await env.DB.prepare("SELECT verify_expires FROM users WHERE email = ? AND email_verified = 0").bind(email).all();
+      if (recent.length > 0 && (recent[0].verify_expires || 0) - 3540 > Math.floor(Date.now() / 1000)) {
+        return json({ success: false, error: "Vừa gửi mã rồi — đợi khoảng 1 phút nữa nhé." }, 429);
+      }
       const r = await env.DB.prepare("UPDATE users SET verify_code = ?, verify_expires = ? WHERE email = ? AND email_verified = 0").bind(code, Math.floor(Date.now() / 1000) + 3600, email).run();
       const updated = (r.meta?.changes ?? r.changes) > 0;
       if (!updated) return json({ success: true, message: "Email không tồn tại hoặc đã xác minh." });
       const tmpl = emailTemplateVerify(code);
       const sent = await sendBrevoEmail(env, { to: email, subject: tmpl.subject, html: tmpl.html });
-      console.log(`[AUTH/resend] email=${email} code=${code} emailSent=${sent.ok}`);
-      return json({ success: true, message: "Mã xác minh đã được gửi lại đến email.", emailSent: sent.ok });
+      console.log(`[AUTH/resend] email=${email} emailSent=${sent.ok}`);
+      const resp = { success: true, emailSent: sent.ok, message: sent.ok ? "Mã xác minh mới đã được gửi đến email." : "Chưa gửi được email — kiểm tra cấu hình Brevo trên Worker." };
+      if (!sent.ok) resp.devCode = code; // dev fallback khi chưa cấu hình email
+      return json(resp);
     } catch (e) {
       return json({ error: "Lỗi" }, 500);
     }

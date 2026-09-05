@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Search, Star, Play, X, Info, Calendar, Clock, Tv, Film, SlidersHorizontal, TrendingUp } from 'lucide-react';
-import { MovieAPI, imgPath, bgPath, COUNTRY_INFO, getUpcoming, getMovieGenres, getTMDBKey, setTMDBKey, isDefaultTMDBKey } from '../services/tmdb';
+import { MovieAPI, imgPath, bgPath, COUNTRY_INFO, countryInfoOf, REGION_LIST, setTMDBRegion, getUpcoming, getMovieGenres, getTMDBKey, setTMDBKey, isDefaultTMDBKey } from '../services/tmdb';
+import { resolveCountry, currentCountry, setManualCountry } from '../services/geo';
 import MoviePlayerModal from './MoviePlayerModal';
 import { useDevice } from '../contexts/DeviceContext';
 import { useToast } from '../contexts/ToastContext';
 import { useProfile } from '../contexts/ProfileContext';
 import { useI18n } from '../contexts/I18nContext';
-import { detectCountry } from '../i18n/translations';
 
 const CATALOG_PAGE = 30;
 
@@ -25,9 +25,28 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
   const { currentProfile } = useProfile();
   const { t } = useI18n();
 
-  // Tự phát hiện quốc gia (timezone/browser) → banner phim theo nước đó
-  const country = useMemo(() => detectCountry(), []);
-  const countryInfo = COUNTRY_INFO[country] || COUNTRY_INFO.US;
+  // Quốc gia người xem → poster/khối phim đổi theo vùng.
+  // Lần đầu: đoán từ timezone; ngay sau đó /api/geo (Cloudflare geo theo IP) chốt lại.
+  const [country, setCountry] = useState(() => currentCountry());
+  const countryInfo = countryInfoOf(country);
+  const [regionOpen, setRegionOpen] = useState(false);
+  const [tvLocal, setTvLocal] = useState(false); // hàng TV có đang hiện show bản địa không
+
+  const applyRegion = useCallback((cc) => {
+    setRegionOpen(false);
+    if (!cc || cc === 'auto') {
+      setManualCountry('');
+      resolveCountry().then(resolved => {
+        if (!resolved) return;
+        setTMDBRegion(resolved);
+        setCountry(resolved);
+      });
+      return;
+    }
+    setManualCountry(cc);
+    setTMDBRegion(cc);
+    setCountry(cc);
+  }, []);
 
   const [hero, setHero] = useState(null);
   const [rows, setRows] = useState({ trending: [], nowPlaying: [], topRated: [], popularTV: [], upcoming: [] });
@@ -66,21 +85,35 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openMovie]);
 
+  // Chốt quốc gia theo IP thật qua /api/geo (Cloudflare gắn request.cf.country)
+  // → khác với phỏng đoán timezone thì fetch lại toàn bộ khối phim theo region mới
+  useEffect(() => {
+    let on = true;
+    resolveCountry().then(cc => {
+      if (!on || !cc) return;
+      setTMDBRegion(cc);
+      setCountry(prev => (prev === cc ? prev : cc));
+    });
+    return () => { on = false; };
+  }, []);
+
   // Fetch rows + genres + full catalog
   useEffect(() => {
     let mounted = true;
+    setTMDBRegion(country); // ngôn ngữ + region TMDB theo quốc gia đang chọn
     (async () => {
       setLoading(true);
       const [heroR, trR, npR, tR, tvR, upR, gR] = await Promise.all([
         MovieAPI.hero(country),
         MovieAPI.trending(),
         MovieAPI.nowPlaying(country),
-        MovieAPI.topRated(),
-        MovieAPI.popularTV(),
-        getUpcoming().catch(() => ({ results: [] })),
+        MovieAPI.topRated(country),
+        MovieAPI.popularTV(country),
+        getUpcoming(country).catch(() => ({ results: [] })),
         getMovieGenres().catch(() => ({ genres: [] })),
       ]);
       if (!mounted) return;
+      setTvLocal(!!(tvR && tvR.__local));
       setHero(heroR.results?.[0] || null);
       setRows({ trending: trR.results || [], nowPlaying: npR.results || [], topRated: tR.results || [], popularTV: tvR.results || [], upcoming: upR.results || [] });
       setGenres(gR.genres || []);
@@ -90,18 +123,19 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [country]);
 
-  // Load full catalog (background, không chặn UI)
+  // Load full catalog (background, không chặn UI) — trộn thêm phim theo region
   useEffect(() => {
     let mounted = true;
+    setTMDBRegion(country);
     (async () => {
       setCatalogLoading(true);
-      const r = await MovieAPI.catalog().catch(() => ({ results: [] }));
+      const r = await MovieAPI.catalog(country).catch(() => ({ results: [] }));
       if (!mounted) return;
       setCatalog(r.results || []);
       setCatalogLoading(false);
     })();
     return () => { mounted = false; };
-  }, []);
+  }, [country]);
 
   // Search: TMDB API + tìm trong catalog đã nạp
   useEffect(() => {
@@ -264,9 +298,48 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
               <div className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-red-500 border-t-transparent rounded-full animate-spin"></div>
             )}
           </div>
-          <div className="flex items-center gap-2 text-[11px] text-stone-500 shrink-0">
+          <div className="flex items-center gap-2 text-[11px] text-stone-500 shrink-0 relative">
             <SlidersHorizontal className="w-3.5 h-3.5" />
-            <span>{catalog.length > 0 ? `${catalog.length.toLocaleString('vi-VN')} phim & TV show` : 'Đang nạp kho phim…'}</span>
+            <span className="hidden lg:inline">{catalog.length > 0 ? `${catalog.length.toLocaleString('vi-VN')} phim & TV show` : 'Đang nạp kho phim…'}</span>
+            {/* Chọn khu vực phim — mặc định tự theo vị trí địa lý của người xem */}
+            <button
+              onClick={() => setRegionOpen(s => !s)}
+              className="px-2.5 py-1 rounded-lg border border-white/10 text-stone-300 hover:bg-white/10 text-[11px] font-bold transition-all whitespace-nowrap"
+              title={t('movies.region.label')}
+            >
+              {countryInfo.flag} <span className="hidden md:inline">{countryInfo.name}</span> ▾
+            </button>
+            {regionOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setRegionOpen(false)}></div>
+                <div className="absolute right-0 top-full mt-2 z-50 w-64 bg-[#141419] border border-white/10 rounded-xl shadow-2xl p-3">
+                  <p className="text-[10px] uppercase tracking-widest text-stone-500 font-bold mb-2">{t('movies.region.label')}</p>
+                  <button
+                    onClick={() => applyRegion('auto')}
+                    className="w-full text-left px-2.5 py-2 rounded-lg text-[11px] font-bold mb-2 text-stone-300 hover:bg-white/10 transition-colors"
+                  >
+                    🌐 {t('movies.region.auto')}
+                  </button>
+                  <div className="grid grid-cols-4 gap-1">
+                    {REGION_LIST.map(cc => {
+                      const info = COUNTRY_INFO[cc];
+                      const active = cc === country;
+                      return (
+                        <button
+                          key={cc}
+                          onClick={() => applyRegion(cc)}
+                          className={`flex flex-col items-center gap-0.5 px-1 py-1.5 rounded-lg text-[10px] font-bold transition-colors ${active ? 'bg-red-600 text-white' : 'text-stone-400 hover:bg-white/10 hover:text-white'}`}
+                          title={info.name}
+                        >
+                          <span className="text-base leading-none">{info.flag}</span>
+                          {cc}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
+            )}
             <button
               onClick={() => setShowKeyBox(s => !s)}
               className={`ml-1 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-all ${isDefaultTMDBKey() ? 'border-amber-500/40 text-amber-400 hover:bg-amber-500/10' : 'border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10'}`}
@@ -359,12 +432,15 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled } = 
         </div>
       ) : (
         <div className="pb-20 space-y-10 pt-6">
-          {/* Rows */}
+          {/* Rows — nội dung đổi theo quốc gia người xem */}
           <MovieRow title={t('movies.row.trending')} items={rows.trending} gridCls={gridCls} onClick={openDetail} loading={loading} />
-          <MovieRow title={t('movies.row.now_playing')} items={rows.nowPlaying} gridCls={gridCls} onClick={openDetail} loading={loading} />
+          <MovieRow title={t('movies.row.now_playing_in', { country: `${countryInfo.flag} ${countryInfo.name}` })} items={rows.nowPlaying} gridCls={gridCls} onClick={openDetail} loading={loading} />
           <MovieRow title={t('movies.row.top_rated')} items={rows.topRated} gridCls={gridCls} onClick={openDetail} loading={loading} />
           <MovieRow title={t('movies.row.upcoming')} items={rows.upcoming} gridCls={gridCls} onClick={openDetail} loading={loading} />
-          <MovieRow title={t('movies.row.popular_tv')} items={rows.popularTV} gridCls={gridCls} onClick={openDetail} loading={loading} />
+          <MovieRow
+            title={tvLocal ? t('movies.row.local_tv', { country: `${countryInfo.flag} ${countryInfo.name}` }) : t('movies.row.popular_tv')}
+            items={rows.popularTV} gridCls={gridCls} onClick={openDetail} loading={loading}
+          />
 
           {/* Full catalog */}
           <section className="px-6 md:px-8">

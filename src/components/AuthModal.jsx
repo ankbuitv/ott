@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Mail, Lock, User, Eye, EyeOff, Check, ArrowRight, RotateCcw } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -17,9 +17,18 @@ export default function AuthModal({ open, onClose, initialView = 'login' }) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [resetToken, setResetToken] = useState('');
+  const [devCode, setDevCode] = useState(null); // chỉ có khi server chưa gửi được email
+  const [resendIn, setResendIn] = useState(0);
 
-  const { login, register, verifyEmail, forgotPassword, resetPassword, loading } = useAuth();
+  const { login, register, verifyEmail, forgotPassword, resetPassword, resendVerify, loading } = useAuth();
   const { addToast } = useToast();
+
+  // Cooldown "gửi lại mã"
+  useEffect(() => {
+    if (resendIn <= 0) return undefined;
+    const iv = setInterval(() => setResendIn(s => (s > 0 ? s - 1 : 0)), 1000);
+    return () => clearInterval(iv);
+  }, [resendIn]);
 
   if (!open) return null;
 
@@ -28,6 +37,13 @@ export default function AuthModal({ open, onClose, initialView = 'login' }) {
     setError('');
     const r = await login(loginVal, password);
     if (r.success) { addToast(t('auth.msg.login_ok'), 'success'); onClose(); }
+    else if (r.code === 'EMAIL_NOT_VERIFIED') {
+      if (r.email) setEmail(r.email);
+      setDevCode(null);
+      setError(t('auth.error.not_verified'));
+      setResendIn(0);
+      setView('verify');
+    }
     else setError(r.error);
   };
 
@@ -36,10 +52,22 @@ export default function AuthModal({ open, onClose, initialView = 'login' }) {
     setError(''); setSuccess('');
     const r = await register(username, email, password);
     if (r.success) {
-      setSuccess(r.message || t('auth.msg.registered'));
-      if (r.verifyCode) setSuccess(t('auth.msg.verify_code_label') + r.verifyCode);
+      setDevCode(r.devCode || null);
+      setSuccess(r.emailSent ? `${t('auth.verify.sent_to')} ${email}` : (r.message || t('auth.msg.registered')));
+      setResendIn(60);
       setView('verify');
     } else setError(r.error);
+  };
+
+  const handleResend = async () => {
+    if (resendIn > 0 || !email) return;
+    setError('');
+    const r = await resendVerify(email);
+    if (r.success) {
+      setDevCode(r.devCode || null);
+      setSuccess(r.emailSent ? `${t('auth.verify.sent_to')} ${email}` : (r.message || t('auth.msg.code_sent')));
+      setResendIn(60);
+    } else setError(r.error || 'Lỗi gửi lại mã');
   };
 
   const handleVerify = async (e) => {
@@ -154,11 +182,23 @@ export default function AuthModal({ open, onClose, initialView = 'login' }) {
           {view === 'verify' && (
             <form onSubmit={handleVerify} className="space-y-2.5">
               <p className="text-[11px] text-slate-400 text-center">{t('auth.verify.help')}</p>
+              {email && <p className="text-[11px] text-slate-300 text-center">📬 {t('auth.verify.sent_to')} <span className="text-white font-bold">{email}</span></p>}
+              {devCode && (
+                <div className="px-3 py-2 bg-amber-500/10 border border-amber-500/30 rounded-xl text-[11px] text-amber-300 text-center">
+                  <p className="leading-relaxed mb-1">{t('auth.msg.email_fail')}</p>
+                  <p className="text-xl tracking-[0.35em] font-mono font-black text-amber-200">{devCode}</p>
+                </div>
+              )}
               <input type="text" value={verifyCode} onChange={e => setVerifyCode(e.target.value)} placeholder={t('auth.verify_code')} maxLength={6} required className="w-full px-3 py-2.5 bg-slate-800/60 border border-slate-700/50 rounded-xl text-sm text-white text-center tracking-[0.3em] font-mono placeholder:text-slate-600 focus:outline-none focus:border-red-600/60" />
               <button type="submit" className="w-full py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold text-sm rounded-xl transition-all flex items-center justify-center gap-1.5">
                 <Check className="w-4 h-4" /> {t('auth.btn.verify')}
               </button>
-              <button type="button" onClick={() => setView('login')} className="w-full text-center text-[11px] text-slate-500 hover:text-white">{t('common.back')} {t('auth.title.login')}</button>
+              <div className="flex items-center justify-between text-[11px]">
+                <button type="button" onClick={handleResend} disabled={resendIn > 0 || !email} className="text-red-400 hover:text-red-300 disabled:opacity-40 disabled:cursor-not-allowed">
+                  {resendIn > 0 ? t('auth.verify.resend_in', { s: resendIn }) : `↻ ${t('auth.btn.resend')}`}
+                </button>
+                <button type="button" onClick={() => setView('login')} className="text-slate-500 hover:text-white">{t('common.back')} {t('auth.title.login')}</button>
+              </div>
             </form>
           )}
 

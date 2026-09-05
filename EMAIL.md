@@ -70,9 +70,16 @@ Nhấn **Save and Deploy**.
 
 Đăng ký tài khoản mới trên CHRTV bằng email thật của bạn. Trong vòng 30 giây, email xác minh phải đến hộp thư.
 
+**Luồng xác minh mới (đã bắt buộc):**
+- Đăng ký xong → server gửi email mã 6 số → **KHÔNG bao giờ trả mã về response** khi gửi email thành công (nhìn F12 cũng không thấy).
+- **Chưa xác minh email thì không đăng nhập được** — màn hình login tự chuyển sang bước "Xác Minh Email" với nút **Gửi lại mã** (cooldown 60s, server cũng chặn spam resend).
+- Tài khoản `role = admin` bỏ qua bước xác minh để owner không tự khoá chính mình.
+- Nếu Worker **chưa có `BREVO_API_KEY`** (hoặc Brevo trả lỗi): response đăng ký chứa `devCode` kèm cảnh báo vàng trên UI để người dùng hoàn tất đăng ký — khi đã cấu hình key, `devCode` tự biến mất và mã chỉ đi qua email.
+
 **Không nhận được email?** Check:
 
 - **Cloudflare Worker Logs** → tìm dòng `[Brevo] Gửi thất bại: ...` hoặc `[Brevo] Lỗi mạng: ...`
+- Response của `/auth/register` → `emailSent: false` + lỗi cụ thể trong `message`
 - **Brevo Dashboard** → **Transactional** → **Email** → xem log gửi
 - **Spam folder** của email đăng ký
 

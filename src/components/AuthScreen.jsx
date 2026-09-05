@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Mail, Lock, User, Eye, EyeOff, Check, ArrowRight, RotateCcw } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -7,7 +7,7 @@ import Logo from './Logo';
 
 export default function AuthScreen() {
   const { t } = useI18n();
-  const { login, register, verifyEmail, forgotPassword, resetPassword, loading } = useAuth();
+  const { login, register, verifyEmail, forgotPassword, resetPassword, resendVerify, loading } = useAuth();
   const { addToast } = useToast();
   const [view, setView] = useState('login'); // login | register | verify | forgot | reset
   const [loginVal, setLoginVal] = useState('');
@@ -20,12 +20,29 @@ export default function AuthScreen() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [resetToken, setResetToken] = useState('');
+  const [devCode, setDevCode] = useState(null);   // chỉ có khi server KHÔNG gửi được email (chưa cấu hình Brevo)
+  const [resendIn, setResendIn] = useState(0);    // đếm ngược cooldown gửi lại mã
+
+  // Cooldown "gửi lại mã"
+  useEffect(() => {
+    if (resendIn <= 0) return undefined;
+    const iv = setInterval(() => setResendIn(s => (s > 0 ? s - 1 : 0)), 1000);
+    return () => clearInterval(iv);
+  }, [resendIn]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
     const r = await login(loginVal, password);
     if (r.success) addToast(t('auth.msg.login_ok'), 'success');
+    else if (r.code === 'EMAIL_NOT_VERIFIED') {
+      // Chưa xác minh email → sang màn xác minh, cho gửi lại mã
+      if (r.email) setEmail(r.email);
+      setDevCode(null);
+      setError(t('auth.error.not_verified'));
+      setResendIn(0);
+      setView('verify');
+    }
     else setError(r.error);
   };
 
@@ -34,10 +51,26 @@ export default function AuthScreen() {
     setError(''); setSuccess('');
     const r = await register(username, email, password);
     if (r.success) {
-      setSuccess(t('auth.msg.registered'));
-      if (r.verifyCode) setSuccess(t('auth.msg.verify_code_label') + r.verifyCode);
+      setDevCode(r.devCode || null);
+      setSuccess(r.emailSent
+        ? `${t('auth.verify.sent_to')} ${email}`
+        : (r.message || t('auth.msg.registered')));
+      setResendIn(60);
       setView('verify');
     } else setError(r.error);
+  };
+
+  const handleResend = async () => {
+    if (resendIn > 0 || !email) return;
+    setError('');
+    const r = await resendVerify(email);
+    if (r.success) {
+      setDevCode(r.devCode || null);
+      setSuccess(r.emailSent
+        ? `${t('auth.verify.sent_to')} ${email}`
+        : (r.message || t('auth.msg.code_sent')));
+      setResendIn(60);
+    } else setError(r.error || 'Lỗi gửi lại mã');
   };
 
   const handleVerify = async (e) => {
@@ -88,16 +121,29 @@ export default function AuthScreen() {
           <Logo size="lg" className="mb-8 justify-center" />
           <div className="bg-black/70 backdrop-blur-md border border-white/10 rounded-2xl p-6">
             <h1 className="text-2xl font-black mb-1">{t('auth.title.verify')}</h1>
-            <p className="text-xs text-stone-400 mb-5">{t('auth.verify.help')}</p>
+            <p className="text-xs text-stone-400 mb-1">{t('auth.verify.help')}</p>
+            {email && <p className="text-xs text-stone-300 mb-4">📬 {t('auth.verify.sent_to')} <span className="text-white font-bold">{email}</span></p>}
+            {!email && <div className="mb-4"></div>}
             <form onSubmit={handleVerify} className="space-y-3">
               {error && <div className="px-3 py-2 bg-red-600/15 border border-red-600/30 rounded-xl text-xs text-red-400">{error}</div>}
               {success && <div className="px-3 py-2 bg-emerald-600/15 border border-emerald-600/30 rounded-xl text-xs text-emerald-400">{success}</div>}
+              {devCode && (
+                <div className="px-3 py-2 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs text-amber-300">
+                  <p className="mb-1.5 leading-relaxed">{t('auth.msg.email_fail')}</p>
+                  <p className="text-center text-2xl tracking-[0.4em] font-mono font-black text-amber-200">{devCode}</p>
+                </div>
+              )}
               {(!error && !success && !email) && (
                 <input type="email" placeholder={t('auth.email')} onChange={e => setEmail(e.target.value)} className="w-full bg-white/10 border border-white/15 rounded-lg px-3 py-2 text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-red-500" />
               )}
               <input type="text" value={verifyCode} onChange={e => setVerifyCode(e.target.value)} placeholder="000000" maxLength={6} className="w-full bg-white/10 border border-white/15 rounded-lg px-3 py-3 text-2xl tracking-[0.5em] font-mono text-center text-white focus:outline-none focus:border-red-500" />
               <button type="submit" className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-lg">{t('auth.btn.verify')}</button>
-              <button type="button" onClick={() => setView('login')} className="w-full text-xs text-stone-500 hover:text-white">{t('common.back')} {t('auth.title.login')}</button>
+              <div className="flex items-center justify-between gap-2">
+                <button type="button" onClick={handleResend} disabled={resendIn > 0 || !email} className="text-xs text-red-400 hover:text-red-300 disabled:opacity-40 disabled:cursor-not-allowed">
+                  {resendIn > 0 ? t('auth.verify.resend_in', { s: resendIn }) : `↻ ${t('auth.btn.resend')}`}
+                </button>
+                <button type="button" onClick={() => setView('login')} className="text-xs text-stone-500 hover:text-white">{t('common.back')} {t('auth.title.login')}</button>
+              </div>
             </form>
           </div>
         </div>

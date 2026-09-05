@@ -45,8 +45,22 @@ const fromCache = (k) => {
   return null;
 };
 
+// Khu vực đang hoạt động (mặc định Việt Nam) — đổi bằng setTMDBRegion()
+// → toàn bộ call TMDB sẽ dùng đúng ngôn ngữ + region của quốc gia đó,
+// nhờ vậy poster/kết quả đổi theo vị trí địa lý người xem.
+let activeRegion = 'US';
+let activeLanguage = 'vi-VN';
+
+export function setTMDBRegion(cc) {
+  const info = COUNTRY_INFO[(cc || '').toUpperCase()];
+  activeRegion = info ? info.region : 'US';
+  activeLanguage = info ? info.language : 'vi-VN';
+}
+export const getTMDBRegion = () => activeRegion;
+export const getTMDBLanguage = () => activeLanguage;
+
 async function tmdbFetch(path, query = {}) {
-  const q = { api_key: getTMDBKey(), language: 'vi-VN', ...query };
+  const q = { api_key: getTMDBKey(), language: activeLanguage, ...query };
   const qs = new URLSearchParams(q).toString();
   const key = `${path}?${qs}`;
   const cached = fromCache(key);
@@ -67,18 +81,26 @@ export const bgPath = (path) => imgPath(path, 'original');
 export async function getTrending(time = 'day') {
   return tmdbFetch(`/trending/all/${time}`);
 }
-export async function getPopularMovies() {
-  return tmdbFetch('/movie/popular');
+export async function getPopularMovies(region) {
+  const q = region ? { region } : {};
+  return tmdbFetch('/movie/popular', q);
 }
-export async function getTopRated() {
-  return tmdbFetch('/movie/top_rated');
+export async function getTopRated(region) {
+  const q = region ? { region } : {};
+  return tmdbFetch('/movie/top_rated', q);
 }
 export async function getNowPlaying(region) {
   const q = region ? { region } : {};
   return tmdbFetch('/movie/now_playing', q);
 }
-export async function getPopularTV() {
-  return tmdbFetch('/tv/popular');
+export async function getPopularTV(region) {
+  const q = region ? { region } : {};
+  return tmdbFetch('/tv/popular', q);
+}
+// TV show sản xuất tại chính quốc gia đó (local shows) — rỗng thì caller tự fallback
+export async function getLocalTV(region) {
+  if (!region) return tmdbFetch('/tv/popular');
+  return tmdbFetch('/discover/tv', { with_origin_country: region, sort_by: 'popularity.desc' });
 }
 export async function getMovieDetails(id) {
   return tmdbFetch(`/movie/${id}`);
@@ -97,8 +119,9 @@ export async function searchMulti(query) {
 export async function getGenres() {
   return tmdbFetch('/genre/movie/list');
 }
-export async function getUpcoming() {
-  return tmdbFetch('/movie/upcoming');
+export async function getUpcoming(region) {
+  const q = region ? { region } : {};
+  return tmdbFetch('/movie/upcoming', q);
 }
 export async function getMovieGenres() {
   return tmdbFetch('/genre/movie/list');
@@ -200,14 +223,45 @@ async function safe(name, fn, fb) {
   return { results: fb };
 }
 
-// ====== Phát hiện khu vực cho banner phim ======
-export const COUNTRY_INFO = {
-  VN: { flag: '🇻🇳', name: 'Việt Nam', region: 'VN' },
-  PH: { flag: '🇵🇭', name: 'Philippines', region: 'PH' },
-  CN: { flag: '🇨🇳', name: '中国', region: 'CN' },
-  FR: { flag: '🇫🇷', name: 'France', region: 'FR' },
-  US: { flag: '🌍', name: 'International', region: 'US' },
+// ====== Khu vực địa lý cho poster phim ======
+// Poster/khối phim đổi theo quốc gia người xem (qua /api/geo → Cloudflare IP geo).
+// region = mã TMDB region (ISO 3166-1), language = ngôn ngữ tiêu đề/mô tả trên TMDB.
+const flagEmoji = (cc) => {
+  try { return String.fromCodePoint(...[...cc.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65)); }
+  catch { return '🌍'; }
 };
+
+const COUNTRY_LANG = {
+  VN: 'vi-VN', US: 'en-US', GB: 'en-GB', FR: 'fr-FR', DE: 'de-DE', ES: 'es-ES', IT: 'it-IT',
+  BR: 'pt-BR', MX: 'es-MX', RU: 'ru-RU', TR: 'tr-TR', PL: 'pl-PL', NL: 'nl-NL', SE: 'sv-SE',
+  JP: 'ja-JP', KR: 'ko-KR', CN: 'zh-CN', TW: 'zh-TW', HK: 'zh-HK', TH: 'th-TH', PH: 'en-PH',
+  ID: 'id-ID', MY: 'ms-MY', SG: 'en-SG', IN: 'hi-IN', AU: 'en-AU', CA: 'en-CA',
+};
+const COUNTRY_NAMES = {
+  VN: 'Việt Nam', US: 'Quốc tế (US)', GB: 'Anh', FR: 'Pháp', DE: 'Đức', ES: 'Tây Ban Nha',
+  IT: 'Ý', BR: 'Brazil', MX: 'Mexico', RU: 'Nga', TR: 'Thổ Nhĩ Kỳ', PL: 'Ba Lan', NL: 'Hà Lan',
+  SE: 'Thuỵ Điển', JP: 'Nhật Bản', KR: 'Hàn Quốc', CN: 'Trung Quốc', TW: 'Đài Loan',
+  HK: 'Hồng Kông', TH: 'Thái Lan', PH: 'Philippines', ID: 'Indonesia', MY: 'Malaysia',
+  SG: 'Singapore', IN: 'Ấn Độ', AU: 'Úc', CA: 'Canada',
+};
+
+export const COUNTRY_INFO = Object.fromEntries(
+  Object.entries(COUNTRY_LANG).map(([cc, language]) => [
+    cc,
+    { flag: cc === 'US' ? '🌍' : flagEmoji(cc), name: COUNTRY_NAMES[cc] || cc, region: cc, language },
+  ])
+);
+
+// Quốc gia không có trong danh sách → sinh info tổng quát (cờ từ mã quốc gia)
+export function countryInfoOf(cc) {
+  const up = (cc || '').toUpperCase();
+  if (COUNTRY_INFO[up]) return COUNTRY_INFO[up];
+  return { flag: CC_RE.test(up) ? flagEmoji(up) : '🌍', name: up || 'Quốc tế', region: up || 'US', language: 'en-US' };
+}
+const CC_RE = /^[A-Z]{2}$/;
+
+// Danh sách quốc gia hiển thị trong bộ chọn khu vực
+export const REGION_LIST = Object.keys(COUNTRY_LANG);
 
 // Fallback theo khu vực khi TMDB fail/hết quota (dùng phim thật có trong FALLBACK_FEATURED)
 const REGION_FALLBACKS = {
@@ -221,16 +275,26 @@ const REGION_FALLBACKS = {
 export const MovieAPI = {
   // Hero theo quốc gia: TMDB /movie/now_playing?region=XX trả phim đang chiếu tại nước đó
   hero: (country) => {
-    const info = COUNTRY_INFO[country] || COUNTRY_INFO.US;
-    if (info.region !== 'US') {
-      return safe('hero_' + info.region, () => getNowPlaying(info.region), REGION_FALLBACKS[info.region] || REGION_FALLBACKS.US);
+    const cc = (country || 'US').toUpperCase();
+    if (cc === 'US') {
+      return safe('hero', () => getTrending('week'), REGION_FALLBACKS.US);
     }
-    return safe('hero', () => getTrending('week'), REGION_FALLBACKS.US);
+    return safe('hero_' + cc, () => getNowPlaying(cc), REGION_FALLBACKS[cc] || FALLBACK_TRENDING);
   },
   trending: () => safe('tr', () => getTrending('week'), FALLBACK_TRENDING),
   nowPlaying: (region) => safe('np' + (region || ''), () => getNowPlaying(region || undefined), FALLBACK_NOW_PLAYING),
-  topRated: () => safe('tr2', () => getTopRated(), FALLBACK_TOP_RATED),
-  popularTV: () => safe('tv', () => getPopularTV(), FALLBACK_TV),
+  topRated: (region) => safe('tr2' + (region || ''), () => getTopRated(region || undefined), FALLBACK_TOP_RATED),
+  // TV: ưu tiên show sản xuất tại chính quốc gia đó (region), trống thì fallback toàn cầu
+  popularTV: (region) => {
+    const cc = (region || 'US').toUpperCase();
+    if (cc && cc !== 'US') {
+      return safe('tvlocal_' + cc, () => getLocalTV(cc), null).then(r => {
+        if (r?.results?.length > 0) return Object.assign({}, r, { __local: true });
+        return safe('tv', () => getPopularTV(), FALLBACK_TV);
+      });
+    }
+    return safe('tv', () => getPopularTV(), FALLBACK_TV);
+  },
   search: async (q) => {
     // Thử tiếng Việt trước, nếu rỗng thì thử không ép ngôn ngữ (phim chưa có tên Việt)
     let r = await tmdbFetch('/search/multi', { query: q, include_adult: false });
@@ -269,7 +333,7 @@ export const MovieAPI = {
    * Nạp ~200 phim TMDB cho catalog trang chính.
    * Tìm kiếm thêm phim qua search() - gọi TMDB /search/multi trực tiếp.
    */
-  catalog: async () => {
+  catalog: async (country) => {
     const byId = new Map();
     const add = (items) => (items || []).forEach(m => {
       if (!m.poster_path) return;
@@ -277,22 +341,26 @@ export const MovieAPI = {
       if (!byId.has(key)) byId.set(key, m);
     });
 
-    // Chỉ nạp vài trang mỗi loại = ~200 phim
+    // Trộn trang toàn cầu + trang theo region → lưới poster đổi theo quốc gia người xem
+    const cc = (country || '').toUpperCase();
+    const regional = cc && cc !== 'US';
     const pages = [
       ['/trending/all/week', { page: 1 }],
       ['/trending/all/week', { page: 2 }],
-      ['/movie/popular', { page: 1 }],
+      regional ? ['/movie/popular', { page: 1, region: cc }] : ['/movie/popular', { page: 1 }],
       ['/movie/popular', { page: 2 }],
       ['/movie/popular', { page: 3 }],
       ['/movie/top_rated', { page: 1 }],
       ['/movie/top_rated', { page: 2 }],
-      ['/movie/now_playing', { page: 1 }],
+      regional ? ['/movie/now_playing', { page: 1, region: cc }] : ['/movie/now_playing', { page: 1 }],
       ['/movie/now_playing', { page: 2 }],
-      ['/movie/upcoming', { page: 1 }],
+      regional ? ['/movie/upcoming', { page: 1, region: cc }] : ['/movie/upcoming', { page: 1 }],
       ['/tv/popular', { page: 1 }],
       ['/tv/popular', { page: 2 }],
       ['/tv/top_rated', { page: 1 }],
     ];
+    // TV show bản địa (sản xuất tại quốc gia đó)
+    if (regional) pages.push(['/discover/tv', { with_origin_country: cc, sort_by: 'popularity.desc', page: 1 }]);
 
     const results = await Promise.all(
       pages.map(([path, q]) =>

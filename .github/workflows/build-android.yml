@@ -52,6 +52,9 @@ jobs:
       CHRTV_KEYSTORE_PASSWORD: ${{ secrets.CHRTV_KEYSTORE_PASSWORD || 'chrtv2026' }}
       CHRTV_KEY_ALIAS: ${{ secrets.CHRTV_KEY_ALIAS || 'chrtv' }}
       CHRTV_KEY_PASSWORD: ${{ secrets.CHRTV_KEY_PASSWORD || 'chrtv2026' }}
+      # `secrets` KHÔNG được dùng trong if: của step (GitHub báo "Unrecognized
+      # named-value: 'secrets'") nên đưa ra env của job để step if so sánh được.
+      KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
 
     steps:
       - name: Checkout source
@@ -99,7 +102,7 @@ jobs:
 
       # ---- Keystore ------------------------------------------------------
       - name: Restore cached keystore (giữ chữ ký ổn định giữa các lần build)
-        if: secrets.ANDROID_KEYSTORE_BASE64 == ''
+        if: env.KS_B64 == ''
         uses: actions/cache@v4
         with:
           path: android/app/chrtv-release.jks

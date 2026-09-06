@@ -131,7 +131,9 @@ export function PaymentsTab({ BASE, headers, addToast }) {
 }
 
 // ---- Quảng cáo ----
-const SLOTS = ['home', 'movies', 'sports', 'community', 'banner'];
+// 'preroll' = quảng cáo chạy TRƯỚC khi vào kênh/phim (tối đa 5 lần/giờ mỗi người xem;
+// elite & signature không thấy quảng cáo, ultimate bỏ qua sau 5s, recreational 10s, standard 30s)
+const SLOTS = ['preroll', 'home', 'movies', 'sports', 'community', 'banner'];
 export function AdsTab({ BASE, headers, addToast }) {
   const [ads, setAds] = useState([]);
   const [form, setForm] = useState({ slot: 'home', title: '', image_url: '', link_url: '', video_url: '', starts_at: '', ends_at: '', sort_order: 0 });
@@ -160,7 +162,7 @@ export function AdsTab({ BASE, headers, addToast }) {
       <form onSubmit={save} className="space-y-2 pt-2 border-t border-slate-800/40">
         <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider flex items-center gap-1.5"><Megaphone className="w-3.5 h-3.5" />{editing ? `Sửa QC #${editing}` : 'Thêm QC mới'}</p>
         <div className="grid grid-cols-2 gap-2">
-          <select value={form.slot} onChange={e => setForm({ ...form, slot: e.target.value })} className={inp}>{SLOTS.map(s => <option key={s} value={s}>{s}</option>)}</select>
+          <select value={form.slot} onChange={e => setForm({ ...form, slot: e.target.value })} className={inp}>{SLOTS.map(s => <option key={s} value={s}>{s === 'preroll' ? 'preroll — chạy trước kênh/phim' : s}</option>)}</select>
           <input value={form.sort_order} type="number" onChange={e => setForm({ ...form, sort_order: e.target.value })} placeholder="Thứ tự" className={inp} />
           <input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="Tiêu đề" className={inp + ' col-span-2'} />
           <input value={form.image_url} onChange={e => setForm({ ...form, image_url: e.target.value })} placeholder="URL ảnh banner" className={inp + ' col-span-2'} />

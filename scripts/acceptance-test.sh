@@ -94,9 +94,22 @@ UTOKEN=$(printf '%s' "$LOGIN" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p' | head -
 curl -s --max-time 15 -A "$UA" -H "Authorization: Bearer $UTOKEN" -H 'Content-Type: application/json' -d '{"plan":"standard"}' "$BASE/user/plan/activate" > /dev/null
 
 if [ -n "$UTOKEN" ] && [ -n "$CH_PREMIUM" ]; then
+  # LUẬT MỚI: gói Standard được XEM THỬ mọi kênh 5 phút mỗi giờ.
+  #  -> lần đầu phải là 200 kèm "preview" (ttl ngắn 60s), hết quota mới PREVIEW_EXPIRED.
   BODY=$(curl -s --max-time 15 -A "$UA" -H "Authorization: Bearer $UTOKEN" "$BASE/api/stream/token?channel=$CH_PREMIUM" || echo {})
   CODE=$(printf '%s' "$BODY" | sed -n 's/.*"error":"\([A-Z_]*\)".*/\1/p' | head -1)
-  check_eq "user FREE xin token kênh premium ($CH_PREMIUM)" "PLAN_REQUIRED" "$CODE"
+  HASPV=$(printf '%s' "$BODY" | grep -c '"preview"' || true)
+  if [ "$CODE" = "PREVIEW_EXPIRED" ] || [ "$HASPV" -ge 1 ]; then
+    ok "gói Standard xem thử kênh premium ($CH_PREMIUM) đúng luật 5 phút"
+  else
+    bad "Standard xin kênh premium trả bất thường: $(printf '%s' "$BODY" | head -c 120)"
+  fi
+  # Hết quota (gọi 6 lần x 60s) thì phải bị chặn
+  for _ in 1 2 3 4 5 6; do
+    OUT=$(curl -s --max-time 15 -A "$UA" -H "Authorization: Bearer $UTOKEN" "$BASE/api/stream/token?channel=$CH_PREMIUM" || echo {})
+  done
+  CODE=$(printf '%s' "$OUT" | sed -n 's/.*"error":"\([A-Z_]*\)".*/\1/p' | head -1)
+  check_eq "hết 5 phút xem thử thì bị chặn" "PREVIEW_EXPIRED" "$CODE"
   if [ -n "$CH_VN" ]; then
     CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -A "$UA" -H "Authorization: Bearer $UTOKEN" "$BASE/api/stream/token?channel=$CH_VN")
     check_eq "user FREE xin token kênh VN ($CH_VN) vẫn được (200)" "200" "$CODE"
@@ -167,8 +180,9 @@ if [ -n "$GTOKEN" ]; then
     check_eq "guest xin token kênh VN ($CH_VN)" "200" "$CODE"
   fi
   if [ -n "$CH_PREMIUM" ]; then
+    # Khách KHÔNG được xem thử (phải đăng nhập mới có 5 phút) -> LOGIN_REQUIRED hoặc PLAN_REQUIRED
     CODE=$(curl -s --max-time 15 -A "$UA" -H "Authorization: Bearer $GTOKEN" "$BASE/api/stream/token?channel=$CH_PREMIUM" | sed -n 's/.*"error":"\([A-Z_]*\)".*/\1/p' | head -1)
-    check_eq "guest xin token kênh premium" "PLAN_REQUIRED" "$CODE"
+    if [ "$CODE" = "LOGIN_REQUIRED" ] || [ "$CODE" = "PLAN_REQUIRED" ]; then ok "guest xin token kênh premium bị chặn (= $CODE)"; else bad "guest xin kênh premium trả $CODE"; fi
   fi
   CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -A "$UA" -H "Authorization: Bearer $GTOKEN" "$BASE/api/epg")
   check_eq "guest đọc /api/epg" "200" "$CODE"
@@ -214,6 +228,18 @@ if [ -n "$GTOKEN" ] && [ -n "$CH_VN" ]; then
   fi
 fi
 
+CH_PREMIUM=$(printf '%s' "$PL" | tr ',' '\n' | grep -B0 -i 'the thao\|thể thao\|sport\|phim' >/dev/null 2>&1 && printf '%s' "$PL" | python3 -c "
+import sys,json
+try:
+    d=json.load(sys.stdin)['data']
+except Exception:
+    sys.exit(0)
+for c in d:
+    g=(c.get('group_title') or '').lower()
+    if any(k in g for k in ('thể thao','the thao','sport','phim','movie','giải trí','giai tri','box')):
+        print(c['channel_id']); break
+" || true)
+
 echo ""
 echo "[13] ĐỢT 1 — VẬN HÀNH KÊNH (báo lỗi 20 · telemetry 49 · health 46 · status 47 · hot 3)"
 # 13a: trang trạng thái công khai, không cần đăng nhập
@@ -242,6 +268,24 @@ for ep in "/admin/channel-health" "/admin/channel-reports" "/admin/player-errors
   C=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -A "$UA" "$BASE$ep")
   check_eq "$ep chặn người lạ" 403 "$C"
 done
+
+echo ""
+echo "[14] QUẢNG CÁO PRE-ROLL + XEM THỬ 5 PHÚT (gói Standard)"
+if [ -n "$GTOKEN" ]; then
+  PR=$(curl -s --max-time 15 -A "$UA" -H "Authorization: Bearer $GTOKEN" "$BASE/api/ads/preroll?kind=channel&ref=test")
+  check_eq "/api/ads/preroll trả JSON" "true" "$(printf '%s' "$PR" | sed -n 's/.*"success":\([a-z]*\).*/\1/p' | head -1)"
+  # khách = mức standard -> bỏ qua sau 30 giây
+  check_eq "khách phải xem QC 30s mới bỏ qua được" "30" "$(printf '%s' "$PR" | sed -n 's/.*"skip_after":\([0-9]*\).*/\1/p' | head -1)"
+  check_le "preroll không lộ stream_url" 0 "$(printf '%s' "$PR" | grep -c 'stream_url' || true)"
+fi
+# khách KHÔNG được xem thử kênh ngoài gói (phải đăng nhập)
+if [ -n "$GTOKEN" ] && [ -n "$CH_PREMIUM" ]; then
+  C=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -A "$UA" -H "Authorization: Bearer $GTOKEN" "$BASE/api/stream/token?channel=$CH_PREMIUM")
+  check_eq "khách xin kênh ngoài gói bị chặn" 401 "$C"
+fi
+# quota xem thử chỉ đọc được khi đã đăng nhập
+C=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -A "$UA" "$BASE/api/preview/state")
+check_eq "/api/preview/state cần phiên" 401 "$C"
 
 echo ""
 echo "=============================================================="

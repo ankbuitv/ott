@@ -17,6 +17,7 @@
 
 import { API_BASE } from "./config";
 import { ensureSessionToken } from "./session";
+import { setPreviewState } from "./ads";
 
 export const CHRTV_CLIENT_UA = "CHRTV-OTT/0.0.1";
 
@@ -116,9 +117,17 @@ export async function requestStreamAccess(channel, { at = 0 } = {}) {
 
   if (!res.ok || !data.success) {
     const code = data.error || (res.status === 401 ? "LOGIN_REQUIRED" : res.status === 403 ? "PLAN_REQUIRED" : "TOKEN_ERROR");
+    // Hết 5 phút xem thử của gói Standard -> báo riêng để UI mời nâng gói
+    if (code === "PREVIEW_EXPIRED") {
+      setPreviewState({ ...(data.preview || {}), remaining: 0, enabled: true });
+      throw err("PREVIEW_EXPIRED", data.message || "Hết thời gian xem thử.");
+    }
     if (code === "LOGIN_REQUIRED" || code === "PLAN_REQUIRED") throw err(code, data.message || data.error);
     throw err("TOKEN_ERROR", data.message || data.error || `HTTP ${res.status}`);
   }
+
+  // Phiên xem thử: server trả quota còn lại sau mỗi lần cấp token
+  if (data.preview) setPreviewState({ ...data.preview, enabled: true });
 
   const url = data.proxy_url ? `${base}${data.proxy_url}` : "";
   if (!url) throw err("TOKEN_ERROR", "Máy chủ không trả URL phát.");

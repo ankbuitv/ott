@@ -14,6 +14,8 @@ CHRTV là hệ thống ứng dụng xem truyền hình IPTV chuyên nghiệp, ca
 - **Bảo mật & cộng đồng**: rate-limit đăng nhập (sai 5 lần/tài khoản hoặc 20 lần/IP → khoá 15 phút), 2FA TOTP (Google Authenticator), audit log admin, quản lý user (ban/promote/reset password), Watch Party xem chung có chat + reaction (D1 polling), Web Push VAPID, notification center, TMDB proxy cache edge (giấu api_key), PiP/Cast/AirPlay, data saver ≤480p, EPG 7 ngày (quá khứ + tương lai), My List + Tiếp tục xem phim, trang diễn viên & đề xuất phim, share deep link `?channel=ID&party=CODE`.
 - **Mật khẩu tách khỏi `JWT_SECRET`**: hash dùng secret riêng `PASSWORD_PEPPER` (chưa set thì rơi về `JWT_SECRET`), khai báo `LEGACY_JWT_SECRETS`/`LEGACY_PASSWORD_PEPPERS` để hash theo secret cũ vẫn đăng nhập được rồi tự nâng cấp. Xoay `JWT_SECRET` chỉ thu hồi phiên, KHÔNG khoá mật khẩu user. Gõ đúng mật khẩu mà báo sai? Xem `DANG_NHAP_TROUBLESHOOT.md`.
 - **Vận hành kênh**: nút “Báo kênh lỗi” 1 chạm, player tự gửi mã lỗi về server, bộ kiểm tra sức khoẻ luồng chạy nền (không cần cron), trang trạng thái công khai `/status`, tab Admin “Sức khoẻ kênh”.
+- **Quảng cáo pre-roll**: chạy trước khi vào kênh/phim, tối đa 5 lần/giờ — Standard bỏ qua sau 30s, Recreational 10s, Ultimate 5s, Elite & Signature không quảng cáo (`QUANG_CAO_VA_XEM_THU.md`).
+- **Xem thử 5 phút**: gói Standard bấm được mọi kênh nhưng chỉ xem 5 phút/giờ ngoài gói; hết thì còn kênh TH.
 - **Đang hot**: bảng xếp hạng kênh theo 15 phút gần nhất (`/api/stats/trending`).
 - **Mạng yếu / 4G**: tự hạ độ phân giải và báo cho người xem, tắt/bật trong Cài đặt.
 - **Đổi mật khẩu ngay trong app**: Cài đặt → *Đổi mật khẩu* (đo độ mạnh, hiện/ẩn, tuỳ chọn “đăng xuất các thiết bị khác” — thu hồi phiên thật sự vì server đối chiếu bảng `sessions`).

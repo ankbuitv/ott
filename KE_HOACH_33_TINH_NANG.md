@@ -55,7 +55,7 @@ Xếp lại theo **thứ tự thi công** (cái nào sửa đau nhất + rẻ nh
 | 35 | **Gia hạn tự động + nhắc hết hạn** | cron nhắc trước 3 ngày qua email/push, 1 chạm gia hạn | S |
 | 33 | **Mã giới thiệu** | bảng `referrals`, mời bạn → cả hai +7 ngày | S |
 | 36 | **Tặng gói cho bạn bè** | **mua mới được tặng** (đúng ý bro): thanh toán xong mới sinh mã trong `gift_codes` | S |
-| 34 | **Quảng cáo pre-roll cho gói free** | slot ad 5–15s trước khi phát, VIP bỏ qua, đếm impression | M |
+| ~~34~~ | ✅ **Quảng cáo pre-roll** | ĐÃ XONG: slot `preroll`, 5 lần/giờ, skip 30/10/5s theo gói, elite+signature ad-free, kèm **xem thử 5 phút cho Standard** — xem `QUANG_CAO_VA_XEM_THU.md` | ✅ |
 | 38 | **Affiliate cho streamer** | link riêng + bảng hoa hồng, rút tiền thủ công | M |
 
 > ⚠️ Bro **không chọn số 31 (thanh toán tự động VietQR/SePay)**. Không có 31 thì 32/36/38 vẫn phải
@@ -87,7 +87,10 @@ Xếp lại theo **thứ tự thi công** (cái nào sửa đau nhất + rẻ nh
    Các tính năng 2 (nhắc lịch), 35 (nhắc gia hạn), 40 (gợi ý) sẽ dùng chung cơ chế này.
 2. **Thanh toán thủ công** — user chuyển khoản, admin vào duyệt rồi kích hoạt/sinh mã.
    Không làm số 31 (webhook VietQR/SePay). Ảnh hưởng: 32/36/38 đều đi qua bước duyệt tay.
-3. **Quảng cáo (34)** — chưa chốt cách bán chỗ; sẽ hỏi lại khi tới đợt 4.
+3. **Quảng cáo (34)** — ĐÃ LÀM XONG SỚM (bro yêu cầu trực tiếp): pre-roll mỗi lần mở kênh/phim,
+   tối đa 5 lần/giờ; skip 30s (standard) / 10s (recreational) / 5s (ultimate); elite + signature
+   không quảng cáo. Kèm luật **gói Standard xem thử mọi kênh 5 phút/giờ**, hết thì chỉ còn kênh TH.
+   Quảng cáo lấy từ slot `preroll` trong Admin → chưa có creative thì app vào kênh thẳng.
 
 ## Bảng nợ kỹ thuật kèm theo
 

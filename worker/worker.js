@@ -853,6 +853,10 @@ const SCHEMA_STATEMENTS = [
   // Bộ chạy nền KHÔNG dùng cron (Workers Free đã hết 5 trigger): mỗi request có thể
   // "nhận việc" nếu tới hạn — xem runDueJobs().
   `CREATE TABLE IF NOT EXISTS jobs (name TEXT PRIMARY KEY, last_run INTEGER DEFAULT 0, running_until INTEGER DEFAULT 0, cursor TEXT DEFAULT '', last_result TEXT DEFAULT '')`,
+  // ---- Quảng cáo pre-roll (34) + xem thử 5 phút cho gói Standard ----
+  `CREATE TABLE IF NOT EXISTS ad_views (id INTEGER PRIMARY KEY AUTOINCREMENT, user_key TEXT NOT NULL, ad_id INTEGER DEFAULT 0, kind TEXT DEFAULT 'channel', ref_id TEXT DEFAULT '', plan TEXT DEFAULT '', completed INTEGER DEFAULT 0, created_at INTEGER DEFAULT 0)`,
+  `CREATE INDEX IF NOT EXISTS idx_ad_views_key ON ad_views(user_key, created_at)`,
+  `CREATE TABLE IF NOT EXISTS preview_usage (user_key TEXT PRIMARY KEY, window_start INTEGER DEFAULT 0, seconds INTEGER DEFAULT 0, updated_at INTEGER DEFAULT 0)`,
 ];
 
 let schemaReady = false;
@@ -1033,6 +1037,15 @@ async function handleAPI(path, request, env, ctx) {
   if (path === "/api/gifts/redeem") return await handleGiftRedeem(request, env);
   if (path === "/api/payments/config" || path === "/api/payments/order" || path === "/api/payments/claim" || path === "/api/payments/sepay-webhook") return await handlePayments(path, request, env);
   if (path === "/api/ads") return await handleAds(request, env);
+  if (path === "/api/ads/preroll") return await handleAdPreroll(request, env);
+  if (path === "/api/ads/impression" && request.method === "POST") return await handleAdImpression(request, env);
+  if (path === "/api/preview/state") {
+    const a = await getAuth(request, env);
+    if (!a) return json({ error: "LOGIN_REQUIRED" }, 401, request, env);
+    const rank = await planRank(env, a.plan);
+    const st = hasDB(env) ? await previewState(env, await viewerKey(request, env, a)) : { total: 0, used: 0, remaining: 0, resets_in: 0 };
+    return json({ success: true, plan: a.plan, preview_enabled: rank <= 1 && !a.guest, ...st }, 200, request, env);
+  }
   if (path === "/api/predictions") return await handlePredictions(request, env);
   return json({ error: "Not found" }, 404, request, env);
 }
@@ -1641,6 +1654,143 @@ function classifyGroupChrtv(g) {
   if (/(cartoon|\banim\b|\bkids\b|thieu\s*nhi|giai\s*tri)/.test(n)) return "BOX"; // thiếu nhi/giải trí -> BOX
   return "OTHER";
 }
+// ============================================================================
+// QUẢNG CÁO PRE-ROLL (34) + XEM THỬ 5 PHÚT CHO GÓI STANDARD
+//
+// Luật do chủ app chốt:
+//   - elite / signature : KHÔNG quảng cáo
+//   - ultimate          : bỏ qua sau 5 giây
+//   - recreational      : bỏ qua sau 10 giây
+//   - standard / khách  : bỏ qua sau 30 giây
+//   - tối đa 5 lần quảng cáo mỗi giờ cho mỗi người xem
+//   - gói standard xem được MỌI kênh nhưng chỉ 5 phút/giờ; hết thì chỉ còn kênh TH
+// Mọi con số đều chỉnh được bằng biến môi trường (không cần sửa code).
+// ============================================================================
+const AD_SKIP_BY_RANK = { 1: 30, 2: 10, 3: 5, 4: 0, 5: 0 }; // 0 = ad-free
+function adSkipSecondsForRank(rank, env) {
+  const envMap = {
+    1: parseInt((env && env.AD_SKIP_STANDARD) || "", 10),
+    2: parseInt((env && env.AD_SKIP_RECREATIONAL) || "", 10),
+    3: parseInt((env && env.AD_SKIP_ULTIMATE) || "", 10),
+  };
+  const r = Math.max(1, Math.min(5, Number(rank) || 1));
+  const v = envMap[r];
+  return Number.isFinite(v) && v >= 0 ? v : (AD_SKIP_BY_RANK[r] ?? 30);
+}
+function adQuotaPerHour(env) {
+  const n = parseInt((env && env.AD_MAX_PER_HOUR) || "", 10);
+  return Number.isFinite(n) && n >= 0 ? n : 5;
+}
+function previewSeconds(env) {
+  const n = parseInt((env && env.STANDARD_PREVIEW_SECONDS) || "", 10);
+  return Number.isFinite(n) && n >= 0 ? n : 300; // 5 phút
+}
+function previewWindowSec(env) {
+  const n = parseInt((env && env.STANDARD_PREVIEW_WINDOW) || "", 10);
+  return Number.isFinite(n) && n >= 60 ? n : 3600; // mỗi giờ
+}
+// Khoá định danh người xem: user thật -> u<id>, khách -> theo sid (IP+UA)
+async function viewerKey(request, env, auth) {
+  if (auth && auth.user) return "u" + auth.user.id;
+  try { return "g" + (await streamSid(request, env)).slice(0, 24); } catch { return "g0"; }
+}
+
+async function previewState(env, userKey) {
+  const total = previewSeconds(env);
+  const win = previewWindowSec(env);
+  const now = Math.floor(Date.now() / 1000);
+  let used = 0, windowStart = now;
+  try {
+    const { results } = await env.DB.prepare("SELECT window_start, seconds FROM preview_usage WHERE user_key = ?").bind(userKey).all();
+    const row = results && results[0];
+    if (row && now - (row.window_start || 0) < win) { used = row.seconds || 0; windowStart = row.window_start || now; }
+  } catch {}
+  return { total, used: Math.min(used, total), remaining: Math.max(0, total - used), window_start: windowStart, resets_in: Math.max(0, windowStart + win - now) };
+}
+
+async function consumePreview(env, userKey, sec) {
+  const win = previewWindowSec(env);
+  const now = Math.floor(Date.now() / 1000);
+  try {
+    const { results } = await env.DB.prepare("SELECT window_start, seconds FROM preview_usage WHERE user_key = ?").bind(userKey).all();
+    const row = results && results[0];
+    if (!row || now - (row.window_start || 0) >= win) {
+      await env.DB.prepare("INSERT INTO preview_usage (user_key, window_start, seconds, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(user_key) DO UPDATE SET window_start = excluded.window_start, seconds = excluded.seconds, updated_at = excluded.updated_at")
+        .bind(userKey, now, Math.max(0, sec), now).run();
+    } else {
+      await env.DB.prepare("UPDATE preview_usage SET seconds = seconds + ?, updated_at = ? WHERE user_key = ?")
+        .bind(Math.max(0, sec), now, userKey).run();
+    }
+  } catch {}
+}
+
+async function adsShownLastHour(env, userKey) {
+  try {
+    const from = Math.floor(Date.now() / 1000) - 3600;
+    const { results } = await env.DB.prepare("SELECT COUNT(*) AS n FROM ad_views WHERE user_key = ? AND created_at > ?").bind(userKey, from).all();
+    return results?.[0]?.n || 0;
+  } catch { return 0; }
+}
+
+// GET /api/ads/preroll?kind=channel|movie&ref=<id> — client hỏi "có phải xem QC không?"
+async function handleAdPreroll(request, env) {
+  if (!hasDB(env)) return json({ success: true, ad: null, reason: "no-db" }, 200, request, env);
+  await ensureSchema(env);
+  const auth = await getAuth(request, env);
+  const plan = auth ? auth.plan : "standard";
+  const rank = await planRank(env, plan);
+  const skipAfter = adSkipSecondsForRank(rank, env);
+  const quota = adQuotaPerHour(env);
+  const key = await viewerKey(request, env, auth);
+  const base = { success: true, plan, skip_after: skipAfter, quota };
+
+  if (skipAfter === 0) return json({ ...base, ad: null, reason: "ad_free" }, 200, request, env);
+  const shown = await adsShownLastHour(env, key);
+  if (shown >= quota) return json({ ...base, ad: null, reason: "quota_reached", shown }, 200, request, env);
+
+  const q = new URL(request.url).searchParams;
+  const kind = ["channel", "movie", "sport", "short"].includes(q.get("kind") || "") ? q.get("kind") : "channel";
+  const ref = String(q.get("ref") || "").slice(0, 80);
+
+  let ad = null;
+  try {
+    const now = new Date().toISOString().slice(0, 19).replace("T", " ");
+    const { results } = await env.DB.prepare(
+      `SELECT id, title, image_url, link_url, video_url FROM ads
+       WHERE is_active = 1 AND slot = 'preroll'
+         AND (starts_at = '' OR starts_at IS NULL OR starts_at <= ?)
+         AND (ends_at = '' OR ends_at IS NULL OR ends_at >= ?)
+       ORDER BY sort_order ASC, id DESC LIMIT 10`
+    ).bind(now, now).all();
+    const list = results || [];
+    if (list.length) ad = list[Math.floor(Math.random() * list.length)];
+  } catch {}
+  if (!ad) return json({ ...base, ad: null, reason: "no_inventory", shown }, 200, request, env);
+
+  // Đếm ngay khi server phát quảng cáo ra (không tin client báo lại) — đúng "5 lần/giờ".
+  try {
+    await env.DB.prepare("INSERT INTO ad_views (user_key, ad_id, kind, ref_id, plan, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .bind(key, ad.id, kind, ref, plan, Math.floor(Date.now() / 1000)).run();
+  } catch {}
+  return json({ ...base, ad, reason: "show", shown: shown + 1 }, 200, request, env);
+}
+
+// POST /api/ads/impression — client báo đã xem xong/bỏ qua (để thống kê)
+async function handleAdImpression(request, env) {
+  if (!hasDB(env)) return json({ success: true }, 200, request, env);
+  await ensureSchema(env);
+  const b = await request.json().catch(() => ({}));
+  const auth = await getAuth(request, env);
+  const key = await viewerKey(request, env, auth);
+  try {
+    await env.DB.prepare("UPDATE ad_views SET completed = ? WHERE user_key = ? AND ad_id = ? AND id = (SELECT MAX(id) FROM ad_views WHERE user_key = ? AND ad_id = ?)")
+      .bind(b.completed ? 1 : 0, key, parseInt(b.ad_id, 10) || 0, key, parseInt(b.ad_id, 10) || 0).run();
+    await env.DB.prepare("INSERT INTO analytics (event, user_id, channel_id, data) VALUES ('ad_preroll', ?, ?, ?)")
+      .bind(auth && auth.user ? auth.user.id : 0, String(b.ref_id || "").slice(0, 80), JSON.stringify({ ad_id: b.ad_id, completed: !!b.completed, seconds: b.seconds || 0 })).run();
+  } catch {}
+  return json({ success: true }, 200, request, env);
+}
+
 const PLAN_RANK_FALLBACK = { signature: 5, elite: 4, ultimate: 3, recreational: 2, standard: 1, vip: 5 };
 function planAllowsGroupChrtv(plan, g) {
   const rank = PLAN_RANK_FALLBACK[String(plan || "standard").toLowerCase()] || 1;
@@ -1829,8 +1979,26 @@ async function handleStreamToken(request, env) {
   }
 
   // 3) Entitlement PHÍA SERVER theo gói — không tin client (P0-B.2)
+  //    NGOẠI LỆ: gói Standard (rank 1) được XEM THỬ mọi kênh 5 phút mỗi giờ.
+  //    Hết quota thì chỉ còn kênh TH (nhóm VTV/Truyền hình Việt).
+  let previewInfo = null;
   if (channel && !(await planAllowsGroupChrtvAsync(env, auth.plan, channel.group_title))) {
-    return json({ error: "PLAN_REQUIRED", group: channel.group_title, plan: auth.plan }, 403, request, env);
+    const rank = await planRank(env, auth.plan);
+    const canPreview = rank <= 1 && !auth.guest && !isCatchup && previewSeconds(env) > 0;
+    if (!canPreview) {
+      if (auth.guest) return json({ error: "LOGIN_REQUIRED", message: "Đăng nhập để xem thử kênh này 5 phút miễn phí.", group: channel.group_title }, 401, request, env);
+      return json({ error: "PLAN_REQUIRED", group: channel.group_title, plan: auth.plan }, 403, request, env);
+    }
+    const key = await viewerKey(request, env, auth);
+    const st = await previewState(env, key);
+    if (st.remaining <= 0) {
+      return json({
+        error: "PREVIEW_EXPIRED",
+        message: `Hết 5 phút xem thử. Nâng gói để xem tiếp "${channel.name}" — gói Standard vẫn xem thoải mái các kênh TH.`,
+        group: channel.group_title, plan: auth.plan, preview: st,
+      }, 403, request, env);
+    }
+    previewInfo = st;
   }
 
   // 4) Cấp playback token: HMAC, TTL 60s, bind (stream + user + sid)
@@ -1839,6 +2007,10 @@ async function handleStreamToken(request, env) {
   try { base = new URL(targetUrl); } catch { return json({ error: "URL stream không hợp lệ" }, 500, request, env); }
   const dir = base.pathname.replace(/\/[^/]*$/, "") || "/";
   const uid = auth.user ? auth.user.id : 0;
+  // Phiên xem thử: token chỉ sống 60s và mỗi lần cấp là trừ đúng bấy nhiêu giây
+  // vào quota 5 phút -> không cần client thành thật báo cáo thời gian xem.
+  const previewChunk = previewInfo ? Math.min(60, previewInfo.remaining) : 0;
+  const ttl = previewInfo ? previewChunk : manifestTtl(env);
   const payload = {
     k: "manifest",
     u: targetUrl,
@@ -1848,15 +2020,28 @@ async function handleStreamToken(request, env) {
     uid,
     sid: await streamSid(request, env),
     iat: now,
-    exp: now + manifestTtl(env),
+    exp: now + ttl,
   };
+  if (previewInfo) payload.pv = 1; // proxy biết đây là phiên xem thử hợp lệ
   const t = await sealStreamToken(payload, env);
+  let previewOut = null;
+  if (previewInfo) {
+    const key = await viewerKey(request, env, auth);
+    await consumePreview(env, key, previewChunk);
+    previewOut = {
+      total: previewInfo.total,
+      used: Math.min(previewInfo.total, previewInfo.used + previewChunk),
+      remaining: Math.max(0, previewInfo.remaining - previewChunk),
+      resets_in: previewInfo.resets_in,
+    };
+  }
   return json({
     success: true,
     t,
     iat: now, exp: payload.exp,
-    rotate_at: payload.exp - 60, ttl: manifestTtl(env),
+    rotate_at: payload.exp - (previewInfo ? 15 : 60), ttl,
     proxy_url: `/api/stream/proxy?t=${t}`,
+    ...(previewOut ? { preview: previewOut } : {}),
   }, 200, request, env);
 }
 
@@ -1903,7 +2088,7 @@ async function handleStreamProxy(request, env) {
   //    plan tại thời điểm ký, TTL 60s nên không đáng lo)
   const cat = await channelCatalog(env);
   const ch = payload.cid ? (cat ? (cat.byId.get(payload.cid) || null) : null) : channelForUrl(cat, tu);
-  if (auth && ch && !(await planAllowsGroupChrtvAsync(env, auth.plan, ch.group_title))) {
+  if (auth && ch && !payload.pv && !(await planAllowsGroupChrtvAsync(env, auth.plan, ch.group_title))) {
     return streamErr({ error: "PLAN_REQUIRED", group: ch.group_title }, 403, request, env);
   }
 

@@ -22,7 +22,9 @@
  * ============
  */
 
-const SOURCE_M3U_URL = "https://raw.githubusercontent.com/ankbuitv/ott/refs/heads/main/playlists/tv.m3u";
+const SOURCE_M3U_URL = "https://github.com/ankbuitv/mytv/raw/refs/heads/main/playlist.m3u";
+// Nguồn dự phòng khi playlist chính không tải được (repo private/404/rate-limit)
+const SOURCE_M3U_FALLBACK = "https://raw.githubusercontent.com/ankbuitv/ott/refs/heads/main/playlists/tv.m3u";
 const SOURCE_EPG_URL = "https://epg.io.vn/epgc.xml";
 const SOURCE_EPG_URL2 = "https://lichphatsong.io.vn/epgc.xml";
 const SOURCE_EPG_URL3 = "https://epg.pm/vi/epgc.xml";
@@ -70,9 +72,11 @@ const CHRTV_CLIENT_UA = "CHRTV-OTT/0.0.1"; // CHỈ dùng làm phiên bản clie
 const SUPPORT_EMAIL = "support@ankb.qzz.io";
 
 // ---- Playback token: HMAC-SHA256, TTL 60s, tự xoay theo từng request phát ----
-const STREAM_TOKEN_TTL = 300;     // giây — token manifest (playlist) do /api/stream/token cấp.
-                                  // 60s là quá ngắn: player tự tải lại playlist liên tục nên hết
-                                  // hạn giữa chừng = kênh đứng. Client xoay token ở exp-60s.
+// XOAY TOKEN: đúng 5 phút / lần. TTL = 300s (chu kỳ xoay) + 30s dự phòng để client
+// kịp đổi token mà kênh không đứng — client xoay ở mốc exp-30s, tức phút thứ 5.
+const STREAM_TOKEN_ROTATE = 300;  // giây — chu kỳ xoay token phát
+const STREAM_TOKEN_GRACE = 30;    // giây — dư ra cho lần xoay
+const STREAM_TOKEN_TTL = STREAM_TOKEN_ROTATE + STREAM_TOKEN_GRACE;
 const SEGMENT_TOKEN_TTL = 60;     // giây — token segment LIVE (mới mỗi lần tải playlist)
 const SEGMENT_TOKEN_TTL_VOD = 4 * 3600; // giây — playlist VOD/catch-up (#EXT-X-ENDLIST): không
                                   // tải lại playlist nên segment token phải sống hết bộ phim
@@ -85,7 +89,9 @@ function manifestTtl(env) {
 const GUEST_TTL = 2 * 3600;       // JWT guest: 2 giờ
 
 // ---- CORS: chỉ echo Origin nằm trong allowlist (không dùng `*` nữa) ----
-const DEFAULT_CORS_ORIGINS = ["https://play.ankb.qzz.io"];
+// App native Capacitor gửi Origin "https://localhost" (androidScheme=https) hoặc
+// "capacitor://localhost" (iOS) — không có 2 origin này thì APK bị CORS chặn sạch.
+const DEFAULT_CORS_ORIGINS = ["https://play.ankb.qzz.io", "https://localhost", "capacitor://localhost", "http://localhost"];
 function corsAllowedOrigins(env) {
   const raw = (env && env.CORS_ALLOWED_ORIGINS) || "";
   const list = raw.split(",").map((s) => s.trim()).filter(Boolean);
@@ -1064,11 +1070,57 @@ async function handleAPI(path, request, env, ctx) {
 // (#EXTVLCOPT trong M3U) -> mặc định (env UPSTREAM_UA_DEFAULT hoặc Dalvik).
 const UA_DALVIK = "Dalvik/2.1.0 (Linux; U; Android 13; SM-S918B Build/TP1A.220624.014)";
 const UA_CHROME_ANDROID = "Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36";
+const UA_VLC = "VLC/3.0.21 LibVLC/3.0.21";
 function defaultUpstreamUA(env) {
   const v = String((env && env.UPSTREAM_UA_DEFAULT) || "").trim();
   if (!v || v.toLowerCase() === "dalvik") return UA_DALVIK;
+  if (v.toLowerCase() === "vlc") return UA_VLC;
   if (v.toLowerCase() === "chrome") return UA_CHROME_ANDROID;
   return v.slice(0, 300); // cho phép dán nguyên chuỗi UA tuỳ ý
+}
+
+// CHUỖI UA DỰ PHÒNG: nguồn nào chặn Dalvik thì thử lại bằng VLC, cuối cùng Chrome.
+// Trả về danh sách UA theo thứ tự thử, UA ưu tiên đứng đầu và không bị lặp.
+function upstreamUAChain(env, preferred) {
+  const first = String(preferred || "").trim() || defaultUpstreamUA(env);
+  const chain = [first];
+  for (const ua of [UA_DALVIK, UA_VLC, UA_CHROME_ANDROID]) {
+    if (!chain.some((x) => x.toLowerCase() === ua.toLowerCase())) chain.push(ua);
+  }
+  return chain;
+}
+// Status coi như "nguồn không cho xem bằng UA này" -> đáng thử UA khác
+function uaWorthRetry(status) {
+  return status === 401 || status === 403 || status === 404 || status === 405 ||
+         status === 406 || status === 410 || status === 451 || status === 429 ||
+         (status >= 500 && status <= 504);
+}
+// fetch có tự đổi UA khi thất bại. cb(headers) tuỳ biến header mỗi lần thử.
+async function fetchWithUAFallback(url, baseInit, env, preferredUA, timeoutMs) {
+  const chain = upstreamUAChain(env, preferredUA);
+  let last = null;
+  for (let i = 0; i < chain.length; i++) {
+    const headers = Object.assign({}, baseInit.headers || {}, { "User-Agent": chain[i] });
+    try {
+      const r = await fetch(url, Object.assign({}, baseInit, {
+        headers,
+        signal: AbortSignal.timeout(timeoutMs || 9000),
+      }));
+      // 3xx: trả luôn cho caller xử lý redirect (giữ UA đang dùng)
+      if (r.status < 300 || (r.status >= 300 && r.status < 400)) return { resp: r, ua: chain[i] };
+      if (i < chain.length - 1 && uaWorthRetry(r.status)) {
+        try { r.body && r.body.cancel && r.body.cancel(); } catch {}
+        last = null;
+        continue;
+      }
+      return { resp: r, ua: chain[i] };
+    } catch (e) {
+      last = e;
+      if (i < chain.length - 1) continue;
+    }
+  }
+  if (last) throw last;
+  return { resp: null, ua: chain[0] };
 }
 
 function streamUrlIsPublic(env) {
@@ -1365,6 +1417,15 @@ function proxyAllowedHosts(env) {
   return list.length ? list : PROXY_ALLOWED_HOSTS_DEFAULT;
 }
 
+// MỞ WHITELIST: mặc định cho proxy MỌI domain public (link nào cũng xem được).
+// Vẫn giữ nguyên các lớp chống lạm dụng: chỉ http/https, chặn IP nội bộ/reserved
+// (SSRF), chặn localhost/.local/.internal, rate-limit theo IP và anti-tool cho .m3u8.
+// Muốn siết lại thì đặt biến môi trường PROXY_ALLOW_ALL = "0".
+function proxyAllowAll(env) {
+  const v = String((env && env.PROXY_ALLOW_ALL) != null ? env.PROXY_ALLOW_ALL : "1").trim().toLowerCase();
+  return !(v === "0" || v === "false" || v === "off" || v === "no");
+}
+
 function isPrivateOrReservedIP(ip) {
   const v = String(ip || "").toLowerCase();
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(v)) {
@@ -1419,7 +1480,13 @@ function validateProxyTarget(rawUrl, env) {
   try { u = new URL(String(rawUrl || "")); } catch { return { ok: false, error: "URL không hợp lệ", code: "BAD_URL" }; }
   if (u.protocol !== "http:" && u.protocol !== "https:") return { ok: false, error: "Chỉ cho phép http/https", code: "BAD_SCHEME" };
   if (isPrivateOrReservedIP(u.hostname)) return { ok: false, error: "Chặn IP nội bộ/reserved (SSRF)", code: "SSRF_BLOCKED" };
-  if (!hostPortAllowed(u, proxyAllowedHosts(env))) return { ok: false, error: "Domain không trong danh sách whitelist", code: "NOT_ALLOWED" };
+  const h = u.hostname.toLowerCase();
+  if (!h || h === "localhost" || h.endsWith(".local") || h.endsWith(".internal")) {
+    return { ok: false, error: "Chặn host nội bộ", code: "SSRF_BLOCKED" };
+  }
+  if (!proxyAllowAll(env) && !hostPortAllowed(u, proxyAllowedHosts(env))) {
+    return { ok: false, error: "Domain không trong danh sách whitelist", code: "NOT_ALLOWED" };
+  }
   return { ok: true, url: u };
 }
 
@@ -1483,15 +1550,19 @@ async function handleProxy(request, env) {
     redirect: "manual",
   };
 
-  // Theo dõi redirect manual — mọi hop phải vẫn trong whitelist
+  // Theo dõi redirect manual — mọi hop vẫn phải qua validateProxyTarget
   let resp = null;
   try {
     for (let hop = 0; hop < 3; hop++) {
-      resp = await fetch(target.toString(), fetchOpts);
-      if (resp.status >= 300 && resp.status < 400) {
+      // Đổi UA tự động khi nguồn chặn: Dalvik -> VLC -> Chrome
+      const r = await fetchWithUAFallback(target.toString(), fetchOpts, env, proxyUA, 8000);
+      resp = r.resp;
+      proxyUA = r.ua;
+      fetchOpts.headers["User-Agent"] = r.ua;
+      if (resp && resp.status >= 300 && resp.status < 400) {
         const loc = resp.headers.get("Location");
         const next = loc ? validateProxyTarget(new URL(loc, target.toString()).toString(), env) : null;
-        if (!next || !next.ok) { resp.body && resp.body.cancel && resp.body.cancel().catch(() => {}); return json({ error: "Redirect ra ngoài whitelist bị chặn", code: "REDIRECT_BLOCKED" }, 403, request, env); }
+        if (!next || !next.ok) { resp.body && resp.body.cancel && resp.body.cancel().catch(() => {}); return json({ error: "Redirect tới địa chỉ không hợp lệ", code: "REDIRECT_BLOCKED" }, 403, request, env); }
         target = next.url;
         continue;
       }
@@ -2053,7 +2124,7 @@ async function handleStreamToken(request, env) {
     success: true,
     t,
     iat: now, exp: payload.exp,
-    rotate_at: payload.exp - (previewInfo ? 15 : 60), ttl,
+    rotate_at: payload.exp - (previewInfo ? 15 : STREAM_TOKEN_GRACE), ttl,
     proxy_url: `/api/stream/proxy?t=${t}`,
     ...(previewOut ? { preview: previewOut } : {}),
   }, 200, request, env);
@@ -2130,13 +2201,20 @@ async function handleStreamProxy(request, env) {
   if (range) upstreamHeaders["Range"] = range;
   let resp;
   try {
-    resp = await fetch(upstreamUrl, { headers: upstreamHeaders, signal: AbortSignal.timeout(9000), redirect: "manual" });
-    if (resp.status >= 300 && resp.status < 400) {
+    // Nguồn chặn UA nào thì tự nhảy sang UA kế: Dalvik -> VLC -> Chrome
+    const r1 = await fetchWithUAFallback(upstreamUrl, { headers: upstreamHeaders, redirect: "manual" }, env, upstreamUA, 9000);
+    resp = r1.resp;
+    upstreamUA = r1.ua;
+    upstreamHeaders["User-Agent"] = r1.ua;
+    if (resp && resp.status >= 300 && resp.status < 400) {
       const loc = resp.headers.get("Location");
       const next = loc ? new URL(loc, upstreamUrl) : null;
       if (!next || next.origin !== target.origin) return streamErr({ error: "REDIRECT_BLOCKED" }, 403, request, env);
-      resp = await fetch(next.toString(), { headers: upstreamHeaders, signal: AbortSignal.timeout(9000), redirect: "manual" });
+      const r2 = await fetchWithUAFallback(next.toString(), { headers: upstreamHeaders, redirect: "manual" }, env, upstreamUA, 9000);
+      resp = r2.resp;
+      upstreamHeaders["User-Agent"] = r2.ua;
     }
+    if (!resp) return json({ error: "Stream unavailable" }, 502, request, env);
   } catch {
     return json({ error: "Stream unavailable" }, 502, request, env);
   }
@@ -4036,18 +4114,38 @@ async function writeChannels(env, list) {
 
 // Tải danh sách kênh từ playlist M3U gốc, fallback danh sách mặc định
 async function loadChannelsFromSource(env) {
-  // Nguồn M3U có thể đổi sang link RIÊNG TƯ bằng secret M3U_SOURCE_URL
-  // (mặc định là file public trên GitHub — ai cũng tải được toàn bộ link gốc).
-  const src = (env && env.M3U_SOURCE_URL) || SOURCE_M3U_URL;
-  try {
-    const resp = await fetch(src, { headers: { "User-Agent": "CHRTV-OTT/2.0" }, signal: AbortSignal.timeout(8000) });
-    if (resp.ok) {
-      const parsed = parseM3U(await resp.text());
-      if (parsed.length > 0) return parsed;
-    } else {
-      console.error(`[playlist] source returned ${resp.status}`);
-    }
-  } catch (e) { console.error("loadChannelsFromSource error:", e?.message || e); }
+  // Thứ tự nguồn M3U: secret M3U_SOURCE_URL -> playlist mặc định (ankbuitv/mytv)
+  // -> nguồn dự phòng cũ. Repo nguồn nếu để PRIVATE thì phải dùng link raw kèm
+  // token (đặt bằng `wrangler secret put M3U_SOURCE_URL`), nếu không sẽ 404.
+  // Muốn thêm nhiều nguồn: M3U_SOURCE_URLS = "url1,url2,..." (thử lần lượt).
+  const list = [];
+  const multi = String((env && env.M3U_SOURCE_URLS) || "").split(",").map((x) => x.trim()).filter(Boolean);
+  if (env && env.M3U_SOURCE_URL) list.push(String(env.M3U_SOURCE_URL));
+  list.push(...multi, SOURCE_M3U_URL, SOURCE_M3U_FALLBACK);
+
+  const seen = new Set();
+  for (const src of list) {
+    if (!src || seen.has(src)) continue;
+    seen.add(src);
+    try {
+      const resp = await fetch(src, {
+        headers: {
+          "User-Agent": "CHRTV-OTT/2.0",
+          // Repo private: cho phép kèm token đọc (secret GITHUB_RAW_TOKEN)
+          ...(env && env.GITHUB_RAW_TOKEN && /github/i.test(src) ? { "Authorization": "Bearer " + env.GITHUB_RAW_TOKEN } : {}),
+        },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!resp.ok) { console.error(`[playlist] ${src} -> ${resp.status}`); continue; }
+      const text = await resp.text();
+      const parsed = parseM3U(text);
+      if (parsed.length > 0) {
+        console.error(`[playlist] nạp ${parsed.length} kênh từ ${src}`);
+        return parsed;
+      }
+      console.error(`[playlist] ${src} trả về nội dung không phải M3U hợp lệ`);
+    } catch (e) { console.error("loadChannelsFromSource error:", src, e?.message || e); }
+  }
   return DEFAULT_CHANNELS;
 }
 

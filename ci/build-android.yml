@@ -105,8 +105,8 @@ jobs:
       - name: Rename outputs
         run: |
           mkdir -p out
-          cp android/app/build/outputs/apk/release/app-release.apk out/CHRTV-PLAY-release.apk 2>/dev/null || true
-          cp android/app/build/outputs/apk/debug/app-debug.apk out/CHRTV-PLAY-debug.apk 2>/dev/null || true
+          cp android/app/build/outputs/apk/release/app-release.apk out/CHRTV-PLAY-1.0.0-beta-release.apk 2>/dev/null || true
+          cp android/app/build/outputs/apk/debug/app-debug.apk out/CHRTV-PLAY-1.0.0-beta-debug.apk 2>/dev/null || true
           cp android/app/build/outputs/bundle/release/app-release.aab out/CHRTV-PLAY.aab 2>/dev/null || true
           ls -lh out
 

@@ -1,4 +1,4 @@
-package com.chrtv.app;
+package com.chrtvplay.app;
 
 import com.getcapacitor.BridgeActivity;
 

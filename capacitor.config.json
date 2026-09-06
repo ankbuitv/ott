@@ -1,6 +1,6 @@
 {
-  "appId": "com.chrtv.app",
-  "appName": "CHRTV",
+  "appId": "com.chrtvplay.app",
+  "appName": "CHRTV PL▷Y",
   "webDir": "dist",
   "bundledWebRuntime": false,
   "server": {

@@ -442,7 +442,7 @@ export default function SettingsPage({ onClose }) {
           <div className="flex items-center justify-between py-2">
             <div className="min-w-0 pr-3">
               <p className="text-xs font-medium text-slate-200">Trình duyệt giả lập khi lấy luồng (UA)</p>
-              <p className="text-[10px] text-slate-500">Nguồn IPTV Việt thường chỉ nhận UA app Android. Kênh nào lỗi 403 thì đổi thử Chrome.</p>
+              <p className="text-[10px] text-slate-500">Máy chủ tự thử lần lượt Dalvik → VLC → Chrome nếu nguồn chặn, nên hầu như không phải chỉnh. Đây là UA thử ĐẦU TIÊN.</p>
             </div>
             <select
               value={settings.upstreamUA || 'dalvik'}
@@ -450,6 +450,7 @@ export default function SettingsPage({ onClose }) {
               className="bg-slate-800 text-xs text-slate-200 px-3 py-2 rounded-lg border border-slate-700 shrink-0"
             >
               <option value="dalvik">Dalvik (mặc định)</option>
+              <option value="vlc">VLC</option>
               <option value="chrome">Chrome Android</option>
               <option value="auto">Theo từng kênh</option>
             </select>
@@ -853,7 +854,7 @@ export default function SettingsPage({ onClose }) {
           <h3 className="text-sm font-bold text-white flex items-center gap-2"><Info className="w-4 h-4 text-slate-400" /> {t('settings.about')}</h3>
           <div className="flex items-center justify-between text-xs">
             <span className="text-slate-400">{t('settings.version')}</span>
-            <span className="text-slate-200 font-bold">CHRTV PLAY 2.0</span>
+            <span className="text-slate-200 font-bold">CHRTV PL▷Y 1.0.0 beta</span>
           </div>
           {/* ===== Thiết bị đang dùng ===== */}
           <div className="rounded-xl border border-white/[0.06] bg-black/30 divide-y divide-white/[0.05] overflow-hidden">

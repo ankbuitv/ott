@@ -120,9 +120,11 @@ else
 fi
 
 echo ""
-echo "[5] P1: /api/proxy — open proxy đã khoá"
-CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -A "$UA" "$BASE/api/proxy?url=https%3A%2F%2Fexample.com%2F")
-check_eq "proxy example.com" "403" "$CODE"
+echo "[5] P1: /api/proxy — mở whitelist domain public, vẫn chặn SSRF"
+# Từ bản này proxy CHO PHÉP mọi domain public (PROXY_ALLOW_ALL=1 mặc định):
+# domain lạ không còn bị 403 NOT_ALLOWED nữa, chỉ fail khi nguồn không phát được.
+BODY=$(curl -s --max-time 20 -A "$UA" "$BASE/api/proxy?url=https%3A%2F%2Fexample.com%2F")
+if printf '%s' "$BODY" | grep -q 'NOT_ALLOWED'; then bad "domain public vẫn bị whitelist chặn: $BODY"; else ok "domain public được proxy (không còn NOT_ALLOWED)"; fi
 CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -A "$UA" "$BASE/api/proxy?url=http%3A%2F%2F169.254.169.254%2F")
 check_eq "proxy metadata IP 169.254.169.254" "403" "$CODE"
 CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -A "$UA" "$BASE/api/proxy?url=http%3A%2F%2F127.0.0.1%2F")
@@ -199,7 +201,8 @@ if [ -n "$GTOKEN" ] && [ -n "$CH_VN" ]; then
   [ -n "$T" ] && ok "nhận stream token (ttl=${TTL}s)" || bad "không nhận stream token: $ST"
   # TTL manifest = 300s (mặc định): 60s làm player đứt giữa chừng. Token vẫn bind
   # user + IP/UA (sid) nên copy sang máy/tool khác là chết ngay -> 300s an toàn.
-  check_le "TTL token ≤ 300s" 300 "${TTL:-999}"
+  # Token xoay đúng 5 phút/lần: TTL = 300s + 30s dự phòng cho lần xoay
+  check_le "TTL token ≤ 330s (xoay 5 phút/lần)" 330 "${TTL:-999}"
   # scope: token của kênh này KHÔNG được dùng cho URL thư mục khác (chọn kênh khác cùng origin nếu có, không thì skip)
 fi
 

@@ -26,6 +26,7 @@ export const CHRTV_CLIENT_UA = "CHRTV-OTT/0.0.1";
 // hay bị chặn 403. Mặc định app dùng DALVIK cho tất cả kênh; đổi trong Cài đặt.
 export const UA_DALVIK = "Dalvik/2.1.0 (Linux; U; Android 13; SM-S918B Build/TP1A.220624.014)";
 export const UA_CHROME_ANDROID = "Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36";
+export const UA_VLC = "VLC/3.0.21 LibVLC/3.0.21";
 
 function uaModeSetting() {
   try {
@@ -38,6 +39,7 @@ function uaModeSetting() {
 export function upstreamUAFor(channel) {
   const mode = uaModeSetting();
   if (mode === "chrome") return UA_CHROME_ANDROID;
+  if (mode === "vlc") return UA_VLC;
   if (mode === "dalvik") return UA_DALVIK;
   const own = channel && (channel.user_agent || channel.userAgent);
   return own || UA_DALVIK;

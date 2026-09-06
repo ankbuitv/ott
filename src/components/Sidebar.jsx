@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useProfile } from '../contexts/ProfileContext';
 import { useI18n } from '../contexts/I18nContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -13,6 +13,7 @@ function TvIcon() { return <svg className="w-5 h-5" fill="none" stroke="currentC
 function SportsIcon() { return <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7l2.5 1.8-1 2.9h-3l-1-2.9z" fill="currentColor" stroke="none"/><path d="M12 3v4M5.5 8.5l3.5 2M18.5 8.5l-3.5 2M7 20l1.5-3.5M17 20l-1.5-3.5"/></svg>; }
 function ShortsIcon() { return <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><rect x="6" y="2.5" width="12" height="19" rx="3"/><path d="M10.5 9.5v5l4.5-2.5z" fill="currentColor" stroke="none"/></svg>; }
 function UsersIcon() { return <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>; }
+function MoreIcon() { return <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>; }
 function SettingsIcon() { return <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>; }
 
 export default function Sidebar({ activeTab, setActiveTab, onShowSettings, onShowAdmin }) {
@@ -20,6 +21,7 @@ export default function Sidebar({ activeTab, setActiveTab, onShowSettings, onSho
   const { t } = useI18n();
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
+  const [sheet, setSheet] = useState(false);   // bảng "Thêm" trên điện thoại
 
   // Tạo navItems bên trong component để dùng được t()
   const navItems = [
@@ -31,6 +33,10 @@ export default function Sidebar({ activeTab, setActiveTab, onShowSettings, onSho
     { id: 'shorts', label: t('nav.shortcuts').toUpperCase(), icon: ShortsIcon },
     { id: 'community', label: t('nav.community').toUpperCase(), icon: UsersIcon },
   ];
+
+  // Điện thoại: 4 tab chính + nút "Thêm" (các tab còn lại, Cài đặt, Quản trị)
+  const mainItems = navItems.filter((i) => ['channels', 'tv', 'movies', 'epg'].includes(i.id));
+  const moreItems = navItems.filter((i) => !mainItems.includes(i));
 
   return (
     <>
@@ -81,25 +87,105 @@ export default function Sidebar({ activeTab, setActiveTab, onShowSettings, onSho
         )}
       </aside>
 
-      {/* Mobile Bottom Bar */}
-      <div className="mobile-tabbar md:hidden fixed bottom-0 inset-x-0 z-50 bg-[#0d0d10]/95 backdrop-blur border-t border-[#1a1a1e] px-4 py-2.5">
-        <div className="flex items-center justify-around">
-          {navItems.slice(0, 5).map((item) => {
+      {/* ===== Mobile: bảng "Thêm" (chứa các tab phụ + Cài đặt + Quản trị) ===== */}
+      {sheet && (
+        <div className="md:hidden fixed inset-0 z-[70]" onClick={() => setSheet(false)}>
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm anim-fade" />
+          <div
+            className="mobile-sheet absolute inset-x-0 bottom-0 bg-[#0f1116] border-t border-white/10 rounded-t-3xl p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-10 h-1 rounded-full bg-white/20 mx-auto mb-4" />
+            <div className="grid grid-cols-4 gap-3">
+              {moreItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => { setActiveTab(item.id); setSheet(false); }}
+                    className={`flex flex-col items-center justify-center gap-1.5 py-3.5 rounded-2xl border transition-all ${
+                      isActive ? 'grad-brand text-white border-transparent' : 'bg-white/[0.04] border-white/5 text-stone-300 active:bg-white/10'
+                    }`}
+                  >
+                    <Icon />
+                    <span className="text-[9px] font-bold tracking-tight">{item.label}</span>
+                  </button>
+                );
+              })}
+
+              {onShowSettings && (
+                <button
+                  onClick={() => { onShowSettings(); setSheet(false); }}
+                  className="flex flex-col items-center justify-center gap-1.5 py-3.5 rounded-2xl bg-white/[0.04] border border-white/5 text-stone-300 active:bg-white/10"
+                >
+                  <span className="w-5 h-5 flex items-center justify-center"><SettingsIcon /></span>
+                  <span className="text-[9px] font-bold tracking-tight">{(t('nav.settings') || 'CÀI ĐẶT').toUpperCase()}</span>
+                </button>
+              )}
+
+              {onShowAdmin && isAdmin && (
+                <button
+                  onClick={() => { onShowAdmin(); setSheet(false); }}
+                  className="flex flex-col items-center justify-center gap-1.5 py-3.5 rounded-2xl bg-white/[0.04] border border-white/5 text-stone-300 active:bg-white/10"
+                >
+                  <span className="text-lg leading-none">🛠️</span>
+                  <span className="text-[9px] font-bold tracking-tight">{(t('nav.admin') || 'QUẢN TRỊ').toUpperCase()}</span>
+                </button>
+              )}
+            </div>
+
+            {currentProfile && (
+              <div className="flex items-center gap-3 mt-4 pt-4 border-t border-white/5">
+                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-amber-500 to-[#f36f21] flex items-center justify-center font-bold text-white text-xs">
+                  {currentProfile.name[0].toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-white truncate">{currentProfile.name}</p>
+                  <p className="text-[10px] text-stone-500 truncate">{user?.email || 'Khách'}</p>
+                </div>
+              </div>
+            )}
+            <button
+              onClick={() => setSheet(false)}
+              className="w-full mt-4 py-3 rounded-2xl bg-white/[0.06] text-xs font-bold text-stone-300 active:bg-white/10"
+            >
+              Đóng
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ===== Mobile Bottom Bar ===== */}
+      <div className="mobile-tabbar md:hidden fixed bottom-0 inset-x-0 z-50 bg-[#0b0c10]/90 backdrop-blur-xl border-t border-white/[0.07] px-2 pt-1.5">
+        <div className="flex items-stretch justify-around">
+          {mainItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
             return (
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
-                className={`flex flex-col items-center gap-0.5 rounded-xl px-2 py-1 transition-colors ${
-                  isActive ? 'text-white bg-white/[0.06]' : 'text-stone-500 active:bg-white/5'
+                className={`relative flex flex-col items-center gap-1 rounded-xl px-2 py-1.5 transition-colors ${
+                  isActive ? 'text-white' : 'text-stone-500 active:text-stone-300'
                 }`}
               >
+                {isActive && <span className="absolute -top-1.5 w-8 h-[3px] rounded-full grad-brand" />}
                 <Icon />
-                <span className="text-[9px] mt-0.5">{item.label.split(' ')[0]}</span>
+                <span className="text-[9px] font-semibold tracking-tight">{item.label.split(' ')[0]}</span>
               </button>
             );
           })}
+          <button
+            onClick={() => setSheet(true)}
+            className={`relative flex flex-col items-center gap-1 rounded-xl px-2 py-1.5 transition-colors ${
+              sheet || moreItems.some((m) => m.id === activeTab) ? 'text-white' : 'text-stone-500 active:text-stone-300'
+            }`}
+          >
+            {moreItems.some((m) => m.id === activeTab) && <span className="absolute -top-1.5 w-8 h-[3px] rounded-full grad-brand" />}
+            <MoreIcon />
+            <span className="text-[9px] font-semibold tracking-tight">THÊM</span>
+          </button>
         </div>
       </div>
     </>

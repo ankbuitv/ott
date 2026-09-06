@@ -8,8 +8,7 @@ import { MovieAPI, imgPath } from '../services/tmdb';
 import { API_BASE } from '../services/config';
 import { enablePush, disablePush, isPushEnabled } from '../services/push';
 import { planByCode } from '../services/plans';
-
-const APK_URL = 'https://github.com/ankbuitv/ott/releases/latest';
+import DownloadAppModal from './DownloadAppModal';
 
 function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, setActiveTab, activeTab, onSelectChannel, onSelectMovie, onShowAuth, onShowSettings, profiles = [], onSelectProfile, onManageProfiles }) {
   const { isAuthenticated, logout, effectivePlan } = useAuth();
@@ -32,6 +31,7 @@ function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, s
   const [voiceMsg, setVoiceMsg] = useState('');
   const [mobileSearch, setMobileSearch] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
+  const [apkOpen, setApkOpen] = useState(false);
   const userRef = useRef(null);
   const searchInputRef = useRef(null);
   const planMeta = planByCode(effectivePlan);
@@ -288,16 +288,15 @@ function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, s
             </div>
           )}
         </div>
-        <a
-          href={APK_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="hidden sm:flex items-center gap-1.5 px-2.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-[11px] font-bold text-stone-200 transition"
+        <button
+          type="button"
+          onClick={() => setApkOpen(true)}
+          className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-[11px] font-bold text-stone-200 transition"
           title={t('nav.download_app')}
         >
           <Smartphone className="w-4 h-4 text-[#ff9a3d]" />
           <span className="hidden lg:inline">{t('nav.download_app')}</span>
-        </a>
+        </button>
         <button
           onClick={() => setActiveTab && setActiveTab('plans')}
           className={`hidden md:flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-black transition ${hasPaidPlan ? 'bg-white/5 hover:bg-white/10 text-amber-200 border border-amber-400/30' : 'grad-brand text-white shadow-lg shadow-[#f36f21]/25'}`}
@@ -363,6 +362,7 @@ function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, s
           <button onClick={() => { if (onShowAuth) onShowAuth(); else if (setActiveTab) setActiveTab('movies'); }} className="px-4 py-2 bg-white text-black text-sm font-bold rounded-xl hover:bg-stone-200 transition">{t('nav.login')}</button>
         )}
       </div>
+      {apkOpen && <DownloadAppModal onClose={() => setApkOpen(false)} />}
     </nav>
   );
 }

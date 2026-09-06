@@ -337,6 +337,19 @@ html.tvmode .tv-focused {
 .splash-logo { animation: splashGlow 1.4s ease-in-out infinite; }
 .splash-bar { animation: splashBar 1.55s cubic-bezier(.22,.8,.36,1) both; }
 
+@keyframes apkPhoneIn {
+  0% { opacity: 0; transform: translateY(28px) rotate(-8deg) scale(.88); }
+  70% { opacity: 1; transform: translateY(-6px) rotate(1.5deg) scale(1.03); }
+  100% { opacity: 1; transform: translateY(0) rotate(0) scale(1); }
+}
+@keyframes apkIconPop {
+  0% { opacity: 0; transform: scale(.4) translateY(-18px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+.apk-phone { animation: apkPhoneIn .7s cubic-bezier(.22,1.2,.36,1) both; }
+.apk-icon { animation: apkIconPop .45s .35s cubic-bezier(.22,1.3,.36,1) both; }
+.apk-bar { transition: width .08s linear; }
+
 /* ===== POLISH v1.0.0-beta: mượt & sạch hơn ===== */
 @keyframes sheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 .mobile-sheet { animation: sheetUp .28s cubic-bezier(.22,.9,.3,1) both; }

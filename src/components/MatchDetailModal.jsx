@@ -36,7 +36,7 @@ function speakVi(text) {
   } catch {}
 }
 
-export default function MatchDetailModal({ ev, leagueName = '', onClose }) {
+export default function MatchDetailModal({ ev, leagueName = '', onClose, onTeam }) {
   const { t, lang } = useI18n();
   const { addToast } = useToast();
   const { isAuthenticated } = useAuth();
@@ -139,8 +139,8 @@ export default function MatchDetailModal({ ev, leagueName = '', onClose }) {
             <button onClick={onClose} className="p-1.5 rounded-full hover:bg-white/10 -mt-1 -mr-1"><X className="w-4 h-4 text-slate-400" /></button>
           </div>
           <div className="flex items-center justify-between gap-3 mt-2">
-            <div className="flex-1 text-center">
-              <p className="text-[13px] font-extrabold text-white leading-tight">{detail.strHomeTeam}</p>
+            <div className="flex-1 text-center min-w-0">
+              <button type="button" onClick={() => onTeam && onTeam(detail.strHomeTeam)} className="text-[13px] font-extrabold text-white leading-tight break-words hover:text-[#ffb37a]">{detail.strHomeTeam}</button>
             </div>
             <div className="text-center shrink-0">
               <p className="text-[28px] font-black tabular-nums leading-none">{detail.intHomeScore ?? '-'}<span className="text-stone-600 mx-1.5">:</span>{detail.intAwayScore ?? '-'}</p>

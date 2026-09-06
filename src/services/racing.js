@@ -113,6 +113,51 @@ export function bustEventDetail(idEvent) {
   mem.delete(`evdetail_${idEvent}`);
 }
 
+function youtubeIdFrom(str) {
+  const s = String(str || '').trim();
+  if (!s) return '';
+  const m = s.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|v=)([A-Za-z0-9_-]{11})/) || s.match(/^([A-Za-z0-9_-]{11})$/);
+  return m ? m[1] : '';
+}
+
+// Highlight đua xe: TheSportsDB strVideo + video admin gắn nhãn F1/Moto
+export function fetchRacingVideos(year = f1Season()) {
+  return cached(`race_vids_${year}`, async () => {
+    const out = [];
+    const seen = new Set();
+    const push = (item) => {
+      if (!item?.video_url || seen.has(item.video_url)) return;
+      seen.add(item.video_url);
+      out.push(item);
+    };
+    try {
+      const moto = await fetchMotorsport(year);
+      for (const pack of moto || []) {
+        for (const ev of pack.events || []) {
+          const yt = youtubeIdFrom(ev.strVideo);
+          if (!yt) continue;
+          push({
+            id: ev.idEvent || yt,
+            title: ev.strEvent || ev.strHomeTeam || pack.league,
+            league: pack.league,
+            thumb_url: ev.strThumb || `https://img.youtube.com/vi/${yt}/mqdefault.jpg`,
+            video_url: `https://www.youtube.com/watch?v=${yt}`,
+          });
+        }
+      }
+    } catch {}
+    try {
+      const r = await fetch(`${API_BASE}/api/sports-videos`);
+      const d = await r.json();
+      for (const v of d.videos || []) {
+        if (!/f1|formula|moto|rally|nascar|indycar|wrc|dtm|endurance|đua|dua xe|racing/i.test(`${v.league || ''} ${v.title || ''}`)) continue;
+        push(v);
+      }
+    } catch {}
+    return out.slice(0, 16);
+  });
+}
+
 // Parse "23':Haaland;45+2':Foden" -> [{ min: 23, label, player }]
 function parseDetails(str) {
   if (!str || typeof str !== 'string') return [];

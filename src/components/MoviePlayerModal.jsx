@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { X, RefreshCw, ExternalLink, AlertTriangle, ChevronLeft, ChevronRight, Play, Shield, ShieldOff, SkipForward, Sparkles } from 'lucide-react';
-import { buildEmbedSources, openExternalSearch } from '../services/embeds';
+import { X, RefreshCw, AlertTriangle, ChevronLeft, ChevronRight, Play, Shield, ShieldOff, SkipForward, Sparkles } from 'lucide-react';
+import { buildEmbedSources } from '../services/embeds';
 import { imgPath } from '../services/tmdb';
 import { recordMovieProgress, getMovieProgress, fmtWatchSec } from '../services/movieList';
 import { sendBeat } from '../services/social';
@@ -253,25 +253,16 @@ export default function MoviePlayerModal({ movie, onClose }) {
               <p className="text-[12px] text-stone-400 mb-4 leading-relaxed">
                 Nguồn này có thể đang lỗi hoặc hết phim.
                 {adBlock
-                  ? ' Nếu server báo "please disable sandbox" hoặc không phát, hãy tắt "Chặn QC" ở trên.'
-                  : ' Thử chuyển server khác bên dưới, hoặc "Mở tab mới" để xem trực tiếp trên trang nguồn.'}
+                  ? ' Nếu không phát được, hãy tắt "Chặn QC" ở trên rồi thử lại trong app.'
+                  : ' Thử chuyển server khác bên dưới — phim chỉ phát trong CHRTV PLAY.'}
               </p>
               <div className="grid grid-cols-2 gap-2">
                 <button onClick={nextSource} className="col-span-2 py-2.5 grad-brand text-white text-[13px] font-black rounded-2xl flex items-center justify-center gap-1.5 active:scale-[0.98]">
                   <SkipForward className="w-4 h-4" /> Server kế tiếp
                 </button>
-                <button onClick={reload} className="py-2.5 bg-white/[0.07] hover:bg-white/[0.13] text-white text-[12px] font-bold rounded-2xl flex items-center justify-center gap-1.5">
-                  <RefreshCw className="w-3.5 h-3.5" /> Tải lại
+                <button onClick={reload} className="col-span-2 py-2.5 bg-white/[0.07] hover:bg-white/[0.13] text-white text-[12px] font-bold rounded-2xl flex items-center justify-center gap-1.5">
+                  <RefreshCw className="w-3.5 h-3.5" /> Tải lại trong app
                 </button>
-                {current?.url ? (
-                  <a href={current.url} target="_blank" rel="noopener noreferrer" className="py-2.5 bg-white/[0.07] hover:bg-white/[0.13] text-white text-[12px] font-bold rounded-2xl flex items-center justify-center gap-1.5">
-                    <ExternalLink className="w-3.5 h-3.5" /> Mở tab mới
-                  </a>
-                ) : (
-                  <button onClick={() => openExternalSearch(movie)} className="py-2.5 bg-white/[0.07] hover:bg-white/[0.13] text-white text-[12px] font-bold rounded-2xl flex items-center justify-center gap-1.5">
-                    <ExternalLink className="w-3.5 h-3.5" /> Tìm nguồn khác
-                  </button>
-                )}
               </div>
             </div>
           </div>

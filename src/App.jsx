@@ -13,6 +13,7 @@ import { planAllows, rankOf } from './services/plans';
 import PrerollAd from './components/PrerollAd';
 import { fetchPreroll, loadPreviewState, subscribePreview, getPreviewState, fmtPreview } from './services/ads';
 import { setPrerollHandler, runPreroll } from './services/prerollGate';
+import Logo from './components/Logo';
 import TopNav from './components/TopNav';
 import VideoPlayer from './components/VideoPlayer';
 import EpgGridTimeline from './components/EpgGridTimeline';
@@ -61,7 +62,7 @@ function AppContent() {
   const { settings } = useSettings();
   const { addToast } = useToast();
   const { user, isAuthenticated, token, effectivePlan } = useAuth();
-  const { currentProfile, logoutProfile } = useProfile();
+  const { currentProfile, logoutProfile, profiles, fetchProfiles, selectProfile } = useProfile();
   const { hasPicked, resetPicker, t, lang } = useI18n();
   const guestMode = !isAuthenticated || !user;
   const effUser = guestMode ? GUEST_USER : user;
@@ -84,6 +85,18 @@ function AppContent() {
     if (planAllows(plan, groupTitle)) return true;
     return !guestMode && rankOf(plan) <= 1 && preview.enabled && preview.remaining > 0;
   }, [guestMode, preview.enabled, preview.remaining]);
+  const [splash, setSplash] = useState(() => {
+    try { return sessionStorage.getItem('chrtv_splash') !== '1'; } catch { return true; }
+  });
+  useEffect(() => {
+    if (!splash) return;
+    const tmr = setTimeout(() => {
+      setSplash(false);
+      try { sessionStorage.setItem('chrtv_splash', '1'); } catch {}
+    }, 1700);
+    return () => clearTimeout(tmr);
+  }, [splash]);
+  useEffect(() => { if (token) fetchProfiles(token); }, [token, fetchProfiles]);
   const [showLangPicker, setShowLangPicker] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
   const [movieToOpen, setMovieToOpen] = useState(null); // phim được chọn từ TopNav search
@@ -541,35 +554,20 @@ function AppContent() {
     );
   }
 
-  // Movies mode
-  if (activeTab === 'movies') {
-    return (
-      <div className="flex h-screen w-screen bg-black text-slate-100 overflow-hidden font-sans select-none flex-col">
-        <TopNav
-          channels={channels}
-          searchQuery={searchQuery}
-          setSearchQuery={setSearchQuery}
-          user={effUser}
-          currentProfile={currentProfile}
-          setActiveTab={goTab}
-          activeTab={activeTab}
-          onShowAuth={() => setShowAuth(true)}
-          onSelectChannel={handleSelectChannel}
-          onSelectMovie={(m) => { setMovieToOpen(m); setActiveTab('movies'); }}
-        />
-
-        <div className="flex flex-1 overflow-hidden">
-          <Sidebar activeTab={activeTab} setActiveTab={goTab} onShowSettings={() => setShowSettings(true)} onShowAdmin={() => setShowAdmin(true)} />
-          <main className="flex-1 flex flex-col h-full overflow-y-auto pb-16 md:pb-0">
-            {showSettings ? <SettingsPage onClose={() => setShowSettings(false)} /> : <MoviesScreen openMovie={movieToOpen} onOpenMovieHandled={() => setMovieToOpen(null)} onRequireLogin={() => promptLogin(t('app.need_login_movie'))} />}
-          </main>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="flex h-screen w-screen bg-black text-slate-100 overflow-hidden font-sans select-none flex-col">
+      {splash && (
+        <div className="fixed inset-0 z-[300] flex flex-col items-center justify-center bg-[#07080c]">
+          <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(520px 280px at 50% 42%, rgba(243,111,33,.22), transparent 70%)' }} />
+          <div className="splash-logo relative">
+            <Logo size="xl" showSubtext={false} />
+          </div>
+          <p className="mt-6 text-[11px] font-black tracking-[0.35em] text-stone-500 uppercase">VIP PLAY</p>
+          <div className="mt-5 w-44 h-1 rounded-full bg-white/10 overflow-hidden">
+            <div className="splash-bar h-full rounded-full grad-brand" />
+          </div>
+        </div>
+      )}
       <TopNav
         channels={channels}
         searchQuery={searchQuery}
@@ -579,6 +577,10 @@ function AppContent() {
         setActiveTab={goTab}
         activeTab={activeTab}
         onShowAuth={() => setShowAuth(true)}
+        onShowSettings={() => setShowSettings(true)}
+        profiles={profiles}
+        onSelectProfile={selectProfile}
+        onManageProfiles={() => logoutProfile()}
         onSelectChannel={handleSelectChannel}
         onSelectMovie={(m) => { setMovieToOpen(m); setActiveTab('movies'); }}
       />
@@ -586,11 +588,19 @@ function AppContent() {
       <div className="flex flex-1 overflow-hidden">
         <Sidebar activeTab={activeTab} setActiveTab={goTab} onShowSettings={() => setShowSettings(true)} onShowAdmin={() => setShowAdmin(true)} />
 
-        <main className="flex-1 flex flex-col h-full overflow-y-auto pb-16 md:pb-0">
-          <div className="px-5 md:px-8 pt-3 max-w-[1400px] mx-auto w-full">
-            <BroadcastBanner />
-          </div>
-          {activeTab === 'tv' ? (
+        <main className="flex-1 flex flex-col h-full overflow-y-auto overflow-x-hidden min-w-0 pb-16 md:pb-0">
+          {activeTab !== 'movies' && (
+            <div className="px-5 md:px-8 pt-3 max-w-[1400px] mx-auto w-full">
+              <BroadcastBanner />
+            </div>
+          )}
+          {showAdmin && user?.role === 'admin' ? (
+            <AdminPanel asPage onClose={() => { setShowAdmin(false); try { history.replaceState(null, '', location.pathname); } catch {} }} />
+          ) : showSettings ? (
+            <SettingsPage onClose={() => setShowSettings(false)} />
+          ) : activeTab === 'movies' ? (
+            <MoviesScreen openMovie={movieToOpen} onOpenMovieHandled={() => setMovieToOpen(null)} onRequireLogin={() => promptLogin(t('app.need_login_movie'))} />
+          ) : activeTab === 'tv' ? (
             <TVPage
               channels={channels}
               epgData={epgData}
@@ -623,8 +633,6 @@ function AppContent() {
               startId={shortToOpen}
               onStartHandled={() => setShortToOpen(null)}
             />
-          ) : showSettings ? (
-            <SettingsPage onClose={() => setShowSettings(false)} />
           ) : activeTab === 'plans' ? (
             <PlansScreen initialCode={deepGiftCode} />
           ) : (
@@ -707,7 +715,6 @@ function AppContent() {
         </div>
       )}
       <AuthModal open={showAuth} onClose={() => setShowAuth(false)} />
-      {showAdmin && user?.role === 'admin' && <AdminPanel onClose={() => { setShowAdmin(false); try { history.replaceState(null, '', location.pathname); } catch {} }} />}
       {showLangPicker && <LanguagePicker onClose={() => setShowLangPicker(false)} />}
     </div>
   );

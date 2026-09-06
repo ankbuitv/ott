@@ -352,7 +352,7 @@ export default function VideoPlayer({
         </div>
       )}
 
-      <video ref={videoRef} className="w-full h-full object-contain" playsInline autoPlay />
+      <video ref={videoRef} className="w-full h-full object-contain" playsInline autoPlay controlsList="nodownload noplaybackrate noremoteplayback" disablePictureInPicture disableRemotePlayback onContextMenu={(e) => e.preventDefault()} />
 
       {buffering && !error && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/60">

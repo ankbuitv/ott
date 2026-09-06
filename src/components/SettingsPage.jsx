@@ -242,16 +242,23 @@ export default function SettingsPage({ onClose }) {
     <div className="p-5 md:p-7 space-y-5 max-w-6xl mx-auto">
       {showQr && token && <QrScanner onClose={() => setShowQr(false)} />}
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 rounded-2xl border border-white/[0.07] bg-gradient-to-r from-[#1a120c] to-[#14151c] px-4 py-3.5">
         <div>
           <div className="flex items-center gap-1.5 text-[#f36f21] font-bold uppercase tracking-wider text-[10px] mb-0.5">
-            <Settings className="w-3.5 h-3.5" /> {t('settings.title')}
+            <Settings className="w-3.5 h-3.5" /> {t('nav.account_settings')}
           </div>
           <h1 className="text-2xl font-extrabold text-white">{t('settings.title')}</h1>
         </div>
-        <div className="hidden md:flex items-center gap-1.5 text-[11px] text-stone-500">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          {t('settings.synced')}
+        <div className="flex items-center gap-2">
+          <div className="hidden md:flex items-center gap-1.5 text-[11px] text-stone-500">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            {t('settings.synced')}
+          </div>
+          {onClose && (
+            <button onClick={onClose} className="px-3.5 py-2 rounded-xl bg-white/8 hover:bg-white/12 text-[12px] font-bold text-white">
+              {t('common.close') || 'Đóng'}
+            </button>
+          )}
         </div>
       </div>
 

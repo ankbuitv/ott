@@ -120,6 +120,9 @@ function ShortPlayer({ short, active, muted, onToggleMute, onAuthorClick, onFoll
         playsInline
         preload="metadata"
         onClick={togglePlay}
+        controlsList="nodownload noplaybackrate noremoteplayback"
+        disablePictureInPicture
+        onContextMenu={(e) => e.preventDefault()}
         className="absolute inset-0 w-full h-full object-cover cursor-pointer"
       />
       <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(180deg, rgba(0,0,0,.35) 0%, transparent 25%, transparent 55%, rgba(0,0,0,.85) 100%)' }}></div>
@@ -335,19 +338,33 @@ function CreateProfileModal({ onClose, onCreated, token }) {
     if (!form.handle || form.handle.length < 3) { addToast('Handle cần ≥3 ký tự', 'warning'); return; }
     if (!form.display_name) { addToast('Thiếu tên hiển thị', 'warning'); return; }
     setBusy(true);
-    try {
-      const r = await fetch(`${API_BASE}/api/shorts/creator/profile`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify(form)
-      });
-      const d = await r.json();
-      if (d.success) {
-        addToast('Đã tạo hồ sơ creator', 'success');
-        if (onCreated) onCreated(d.profile);
-        onClose();
-      } else addToast(d.error || 'Lỗi', 'error');
-    } catch { addToast('Lỗi kết nối', 'error'); }
+    let lastErr = '';
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const r = await fetch(`${API_BASE}/api/shorts/creator/profile`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify(form)
+        });
+        const raw = await r.text();
+        let d = {};
+        try { d = raw ? JSON.parse(raw) : {}; } catch { d = { error: raw.slice(0, 160) || `HTTP ${r.status}` }; }
+        if (d.success) {
+          addToast('Đã tạo hồ sơ creator', 'success');
+          if (onCreated) onCreated(d.profile);
+          onClose();
+          setBusy(false);
+          return;
+        }
+        lastErr = d.error || d.message || `HTTP ${r.status}`;
+        if (r.status >= 500 && attempt === 0) { await new Promise((ok) => setTimeout(ok, 450)); continue; }
+        break;
+      } catch (e) {
+        lastErr = e?.message || 'Lỗi kết nối';
+        if (attempt === 0) { await new Promise((ok) => setTimeout(ok, 450)); continue; }
+      }
+    }
+    addToast(lastErr || 'Không tạo được hồ sơ', 'error');
     setBusy(false);
   };
 

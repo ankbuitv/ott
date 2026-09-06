@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
-import { Play, ChevronLeft, ChevronRight, Flame, Sparkles, Clapperboard, Star, Trophy, Eye, ChevronRight as ArrowIcon, PartyPopper } from 'lucide-react';
+import { Play, ChevronLeft, ChevronRight, Flame, Sparkles, Clapperboard, Star, Trophy, Eye, ChevronRight as ArrowIcon, PartyPopper, Heart, History } from 'lucide-react';
 import { maskScores } from '../utils/spoiler';
 import { findEpgForChannel } from '../utils/epgMatch';
 import { parseEpgDate } from '../utils/dateUtils';
@@ -45,7 +45,7 @@ function fmtDate(d) {
 
 export default function HomePage({
   channels, epgData, favorites, watchHistory,
-  onSelectChannel, onSelectMovie, onGoTab, onOpenShort,
+  onSelectChannel, onSelectMovie, onGoTab, onOpenShort, isLoading,
 }) {
   const { t } = useI18n();
   const [heroIdx, setHeroIdx] = useState(0);
@@ -136,9 +136,62 @@ export default function HomePage({
       .slice(0, 12);
   }, [channels, getEpgNow, favSet, recentSet]);
 
+  const continueCh = useMemo(() => {
+    if (!channels?.length || !watchHistory?.length) return [];
+    const byId = new Map(channels.map(c => [c.channel_id, c]));
+    const seen = new Set();
+    const out = [];
+    for (const h of watchHistory) {
+      const ch = byId.get(h.channel_id);
+      if (!ch || seen.has(ch.channel_id)) continue;
+      seen.add(ch.channel_id);
+      out.push({ ch, epg: getEpgNow(ch) });
+      if (out.length >= 12) break;
+    }
+    return out;
+  }, [channels, watchHistory, getEpgNow]);
+
+  const favCh = useMemo(() => {
+    if (!channels?.length || !favSet.size) return [];
+    return channels.filter(ch => favSet.has(ch.channel_id)).slice(0, 12).map(ch => ({ ch, epg: getEpgNow(ch) }));
+  }, [channels, favSet, getEpgNow]);
+
+  const renderChCard = ({ ch, epg }, i, opts = {}) => (
+    <button
+      key={ch.channel_id}
+      onClick={() => onSelectChannel && onSelectChannel(ch)}
+      className="group relative shrink-0 w-[190px] md:w-[220px] snap-start rounded-2xl overflow-hidden border border-white/[0.08] hover:border-[#f36f21]/60 bg-[#15161b] text-left transition-all hover:-translate-y-1 hover:shadow-xl hover:shadow-[#f36f21]/10"
+    >
+      <span className="block relative h-[104px] md:h-[120px] flex items-center justify-center bg-[#0c0d11] overflow-hidden">
+        <span className="absolute inset-0 opacity-40" style={{ background: 'radial-gradient(circle at 20% 120%, rgba(243,111,33,.3), transparent 65%)' }}></span>
+        {typeof i === 'number' && (
+          <span className="absolute left-1.5 bottom-0 font-black leading-none select-none" style={{ fontSize: 64, color: 'transparent', WebkitTextStroke: '2px rgba(255,255,255,.22)' }}>{i + 1}</span>
+        )}
+        {ch.logo ? (
+          <img src={ch.logo} alt="" loading="lazy" className="h-14 md:h-16 object-contain relative z-10 drop-shadow-xl group-hover:scale-110 transition-transform" onError={e => { e.target.style.display = 'none'; }} />
+        ) : (
+          <span className="font-black italic text-white/25 text-2xl relative z-10">{(ch.name || '?').slice(0, 8)}</span>
+        )}
+        <span className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
+          <span className="w-10 h-10 rounded-full bg-[#f36f21] flex items-center justify-center shadow-lg"><Play className="w-4 h-4 text-white fill-current ml-0.5" /></span>
+        </span>
+        {opts.live && epg?.now && (
+          <span className="absolute top-2 right-2 z-20 px-1.5 py-0.5 rounded-md bg-red-600 text-white text-[9px] font-black tracking-widest">LIVE</span>
+        )}
+      </span>
+      <span className="block px-3 py-2.5">
+        <span className="block text-[13px] font-bold text-white truncate">{ch.name}</span>
+        <span className="block text-[11px] text-stone-500 truncate mt-0.5">{epg?.now ? maskScores(epg.now.title) : (ch.group_title || '')}</span>
+      </span>
+    </button>
+  );
+
   return (
     <div className="text-white">
       {/* ===== 1. BANNER ===== */}
+      {!hero && isLoading && (
+        <section className="relative mx-3 md:mx-5 mt-3 rounded-3xl overflow-hidden border border-white/[0.06] skeleton-shimmer" style={{ height: 'min(56vh, 460px)', minHeight: 330 }} />
+      )}
       {hero && (
         <section className="relative mx-3 md:mx-5 mt-3 rounded-3xl overflow-hidden anim-fade-up border border-white/[0.06]" style={{ height: 'min(56vh, 460px)', minHeight: 330 }}>
           {hero.img ? (
@@ -215,36 +268,29 @@ export default function HomePage({
       )}
 
       <div className="max-w-[1400px] mx-auto px-5 md:px-8 pt-8 space-y-10">
+        {continueCh.length > 0 && (
+          <section className="anim-fade-up">
+            <SectionHead icon={<History className="w-4 h-4 text-emerald-300" />} wrap="bg-emerald-500/15 border-emerald-500/30" title={t('home.continue')} sub={t('hist.title')} action={onGoTab ? { label: t('home.view_all'), onClick: () => onGoTab('tv') } : null} />
+            <ScrollRow>
+              {continueCh.map((item) => renderChCard(item, null, { live: true }))}
+            </ScrollRow>
+          </section>
+        )}
+        {favCh.length > 0 && (
+          <section className="anim-fade-up">
+            <SectionHead icon={<Heart className="w-4 h-4 text-[#ff9a3d]" />} wrap="bg-[#f36f21]/15 border-[#f36f21]/25" title={t('fav.title')} sub={t('app.favorites')} />
+            <ScrollRow>
+              {favCh.map((item) => renderChCard(item, null, { live: true }))}
+            </ScrollRow>
+          </section>
+        )}
         <TopChannelsStrip channels={channels} onSelectChannel={onSelectChannel} />
         {/* ===== 2. KÊNH TRENDING ===== */}
         {trendingCh.length > 0 && (
           <section className="anim-fade-up">
             <SectionHead icon={<Flame className="w-4 h-4 text-[#ff9a3d]" />} wrap="bg-[#f36f21]/15 border-[#f36f21]/25" title={t('home.trending_ch')} sub={t('home.trending_ch_sub')} action={onGoTab ? { label: t('home.view_all'), onClick: () => onGoTab('tv') } : null} />
             <ScrollRow>
-              {trendingCh.map(({ ch, epg }, i) => (
-                <button
-                  key={ch.channel_id}
-                  onClick={() => onSelectChannel && onSelectChannel(ch)}
-                  className="group relative shrink-0 w-[190px] md:w-[220px] snap-start rounded-2xl overflow-hidden border border-white/[0.08] hover:border-[#f36f21]/60 bg-[#15161b] text-left transition-all hover:-translate-y-1 hover:shadow-xl hover:shadow-[#f36f21]/10"
-                >
-                  <span className="block relative h-[104px] md:h-[120px] flex items-center justify-center bg-[#0c0d11] overflow-hidden">
-                    <span className="absolute inset-0 opacity-40" style={{ background: 'radial-gradient(circle at 20% 120%, rgba(243,111,33,.3), transparent 65%)' }}></span>
-                    <span className="absolute left-1.5 bottom-0 font-black leading-none select-none" style={{ fontSize: 64, color: 'transparent', WebkitTextStroke: '2px rgba(255,255,255,.22)' }}>{i + 1}</span>
-                    {ch.logo ? (
-                      <img src={ch.logo} alt="" loading="lazy" className="h-14 md:h-16 object-contain relative z-10 drop-shadow-xl group-hover:scale-110 transition-transform" onError={e => { e.target.style.display = 'none'; }} />
-                    ) : (
-                      <span className="font-black italic text-white/25 text-2xl relative z-10">{(ch.name || '?').slice(0, 8)}</span>
-                    )}
-                    <span className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <span className="w-10 h-10 rounded-full bg-[#f36f21] flex items-center justify-center shadow-lg"><Play className="w-4 h-4 text-white fill-current ml-0.5" /></span>
-                    </span>
-                  </span>
-                  <span className="block px-3 py-2.5">
-                    <span className="block text-[13px] font-bold text-white truncate">{ch.name}</span>
-                    <span className="block text-[11px] text-stone-500 truncate mt-0.5">{epg?.now ? maskScores(epg.now.title) : (ch.group_title || '')}</span>
-                  </span>
-                </button>
-              ))}
+              {trendingCh.map((item, i) => renderChCard(item, i, { live: true }))}
             </ScrollRow>
           </section>
         )}

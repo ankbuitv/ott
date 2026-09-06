@@ -19,6 +19,19 @@ const proxy = Object.fromEntries(
     },
   ])
 );
+// Lịch bóng đá: gọi cùng origin để tránh CORS/CSP chặn TheSportsDB + ESPN.
+proxy['/tsdb'] = {
+  target: 'https://www.thesportsdb.com',
+  changeOrigin: true,
+  secure: false,
+  rewrite: (p) => p.replace(/^\/tsdb/, '/api/v1/json/3'),
+};
+proxy['/espn'] = {
+  target: 'https://site.api.espn.com',
+  changeOrigin: true,
+  secure: false,
+  rewrite: (p) => p.replace(/^\/espn/, '/apis/site/v2'),
+};
 
 export default defineConfig({
   plugins: [react()],

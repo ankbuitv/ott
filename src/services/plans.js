@@ -18,44 +18,44 @@ export const PLANS = [
     code: "standard", name: "STANDARD", rank: 1,
     tagline: "Các kênh VTV", tagline_en: "VTV channels", color: "#42a5f5",
     art: "📺", grad: "linear-gradient(135deg,#0c4a6e,#0284c7 55%,#38bdf8)",
-    allows: ["Các kênh VTV (VTV1, VTV2, VTV3...)", "Xem thử MỌI kênh 5 phút mỗi giờ", "Shorts xem miễn phí"],
-    allows_en: ["VTV channels (VTV1, VTV2, VTV3...)", "5-minute preview of every channel, hourly", "Free Shorts"],
-    not: ["Xem trọn kênh BOX / Thể thao / Phim (chỉ xem thử 5 phút)", "Quảng cáo: bỏ qua sau 30 giây"],
-    not_en: ["Full access to BOX / Sports / Movies (5-min preview only)", "Ads: skippable after 30s"],
+    allows: ["Kênh VTV / Truyền hình Việt", "Shorts", "Xem thử kênh khác 5 phút mỗi giờ"],
+    allows_en: ["VTV / Vietnam TV channels", "Shorts", "5-minute preview of other channels"],
+    not: [],
+    not_en: [],
   },
   {
     code: "recreational", name: "RECREATIONAL", rank: 2,
     tagline: "VTV + BOX Giải trí", tagline_en: "VTV + BOX Entertainment", color: "#ab47bc",
     art: "🎬", grad: "linear-gradient(135deg,#581c87,#a855f7 55%,#e879f9)",
-    allows: ["Toàn bộ gói Standard", "38 kênh BOX - Giải trí", "Kênh thiếu nhi", "Quảng cáo bỏ qua sau 10 giây"],
-    allows_en: ["Everything in Standard", "38 BOX - Entertainment channels", "Kids channels", "Ads skippable after 10s"],
-    not: ["Kênh Thể thao", "Kênh Phim"],
-    not_en: ["Sports channels", "Movie channels"],
+    allows: ["Kênh VTV / Truyền hình Việt", "Kênh BOX - Giải trí", "Shorts"],
+    allows_en: ["VTV / Vietnam TV channels", "BOX entertainment channels", "Shorts"],
+    not: [],
+    not_en: [],
   },
   {
     code: "ultimate", name: "ULTIMATE", rank: 3,
     tagline: "VTV + BOX + Thể thao", tagline_en: "VTV + BOX + Sports", color: "#22c55e",
     art: "⚽", grad: "linear-gradient(135deg,#14532d,#16a34a 55%,#4ade80)",
-    allows: ["Toàn bộ gói Recreational", "19 kênh SPORTS - Thể thao", "Quảng cáo bỏ qua sau 5 giây"],
-    allows_en: ["Everything in Recreational", "19 SPORTS channels", "Ads skippable after 5s"],
-    not: ["Kênh Phim"],
-    not_en: ["Movie channels"],
+    allows: ["Kênh VTV / Truyền hình Việt", "Kênh BOX - Giải trí", "Kênh Thể thao", "Shorts"],
+    allows_en: ["VTV / Vietnam TV channels", "BOX entertainment channels", "Sports channels", "Shorts"],
+    not: [],
+    not_en: [],
   },
   {
     code: "elite", name: "ELITE", rank: 4,
     tagline: "Thêm kênh Phim", tagline_en: "Plus Movie channels", color: "#f59e0b",
     art: "🎞️", grad: "linear-gradient(135deg,#78350f,#d97706 55%,#fbbf24)",
-    allows: ["Toàn bộ gói Ultimate", "Các kênh Phim (phim / movie)", "KHÔNG quảng cáo"],
-    allows_en: ["Everything in Ultimate", "Movie channels (phim / movie)", "Ad-free"],
-    not: ["Kênh đặc biệt mới"],
-    not_en: ["New special channels"],
+    allows: ["Kênh VTV / Truyền hình Việt", "Kênh BOX - Giải trí", "Kênh Thể thao", "Kênh Phim", "Shorts", "Bỏ qua quảng cáo"],
+    allows_en: ["VTV / Vietnam TV channels", "BOX entertainment channels", "Sports channels", "Movie channels", "Shorts", "Skip ads"],
+    not: [],
+    not_en: [],
   },
   {
     code: "signature", name: "SIGNATURE", rank: 5,
     tagline: "Tất cả mọi kênh", tagline_en: "Every single channel", color: "#f36f21",
     art: "👑", grad: "linear-gradient(135deg,#7c2d12,#f36f21 55%,#fbbf24)",
-    allows: ["Toàn bộ gói Elite", "Mọi kênh hiện tại & tương lai", "KHÔNG quảng cáo", "Ưu tiên hỗ trợ 24/7"],
-    allows_en: ["Everything in Elite", "All current & future channels", "Ad-free", "Priority 24/7 support"],
+    allows: ["Kênh VTV / Truyền hình Việt", "Kênh BOX - Giải trí", "Kênh Thể thao", "Kênh Phim", "Mọi kênh hiện tại & tương lai", "Shorts", "Bỏ qua quảng cáo", "Hỗ trợ ưu tiên 24/7"],
+    allows_en: ["VTV / Vietnam TV channels", "BOX entertainment channels", "Sports channels", "Movie channels", "All current & future channels", "Shorts", "Skip ads", "Priority 24/7 support"],
     not: [],
     not_en: [],
   },
@@ -65,6 +65,26 @@ export const PLANS = [
 export const PLAN_RANK_FALLBACK = { signature: 5, elite: 4, ultimate: 3, recreational: 2, standard: 1, vip: 5 };
 
 export function planByCode(code) { return PLANS.find((p) => p.code === (code || "").toLowerCase()) || null; }
+
+// Hàng so sánh cố định: kênh mở được + tính năng (không liệt kê “toàn bộ gói X”)
+export const PLAN_FEATURES = [
+  { id: 'vtv', minRank: 1, vi: 'Kênh VTV / Truyền hình Việt', en: 'VTV / Vietnam TV' },
+  { id: 'box', minRank: 2, vi: 'Kênh BOX - Giải trí', en: 'BOX entertainment' },
+  { id: 'sport', minRank: 3, vi: 'Kênh Thể thao', en: 'Sports channels' },
+  { id: 'film', minRank: 4, vi: 'Kênh Phim', en: 'Movie channels' },
+  { id: 'all', minRank: 5, vi: 'Mọi kênh hiện tại & tương lai', en: 'All current & future channels' },
+  { id: 'shorts', minRank: 1, vi: 'Shorts', en: 'Shorts' },
+  { id: 'skip_ads', minRank: 4, vi: 'Bỏ qua quảng cáo', en: 'Skip ads' },
+  { id: 'support', minRank: 5, vi: 'Hỗ trợ ưu tiên 24/7', en: 'Priority 24/7 support' },
+];
+
+export function planHasFeature(planOrRank, featureId) {
+  const rank = typeof planOrRank === 'number'
+    ? planOrRank
+    : (Number(planOrRank?.rank) || rankOf(planOrRank?.code || planOrRank));
+  const f = PLAN_FEATURES.find((x) => x.id === featureId);
+  return !!f && rank >= f.minRank;
+}
 
 // Chuẩn hoá chuỗi nhóm để so sánh không dấu + thường
 function normGroup(s) {

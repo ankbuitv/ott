@@ -25,7 +25,7 @@ export default function Footer({ onGoTab }) {
             CHRTV PL<span className="text-[#f36f21]">▷</span>Y <span className="text-stone-500 font-semibold">- A Product of ANKB CO.</span>
           </p>
           <p className="text-[11px] text-stone-500 mt-2 leading-relaxed max-w-sm">{t('footer.desc')}</p>
-          <p className="text-[11px] text-stone-600 mt-3 font-semibold">© 2025 ANKB CO. · {t('footer.rights')}</p>
+          <p className="text-[11px] text-stone-600 mt-3 font-semibold">© 2026 ANKB CO. · {t('footer.rights')}</p>
         </div>
         {/* Khám phá */}
         <div>

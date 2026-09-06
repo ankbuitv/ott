@@ -3,6 +3,7 @@ import { Settings, Users, BarChart3, Bell, Radio, Send, Eye, TrendingUp, Calenda
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { API_BASE } from '../services/config';
+import { LiveTab, GiftsTab, PaymentsTab, AdsTab, SchedTab, CommentsTab, PredictTab, ReportsTab, EXTRA_TABS } from './AdminExtras';
 
 const BASE = API_BASE;
 
@@ -237,7 +238,7 @@ export default function AdminPanel({ onClose }) {
         </div>
 
         <div className="flex border-b border-slate-800/40 overflow-x-auto">
-          {[{ id: 'stats', label: 'Thống kê', icon: BarChart3 }, { id: 'users', label: 'Người dùng', icon: Users }, { id: 'audit', label: 'Nhật ký', icon: ScrollText }, { id: 'notify', label: 'Thông báo', icon: Bell }, { id: 'broadcast', label: 'Broadcast', icon: Send }, { id: 'epg', label: 'EPG kênh', icon: Calendar }, { id: 'analytics', label: 'Analytics', icon: TrendingUp }, { id: 'credentials', label: 'Chìa khoá stream', icon: KeyRound }, { id: 'feedback', label: 'Báo lỗi', icon: Flag }, { id: 'shorts', label: 'Shorts', icon: Clapperboard }, { id: 'plans', label: 'Gói cước', icon: Crown }, { id: 'events', label: 'Sự kiện', icon: PartyPopper }, { id: 'sportsvids', label: 'Video TT', icon: Video }].map(t => (
+          {[{ id: 'stats', label: 'Thống kê', icon: BarChart3 }, ...EXTRA_TABS, { id: 'users', label: 'Người dùng', icon: Users }, { id: 'audit', label: 'Nhật ký', icon: ScrollText }, { id: 'notify', label: 'Thông báo', icon: Bell }, { id: 'broadcast', label: 'Broadcast', icon: Send }, { id: 'epg', label: 'EPG kênh', icon: Calendar }, { id: 'analytics', label: 'Analytics', icon: TrendingUp }, { id: 'credentials', label: 'Chìa khoá stream', icon: KeyRound }, { id: 'feedback', label: 'Báo lỗi', icon: Flag }, { id: 'shorts', label: 'Shorts', icon: Clapperboard }, { id: 'plans', label: 'Gói cước', icon: Crown }, { id: 'events', label: 'Sự kiện', icon: PartyPopper }, { id: 'sportsvids', label: 'Video TT', icon: Video }].map(t => (
             <button key={t.id} onClick={() => setTab(t.id)} className={`flex items-center gap-1.5 px-4 py-2 text-[11px] font-semibold transition-all whitespace-nowrap ${tab === t.id ? 'text-[#ff9a3d] border-b-2 border-[#f36f21]' : 'text-slate-500 hover:text-white'}`}>
               <t.icon className="w-3 h-3" /> {t.label}
             </button>
@@ -916,6 +917,14 @@ export default function AdminPanel({ onClose }) {
               </form>
             </div>
           )}
+          {tab === 'live' && <LiveTab BASE={BASE} headers={headers} />}
+          {tab === 'gifts' && <GiftsTab BASE={BASE} headers={headers} addToast={addToast} />}
+          {tab === 'payments' && <PaymentsTab BASE={BASE} headers={headers} addToast={addToast} />}
+          {tab === 'ads' && <AdsTab BASE={BASE} headers={headers} addToast={addToast} />}
+          {tab === 'sched' && <SchedTab BASE={BASE} headers={headers} addToast={addToast} />}
+          {tab === 'comments' && <CommentsTab BASE={BASE} headers={headers} addToast={addToast} />}
+          {tab === 'predict' && <PredictTab BASE={BASE} headers={headers} addToast={addToast} />}
+          {tab === 'reports' && <ReportsTab BASE={BASE} headers={headers} token={token} />}
         </div>
       </div>
     </div>

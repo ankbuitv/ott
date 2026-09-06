@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Search, Star, Play, X, Info, Calendar, Clock, Tv, Film, SlidersHorizontal, TrendingUp, Heart, History, Plus, Check, Crown, Mic, Share2, CalendarClock } from 'lucide-react';
+import { Search, Star, Play, X, Info, Calendar, Clock, Tv, Film, SlidersHorizontal, TrendingUp, Heart, History, Plus, Check, Crown, Mic, Share2, CalendarClock, Users, Layers, MessageCircle, Sparkles, Clapperboard } from 'lucide-react';
 import { MovieAPI, imgPath, bgPath, COUNTRY_INFO, countryInfoOf, REGION_LIST, setTMDBRegion, getUpcoming, getMovieGenres, getTMDBKey, setTMDBKey, isDefaultTMDBKey, getCredits, getPerson, getPersonCredits, getRecommendations, getCollection, getMovieDetails, getTvDetails, discoverMovies } from '../services/tmdb';
 import { getMovieHistory, recordMovieWatch, recordMovieProgress, fmtWatchSec, isWatched, toggleWatchlistLocal, fetchWatchlist } from '../services/movieList';
 import { listenOnce, voiceSupported } from '../services/voice';
@@ -774,6 +774,7 @@ function MovieCard({ movie, onClick, showProgress }) {
   );
 }
 
+// ===== CHI TIẾT PHIM — UI kiểu Netflix: hero trailer/backdrop tràn viền + poster nổi + pills =====
 function MovieDetailModal({ movie, trailer, trailerLoading, genres = [], onClose, onPlay, onMovieChange, onListChanged, onShare }) {
   const { t } = useI18n();
   const [inList, setInList] = useState(() => isWatched(movie));
@@ -782,12 +783,12 @@ function MovieDetailModal({ movie, trailer, trailerLoading, genres = [], onClose
   const [collection, setCollection] = useState(null);
   const [person, setPerson] = useState(null); // PersonModal data
 
-  // Tai cast + recommendations + collection khi mo/doi phim
+  // Tải cast + recommendations + collection khi mở/đổi phim
   useEffect(() => {
     setCast([]); setRecs([]); setCollection(null); setInList(isWatched(movie));
     const type = movie.media_type === 'tv' ? 'tv' : 'movie';
-    getCredits(movie.id, type).then((r) => setCast((r.cast || []).slice(0, 12))).catch(() => {});
-    getRecommendations(movie.id, type).then((r) => setRecs((r.results || []).filter((m) => m.poster_path).slice(0, 12))).catch(() => {});
+    getCredits(movie.id, type).then((r) => setCast((r.cast || []).slice(0, 14))).catch(() => {});
+    getRecommendations(movie.id, type).then((r) => setRecs((r.results || []).filter((m) => m.poster_path).slice(0, 14))).catch(() => {});
     if (type === 'movie' && movie.belongs_to_collection?.id) {
       getCollection(movie.belongs_to_collection.id).then((r) => setCollection(r?.parts ? r : null)).catch(() => {});
     }
@@ -799,11 +800,14 @@ function MovieDetailModal({ movie, trailer, trailerLoading, genres = [], onClose
     onListChanged?.();
   };
 
+  const year = (movie.release_date || movie.first_air_date || '').slice(0, 4);
+  const gnames = (movie.genre_ids || []).map((gid) => genres.find((x) => x.id === gid)?.name).filter(Boolean);
+
   return (
-    <div className="fixed inset-0 z-[200] bg-black/85 backdrop-blur-sm overflow-y-auto" onClick={onClose}>
-      <div className="relative max-w-4xl mx-auto my-8 bg-stone-900 rounded-2xl overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
-        {/* Hero */}
-        <div className="relative aspect-video">
+    <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-sm overflow-y-auto anim-zoom-fade" onClick={onClose}>
+      <div className="relative max-w-5xl mx-auto my-4 md:my-8 bg-[#0f1015] rounded-3xl overflow-hidden shadow-[0_30px_80px_rgba(0,0,0,.7)] border border-white/[0.07]" onClick={e => e.stopPropagation()}>
+        {/* ===== HERO: trailer/backdrop tràn viền ===== */}
+        <div className="relative h-[300px] md:h-[440px] bg-black">
           {trailer ? (
             <iframe
               src={`https://www.youtube.com/embed/${trailer.key}?autoplay=1&modestbranding=1&rel=0`}
@@ -814,94 +818,107 @@ function MovieDetailModal({ movie, trailer, trailerLoading, genres = [], onClose
           ) : (
             <>
               <img src={bgPath(movie.backdrop_path || movie.poster_path)} alt="" className="w-full h-full object-cover" />
-              <div className="absolute inset-0 bg-gradient-to-t from-stone-900 to-transparent"></div>
               {trailerLoading && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/70">
-                  <div className="w-12 h-12 border-3 border-[#f36f21] border-t-transparent rounded-full animate-spin"></div>
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 gap-3">
+                  <div className="w-12 h-12 border-[3px] border-[#f36f21] border-t-transparent rounded-full animate-spin"></div>
+                  <span className="text-[11px] text-stone-500 font-bold">{t('app.loading')}</span>
                 </div>
               )}
             </>
           )}
-          <button onClick={onClose} className="absolute top-3 right-3 z-10 w-9 h-9 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center">
-            <X className="w-5 h-5" />
-          </button>
+          {/* phủ gradient về nền modal */}
+          <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(180deg, rgba(15,16,21,.55) 0%, transparent 30%, transparent 55%, #0f1015 100%)' }} />
+          {/* top bar */}
+          <div className="absolute top-0 inset-x-0 flex items-center justify-between p-3.5">
+            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/55 backdrop-blur border border-white/15 text-[10px] font-black tracking-widest text-white">
+              {movie.media_type === 'tv' ? <Tv className="w-3.5 h-3.5 text-[#ff9a3d]" /> : <Film className="w-3.5 h-3.5 text-[#ff9a3d]" />}
+              {movie.media_type === 'tv' ? 'TV SHOW' : 'MOVIE'}
+            </span>
+            <button onClick={onClose} className="w-9 h-9 rounded-full bg-black/55 backdrop-blur border border-white/15 hover:bg-black/85 flex items-center justify-center text-white transition active:scale-90">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
-        {/* Content */}
-        <div className="p-6 md:p-8">
-          <div className="flex items-start gap-4 mb-4">
-            <img src={imgPath(movie.poster_path, 'w185')} alt="" className="w-24 rounded-md shadow-lg hidden md:block" />
-            <div className="flex-1">
-              <h2 className="text-3xl font-black tracking-tight mb-2">{movie.title || movie.name}</h2>
-              <div className="flex items-center gap-3 text-xs text-stone-400 mb-3 flex-wrap">
-                {movie.vote_average > 0 && <span className="text-amber-400 font-bold flex items-center gap-1"><Star className="w-3 h-3 fill-current" />{movie.vote_average.toFixed(1)}</span>}
-                {(movie.release_date || movie.first_air_date) && <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{movie.release_date || movie.first_air_date}</span>}
-                {movie.runtime > 0 && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{t('mv.n_min', { n: movie.runtime })}</span>}
-                {movie.media_type === 'tv' && <span className="flex items-center gap-1"><Tv className="w-3 h-3" /> TV Show</span>}
-              </div>
-              <p className="text-sm text-stone-300 leading-relaxed">{movie.overview}</p>
-              {/* Tag thể loại */}
-              {(movie.genre_ids || []).length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-2.5">
-                  {(movie.genre_ids || []).map((gid) => {
-                    const g = genres.find((x) => x.id === gid);
-                    if (!g) return null;
-                    return <span key={gid} className="px-2 py-0.5 rounded-full bg-white/[0.07] border border-white/10 text-[10px] font-bold text-stone-300">#{g.name}</span>;
-                  })}
-                </div>
+        {/* ===== INFO nổi trên hero ===== */}
+        <div className="relative px-5 md:px-8 -mt-28 md:-mt-36">
+          <div className="flex gap-4 md:gap-6 items-end">
+            <img src={imgPath(movie.poster_path, 'w342')} alt="" className="w-28 md:w-44 rounded-2xl shadow-[0_16px_40px_rgba(0,0,0,.6)] ring-1 ring-white/20 shrink-0" />
+            <div className="flex-1 min-w-0 pb-1">
+              <h2 className="text-2xl md:text-4xl font-black tracking-tight text-white leading-tight drop-shadow-lg">{movie.title || movie.name}</h2>
+              {(movie.original_title || movie.original_name) && (movie.original_title || movie.original_name) !== (movie.title || movie.name) && (
+                <p className="text-[12px] text-stone-400 font-medium mt-0.5 truncate">{movie.original_title || movie.original_name}</p>
               )}
+              {/* meta pills */}
+              <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
+                {movie.vote_average > 0 && (
+                  <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-400/15 border border-amber-400/30 text-amber-300 text-[11px] font-black">
+                    <Star className="w-3 h-3 fill-current" />{movie.vote_average.toFixed(1)}
+                  </span>
+                )}
+                {year && (
+                  <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/[0.07] border border-white/10 text-stone-200 text-[11px] font-bold">
+                    <Calendar className="w-3 h-3" />{year}
+                  </span>
+                )}
+                {movie.runtime > 0 && (
+                  <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/[0.07] border border-white/10 text-stone-200 text-[11px] font-bold">
+                    <Clock className="w-3 h-3" />{t('mv.n_min', { n: movie.runtime })}
+                  </span>
+                )}
+                {gnames.slice(0, 3).map((g) => (
+                  <span key={g} className="px-2.5 py-1 rounded-full bg-[#f36f21]/12 border border-[#f36f21]/30 text-[#ffb37a] text-[11px] font-bold">#{g}</span>
+                ))}
+              </div>
             </div>
           </div>
 
-          <div className="mt-4 space-y-2">
-            <div className="flex gap-2">
-              <button
-                onClick={onPlay}
-                className="flex-1 px-6 py-3 bg-[#f36f21] hover:bg-[#f36f21] text-white font-bold rounded-xl flex items-center justify-center gap-2 transition"
-              >
-                <Play className="w-4 h-4 fill-current" />
-                {t('movies.btn.play')}
-              </button>
-              <button
-                onClick={toggleList}
-                className={`px-4 py-3 font-bold rounded-xl flex items-center gap-2 border transition ${inList ? 'bg-[#f36f21]/20 text-[#ff9a3d] border-[#f36f21]/40' : 'bg-white/5 text-stone-300 border-white/10 hover:bg-white/10'}`}
-                title={inList ? t('mv.remove_list') : t('mv.add_list')}
-              >
-                {inList ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-                {inList ? t('mv.following') : 'My List'}
-              </button>
-              <button
-                onClick={() => onShare && onShare(movie)}
-                className="px-4 py-3 font-bold rounded-xl flex items-center gap-2 border bg-white/5 text-stone-300 border-white/10 hover:bg-white/10 transition"
-                title={t('share.share')}
-              >
-                <Share2 className="w-4 h-4" />
-              </button>
-            </div>
-            {!trailer && !trailerLoading && (
-              <button
-                onClick={onClose}
-                className="w-full px-6 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-stone-300 font-semibold rounded-xl transition"
-              >
-                {t('common.back')}
-              </button>
-            )}
+          {/* actions */}
+          <div className="flex gap-2 mt-5">
+            <button onClick={onPlay} className="flex-1 px-6 py-3.5 grad-brand text-white font-black rounded-2xl flex items-center justify-center gap-2 transition active:scale-[0.98] shadow-lg shadow-[#f36f21]/30 text-[15px]">
+              <Play className="w-5 h-5 fill-current" />{t('movies.btn.play')}
+            </button>
+            <button
+              onClick={toggleList}
+              title={inList ? t('mv.remove_list') : t('mv.add_list')}
+              className={`px-4 py-3.5 font-bold rounded-2xl flex items-center gap-2 border transition active:scale-95 ${inList ? 'bg-[#f36f21]/15 text-[#ff9a3d] border-[#f36f21]/40' : 'bg-white/[0.06] text-stone-200 border-white/10 hover:bg-white/[0.12]'}`}
+            >
+              {inList ? <Check className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
+              <span className="hidden sm:inline text-[13px]">{inList ? t('mv.following') : 'My List'}</span>
+            </button>
+            <button
+              onClick={() => onShare && onShare(movie)}
+              title={t('share.share')}
+              className="px-4 py-3.5 font-bold rounded-2xl flex items-center border bg-white/[0.06] text-stone-200 border-white/10 hover:bg-white/[0.12] transition active:scale-95"
+            >
+              <Share2 className="w-5 h-5" />
+            </button>
           </div>
 
-          {/* Cast */}
+          {/* overview */}
+          {movie.overview && (
+            <p className="text-[13px] md:text-sm text-stone-300 leading-relaxed mt-4">{movie.overview}</p>
+          )}
+        </div>
+
+        <div className="px-5 md:px-8 pb-7">
+          {/* Cast — avatar tròn */}
           {cast.length > 0 && (
             <div className="mt-6">
-              <h4 className="text-[10px] text-stone-500 font-bold uppercase tracking-widest mb-2">{t('mv.cast')}</h4>
-              <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none">
+              <h4 className="flex items-center gap-2 text-[13px] font-black text-white mb-3">
+                <span className="w-7 h-7 rounded-lg bg-[#f36f21]/15 border border-[#f36f21]/30 flex items-center justify-center"><Users className="w-3.5 h-3.5 text-[#ff9a3d]" /></span>
+                {t('mv.cast')}
+              </h4>
+              <div className="flex gap-3.5 overflow-x-auto pb-2 scrollbar-none">
                 {cast.map((c) => (
-                  <button key={`${c.id}-${c.credit_id}`} onClick={() => { c.id && getPerson(c.id).then((p) => setPerson(p)).catch(() => {}); }} className="w-20 shrink-0 text-center group">
+                  <button key={`${c.id}-${c.credit_id}`} onClick={() => { c.id && getPerson(c.id).then((p) => setPerson(p)).catch(() => {}); }} className="w-[72px] shrink-0 text-center group">
                     <img
-                      src={c.profile_path ? imgPath(c.profile_path, 'w185') : 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="80" height="120"%3E%3Crect fill="%23272727" width="80" height="120"/%3E%3C/svg%3E'}
+                      src={c.profile_path ? imgPath(c.profile_path, 'w185') : 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="72" height="72"%3E%3Crect fill="%23272727" width="72" height="72"/%3E%3C/svg%3E'}
                       alt={c.name}
-                      className="w-20 h-28 object-cover rounded-lg border border-white/10 group-hover:border-[#f36f21]/50 transition"
+                      className="w-[72px] h-[72px] object-cover rounded-full border-2 border-white/10 group-hover:border-[#f36f21] group-hover:scale-105 transition shadow-lg"
                       loading="lazy"
                     />
-                    <p className="text-[10px] font-bold mt-1 truncate">{c.name}</p>
+                    <p className="text-[10px] font-bold mt-1.5 truncate text-stone-200">{c.name}</p>
                     <p className="text-[9px] text-stone-500 truncate">{c.character}</p>
                   </button>
                 ))}
@@ -911,13 +928,17 @@ function MovieDetailModal({ movie, trailer, trailerLoading, genres = [], onClose
 
           {/* Collection (franchise) */}
           {collection && (
-            <div className="mt-6">
-              <h4 className="text-[10px] text-stone-500 font-bold uppercase tracking-widest mb-2">📚 {t('mv.part_of', { name: movie.belongs_to_collection?.name })}</h4>
-              <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-none">
+            <div className="mt-6 rounded-2xl border border-white/[0.07] bg-white/[0.02] p-4">
+              <h4 className="flex items-center gap-2 text-[13px] font-black text-white mb-3">
+                <span className="w-7 h-7 rounded-lg bg-violet-500/15 border border-violet-500/30 flex items-center justify-center"><Layers className="w-3.5 h-3.5 text-violet-300" /></span>
+                <span className="truncate">{t('mv.part_of', { name: movie.belongs_to_collection?.name })}</span>
+              </h4>
+              <div className="flex gap-2.5 overflow-x-auto pb-1 scrollbar-none">
                 {collection.parts.filter((m) => m.poster_path).sort((a, b) => (a.release_date || '').localeCompare(b.release_date || '')).map((m) => (
-                  <button key={m.id} onClick={() => onMovieChange?.({ ...m, media_type: 'movie', overview: m.overview || '' })} className="w-24 shrink-0 group">
-                    <img src={imgPath(m.poster_path, 'w185')} alt={m.title} className="w-24 h-36 object-cover rounded-lg border border-white/10 group-hover:border-[#f36f21]/50 transition" loading="lazy" />
-                    <p className="text-[10px] font-semibold mt-1 truncate">{m.title}</p>
+                  <button key={m.id} onClick={() => onMovieChange?.({ ...m, media_type: 'movie', overview: m.overview || '' })} className="w-24 shrink-0 group text-left">
+                    <img src={imgPath(m.poster_path, 'w185')} alt={m.title} className="w-24 h-36 object-cover rounded-xl border border-white/10 group-hover:border-[#f36f21]/60 group-hover:scale-[1.03] transition shadow" loading="lazy" />
+                    <p className="text-[10px] font-semibold mt-1 truncate text-stone-300">{m.title}</p>
+                    <p className="text-[9px] text-stone-600">{(m.release_date || '').slice(0, 4)}</p>
                   </button>
                 ))}
               </div>
@@ -925,18 +946,36 @@ function MovieDetailModal({ movie, trailer, trailerLoading, genres = [], onClose
           )}
 
           {/* Nhóm fan + Bình luận */}
-          <FanGroupBox target={movieDeepId(movie)} name={movie.title || movie.name} />
-          <CommentsBox target={movieDeepId(movie)} />
+          <div className="mt-6 rounded-2xl border border-white/[0.07] bg-white/[0.02] p-4">
+            <h4 className="flex items-center gap-2 text-[13px] font-black text-white mb-3">
+              <span className="w-7 h-7 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center"><MessageCircle className="w-3.5 h-3.5 text-emerald-300" /></span>
+              {t('mv.community')}
+            </h4>
+            <FanGroupBox target={movieDeepId(movie)} name={movie.title || movie.name} />
+            <div className="mt-3">
+              <CommentsBox target={movieDeepId(movie)} />
+            </div>
+          </div>
 
           {/* Recommendations */}
           {recs.length > 0 && (
             <div className="mt-6">
-              <h4 className="text-[10px] text-stone-500 font-bold uppercase tracking-widest mb-2">{t('mv.similar')}</h4>
-              <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-none">
+              <h4 className="flex items-center gap-2 text-[13px] font-black text-white mb-3">
+                <span className="w-7 h-7 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-center"><Sparkles className="w-3.5 h-3.5 text-amber-300" /></span>
+                {t('mv.similar')}
+              </h4>
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-7 gap-2.5">
                 {recs.map((m) => (
-                  <button key={`${m.media_type || 'movie'}-${m.id}`} onClick={() => onMovieChange?.({ ...m, media_type: m.media_type || (m.title ? 'movie' : 'tv'), overview: m.overview || '' })} className="w-24 shrink-0 group">
-                    <img src={imgPath(m.poster_path, 'w185')} alt={m.title || m.name} className="w-24 h-36 object-cover rounded-lg border border-white/10 group-hover:border-[#f36f21]/50 transition" loading="lazy" />
-                    <p className="text-[10px] font-semibold mt-1 truncate">{m.title || m.name}</p>
+                  <button key={`${m.media_type || 'movie'}-${m.id}`} onClick={() => onMovieChange?.({ ...m, media_type: m.media_type || (m.title ? 'movie' : 'tv'), overview: m.overview || '' })} className="group text-left">
+                    <div className="relative">
+                      <img src={imgPath(m.poster_path, 'w185')} alt={m.title || m.name} className="w-full aspect-[2/3] object-cover rounded-xl border border-white/10 group-hover:border-[#f36f21]/60 group-hover:scale-[1.03] transition shadow" loading="lazy" />
+                      {(m.vote_average || 0) > 0 && (
+                        <span className="absolute top-1.5 left-1.5 flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-black/70 text-amber-300 text-[9px] font-black">
+                          <Star className="w-2.5 h-2.5 fill-current" />{m.vote_average.toFixed(1)}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[10px] font-semibold mt-1 truncate text-stone-300">{m.title || m.name}</p>
                   </button>
                 ))}
               </div>
@@ -953,7 +992,9 @@ function MovieDetailModal({ movie, trailer, trailerLoading, genres = [], onClose
   );
 }
 
+// ===== CHI TIẾT DIỄN VIÊN — hero gradient + avatar lớn (fix crash: thiếu useI18n) =====
 function PersonModal({ person, onClose, onMovieChange }) {
+  const { t } = useI18n();
   const [credits, setCredits] = useState([]);
   useEffect(() => {
     getPersonCredits(person.id).then((r) => {
@@ -965,38 +1006,70 @@ function PersonModal({ person, onClose, onMovieChange }) {
     }).catch(() => {});
   }, [person.id]);
 
+  const dept = person.known_for_department === 'Acting' ? t('mv.actor') : (person.known_for_department || t('mv.artist'));
+
   return (
-    <div className="fixed inset-0 z-[220] bg-black/90 backdrop-blur-sm overflow-y-auto" onClick={onClose}>
-      <div className="relative max-w-3xl mx-auto my-8 bg-stone-900 rounded-2xl overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex gap-4 p-6">
-          <img
-            src={person.profile_path ? imgPath(person.profile_path, 'w185') : 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="120" height="180"%3E%3Crect fill="%23272727" width="120" height="180"/%3E%3C/svg%3E'}
-            alt={person.name}
-            className="w-32 h-48 object-cover rounded-xl border border-white/10 shrink-0"
-          />
-          <div className="flex-1 min-w-0">
-            <button onClick={onClose} className="absolute top-3 right-3 w-9 h-9 rounded-full bg-black/60 hover:bg-black/80 flex items-center justify-center">
-              <X className="w-5 h-5" />
-            </button>
-            <h2 className="text-2xl font-black tracking-tight mb-1">{person.name}</h2>
-            <p className="text-[11px] text-stone-500 mb-2">
-              {person.known_for_department === 'Acting' ? t('mv.actor') : person.known_for_department || t('mv.artist')}
-              {person.birthday && t('mv.born', { d: person.birthday })}
-              {person.place_of_birth && ` · ${person.place_of_birth}`}
-            </p>
-            <p className="text-xs text-stone-300 leading-relaxed line-clamp-6">{person.biography || t('mv.no_bio')}</p>
-          </div>
+    <div className="fixed inset-0 z-[220] bg-black/90 backdrop-blur-sm overflow-y-auto anim-zoom-fade" onClick={onClose}>
+      <div className="relative max-w-3xl mx-auto my-6 md:my-10 bg-[#0f1015] rounded-3xl overflow-hidden shadow-[0_30px_80px_rgba(0,0,0,.7)] border border-white/[0.07]" onClick={(e) => e.stopPropagation()}>
+        {/* hero gradient */}
+        <div className="relative h-[150px] md:h-[180px] overflow-hidden" style={{ background: 'linear-gradient(120deg,#2b1410,#101828 60%,#1a1030)' }}>
+          {person.profile_path && (
+            <img src={imgPath(person.profile_path, 'w185')} alt="" className="absolute inset-0 w-full h-full object-cover opacity-25 blur-2xl scale-125" />
+          )}
+          <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, transparent 20%, #0f1015 100%)' }} />
+          <button onClick={onClose} className="absolute top-3 right-3 w-9 h-9 rounded-full bg-black/55 backdrop-blur border border-white/15 hover:bg-black/85 flex items-center justify-center text-white transition active:scale-90">
+            <X className="w-5 h-5" />
+          </button>
         </div>
-        <div className="px-6 pb-6">
-          <h4 className="text-[10px] text-stone-500 font-bold uppercase tracking-widest mb-2">{t('mv.filmography')}</h4>
+        {/* info */}
+        <div className="relative px-5 md:px-7 -mt-16 md:-mt-20 pb-6">
+          <div className="flex gap-4 items-end">
+            <img
+              src={person.profile_path ? imgPath(person.profile_path, 'w342') : 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="160" height="240"%3E%3Crect fill="%231c1d24" width="160" height="240"/%3E%3C/svg%3E'}
+              alt={person.name}
+              className="w-32 md:w-40 aspect-[2/3] object-cover rounded-2xl ring-2 ring-white/20 shadow-[0_16px_40px_rgba(0,0,0,.6)] shrink-0 bg-[#1c1d24]"
+            />
+            <div className="flex-1 min-w-0 pb-1">
+              <span className="inline-block px-2.5 py-1 rounded-full bg-[#f36f21]/15 border border-[#f36f21]/40 text-[#ffb37a] text-[10px] font-black tracking-widest mb-2">{dept.toUpperCase()}</span>
+              <h2 className="text-2xl md:text-3xl font-black tracking-tight text-white leading-tight">{person.name}</h2>
+              {(person.birthday || person.place_of_birth) && (
+                <p className="text-[12px] text-stone-400 mt-1.5 flex items-center gap-1.5 flex-wrap">
+                  {person.birthday && <span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5" />{t('mv.born', { d: person.birthday })}</span>}
+                  {person.place_of_birth && <span className="truncate">📍 {person.place_of_birth}</span>}
+                </p>
+              )}
+            </div>
+          </div>
+          {person.biography ? (
+            <p className="text-[13px] text-stone-300 leading-relaxed mt-4 max-h-[130px] overflow-y-auto pr-1">{person.biography}</p>
+          ) : (
+            <p className="text-[12px] text-stone-500 mt-4 italic">{t('mv.no_bio')}</p>
+          )}
+          {/* filmography */}
+          <h4 className="flex items-center gap-2 text-[13px] font-black text-white mt-5 mb-3">
+            <span className="w-7 h-7 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-center"><Clapperboard className="w-3.5 h-3.5 text-amber-300" /></span>
+            {t('mv.filmography')}
+          </h4>
           {credits.length === 0 ? (
-            <p className="text-[11px] text-stone-500">Đang tải…</p>
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2.5">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="aspect-[2/3] rounded-xl bg-white/[0.05] animate-pulse" />
+              ))}
+            </div>
           ) : (
             <div className="grid grid-cols-3 sm:grid-cols-6 gap-2.5">
               {credits.map((m) => (
-                <button key={`${m.id}-${m.credit_id}`} onClick={() => onMovieChange({ ...m, media_type: m.media_type || (m.title ? 'movie' : 'tv'), overview: m.overview || '' })} className="group">
-                  <img src={imgPath(m.poster_path, 'w185')} alt={m.title || m.name} className="w-full aspect-[2/3] object-cover rounded-lg border border-white/10 group-hover:border-[#f36f21]/50 transition" loading="lazy" />
-                  <p className="text-[9px] font-semibold mt-1 truncate">{m.title || m.name}</p>
+                <button key={`${m.id}-${m.credit_id}`} onClick={() => onMovieChange({ ...m, media_type: m.media_type || (m.title ? 'movie' : 'tv'), overview: m.overview || '' })} className="group text-left">
+                  <div className="relative">
+                    <img src={imgPath(m.poster_path, 'w185')} alt={m.title || m.name} className="w-full aspect-[2/3] object-cover rounded-xl border border-white/10 group-hover:border-[#f36f21]/60 group-hover:scale-[1.03] transition shadow" loading="lazy" />
+                    {(m.vote_average || 0) > 0 && (
+                      <span className="absolute top-1.5 left-1.5 flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-black/70 text-amber-300 text-[9px] font-black">
+                        <Star className="w-2.5 h-2.5 fill-current" />{m.vote_average.toFixed(1)}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] font-semibold mt-1 truncate text-stone-300">{m.title || m.name}</p>
+                  <p className="text-[9px] text-stone-600 truncate">{m.character || ''}</p>
                 </button>
               ))}
             </div>

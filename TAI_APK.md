@@ -106,3 +106,35 @@ Token của bot **không có quyền `workflows`** nên mình không được ph
   **Giữ kỹ file `.jks` này** — mất là không update app cũ được nữa.
 - App trỏ về domain production trong `capacitor.config.json`; đổi domain thì sửa file đó rồi build lại.
 - Manifest đã có sẵn cả `LAUNCHER` lẫn `LEANBACK_LAUNCHER` nên APK này **cài lên Android TV box chạy luôn**.
+
+---
+
+## 5. Bản cập nhật ngày 06/09 (theo yêu cầu mới)
+
+| Yêu cầu | Trạng thái | Chi tiết |
+|---|---|---|
+| Proxy whitelist tất cả link | ✅ | Bỏ danh sách domain cố định — `PROXY_ALLOW_ALL=1` mặc định. Link nào cũng proxy được. Vẫn chặn IP nội bộ/reserved (SSRF), `localhost/.local/.internal`, scheme khác http(s), rate-limit 60 req/phút/IP và anti-tool cho `.m3u8`. Muốn siết lại: đặt env `PROXY_ALLOW_ALL=0`. |
+| Link M3U mặc định | ✅ | `https://github.com/ankbuitv/mytv/raw/refs/heads/main/playlist.m3u`. ⚠️ Hiện link này trả **404** (repo private hoặc chưa có file) → worker tự rơi về playlist cũ. Cách xử lý ở dưới. |
+| Trang chủ không quảng cáo | ✅ | Gỡ `AdSlot` khỏi `HomePage.jsx`. Banner còn lại ở Phim/Cộng đồng, pre-roll vẫn theo luật gói cũ. |
+| Nút Cài đặt trên điện thoại | ✅ | Thanh dưới giờ là **4 tab chính + nút THÊM** → mở bảng trượt chứa SPORT / SHORTS / CỘNG ĐỒNG / **CÀI ĐẶT** / **QUẢN TRỊ** + hồ sơ. Trước đây `navItems.slice(0,5)` cắt mất Cài đặt nên trên máy không có đường vào. |
+| Làm đẹp hơn | ✅ | Tab bar kính mờ + vạch gradient báo tab đang mở, bảng trượt bo góc có animation, thanh cuộn mảnh tông tối, thẻ nhấc nhẹ khi rê chuột, gạch gradient dưới tiêu đề mục. |
+| UA: Dalvik → VLC → Chrome | ✅ | Mặc định Dalvik. Nguồn trả 401/403/404/405/406/410/429/451/5xx hoặc lỗi mạng → tự thử VLC → cuối cùng Chrome, áp cho cả `/api/proxy` và `/api/stream/proxy`. Đã test giả lập: nguồn chặn Dalvik thì VLC lên hình. Cài đặt cho chọn UA thử đầu tiên (Dalvik/VLC/Chrome/Theo kênh). |
+| Token xoay 5 phút | ✅ | `STREAM_TOKEN_ROTATE = 300s`, TTL = 330s (dư 30s để đổi không giật), client xoay ở mốc `exp-30` = đúng phút thứ 5. |
+| Tên app / package / version | ✅ | `CHRTV PL▷Y`, `com.chrtvplay.app`, `1.0.0-beta` (versionCode 1). Đổi trong `capacitor.config.json`, `strings.xml`, `build.gradle`, `package.json`, tiêu đề web, mục Cài đặt → Giới thiệu. Java package đổi theo: `android/app/src/main/java/com/chrtvplay/app/MainActivity.java`. |
+
+### Sửa thêm 1 lỗi ngầm sẽ làm APK "trắng dữ liệu"
+
+Capacitor chạy web ở `https://localhost`, mà `src/services/config.js` thấy protocol là `https:` nên coi là same-origin → mọi API gọi về `https://localhost/api/...` = chết. Đã thêm `isNativeApp()`: trong APK tự trỏ về `https://play.ankb.qzz.io`. Kèm theo worker đã thêm `https://localhost`, `capacitor://localhost` vào CORS allowlist, nếu không APK bị chặn CORS sạch.
+
+### Playlist mytv đang 404 — chọn 1 trong 3 cách
+
+1. **Để repo `ankbuitv/mytv` ở chế độ public** → link chạy ngay, không cần làm gì thêm.
+2. Repo private: tạo token đọc rồi
+   `npx wrangler secret put GITHUB_RAW_TOKEN` (worker tự gắn `Authorization: Bearer ...` khi tải link github).
+3. Hoặc trỏ nguồn khác: `npx wrangler secret put M3U_SOURCE_URL` (một link), hoặc biến `M3U_SOURCE_URLS = "url1,url2"` để thử lần lượt.
+
+Thứ tự nạp hiện tại: `M3U_SOURCE_URL` → `M3U_SOURCE_URLS` → mytv/playlist.m3u → playlist cũ trong repo ott → danh sách kênh mặc định trong code.
+
+### Cài APK mới
+
+Package đổi từ `com.chrtv.app` sang `com.chrtvplay.app` nên Android coi đây là **app khác**: bản cũ vẫn nằm im, cài bản mới không đè. Gỡ bản cũ cho gọn máy.

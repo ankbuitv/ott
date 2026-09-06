@@ -329,10 +329,12 @@ function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, s
         {isAuthenticated && currentProfile ? (
           <div className="flex items-center gap-2">
             <div className="relative cursor-pointer" title={`${t('voice.plan')}: ${(effectivePlan || 'standard').toUpperCase()}`}>
-              <div className={`w-9 h-9 rounded-full bg-gradient-to-br from-amber-500 to-[#f36f21] flex items-center justify-center font-bold text-white text-sm ${effectivePlan === 'vip' ? 'ring-2 ring-amber-300 shadow-[0_0_12px_rgba(251,191,36,.7)]' : effectivePlan === 'recreational' ? 'ring-2 ring-purple-400 shadow-[0_0_10px_rgba(192,132,252,.6)]' : 'ring-1 ring-white/20'}`}>
+              <div className={`w-9 h-9 rounded-full bg-gradient-to-br from-amber-500 to-[#f36f21] flex items-center justify-center font-bold text-white text-sm ${effectivePlan === 'signature' ? 'ring-2 ring-amber-300 shadow-[0_0_12px_rgba(251,191,36,.7)]' : effectivePlan === 'elite' ? 'ring-2 ring-yellow-400 shadow-[0_0_10px_rgba(250,204,21,.6)]' : effectivePlan === 'ultimate' ? 'ring-2 ring-emerald-400 shadow-[0_0_10px_rgba(52,211,153,.6)]' : effectivePlan === 'recreational' ? 'ring-2 ring-purple-400 shadow-[0_0_10px_rgba(192,132,252,.6)]' : 'ring-1 ring-white/20'}`}>
                 {currentProfile.name[0].toUpperCase()}
               </div>
-              {effectivePlan === 'vip' && <span className="absolute -top-1.5 -right-1 text-[10px] leading-none">👑</span>}
+              {effectivePlan === 'signature' && <span className="absolute -top-1.5 -right-1 text-[10px] leading-none">👑</span>}
+              {effectivePlan === 'elite' && <span className="absolute -top-1.5 -right-1 text-[10px] leading-none">💎</span>}
+              {effectivePlan === 'ultimate' && <span className="absolute -top-1.5 -right-1 text-[10px] leading-none">🏆</span>}
               {effectivePlan === 'recreational' && <span className="absolute -top-1.5 -right-1 text-[10px] leading-none">⭐</span>}
             </div>
             <span className="text-xs text-stone-300 hidden md:inline">{currentProfile.name}</span>

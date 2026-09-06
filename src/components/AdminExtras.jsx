@@ -48,13 +48,13 @@ export function LiveTab({ BASE, headers }) {
 // ---- Gift code ----
 export function GiftsTab({ BASE, headers, addToast }) {
   const [gifts, setGifts] = useState([]);
-  const [form, setForm] = useState({ code: '', plan: 'vip', days: 30, max_uses: 1, note: '' });
+  const [form, setForm] = useState({ code: '', plan: 'signature', days: 30, max_uses: 1, note: '' });
   const load = () => api(BASE, headers, '/admin/gifts').then(d => setGifts(d.gifts || [])).catch(() => {});
   useEffect(() => { load(); }, []); // eslint-disable-line
   const create = async (e) => {
     e.preventDefault();
     const d = await api(BASE, headers, '/admin/gifts', { method: 'POST', body: JSON.stringify(form) });
-    if (d.success) { addToast(`Đã tạo mã: ${d.code}`, 'success'); setForm({ code: '', plan: 'vip', days: 30, max_uses: 1, note: '' }); load(); }
+    if (d.success) { addToast(`Đã tạo mã: ${d.code}`, 'success'); setForm({ code: '', plan: 'signature', days: 30, max_uses: 1, note: '' }); load(); }
     else addToast(d.error || 'Lỗi', 'error');
   };
   return (
@@ -71,7 +71,7 @@ export function GiftsTab({ BASE, headers, addToast }) {
       <form onSubmit={create} className="grid grid-cols-2 gap-2 pt-2">
         <input value={form.code} onChange={e => setForm({ ...form, code: e.target.value.toUpperCase() })} placeholder="Mã (trống = tự sinh)" className={inp + ' col-span-2 font-mono'} />
         <select value={form.plan} onChange={e => setForm({ ...form, plan: e.target.value })} className={inp}>
-          <option value="vip">VIP</option><option value="recreational">Recreational</option><option value="standard">Standard</option>
+          <option value="signature">Signature</option><option value="elite">Elite</option><option value="ultimate">Ultimate</option><option value="recreational">Recreational</option><option value="standard">Standard</option>
         </select>
         <input type="number" min="1" value={form.days} onChange={e => setForm({ ...form, days: e.target.value })} placeholder="Số ngày" className={inp} />
         <input type="number" min="1" value={form.max_uses} onChange={e => setForm({ ...form, max_uses: e.target.value })} placeholder="Lượt dùng" className={inp} />

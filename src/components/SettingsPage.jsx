@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Settings, RotateCcw, Crown, Eye, EyeOff, Globe, Database, Shield, Monitor, Trash2, Languages, Moon, Sun, MapPin, Info, Cpu, Leaf, Copy, CheckCircle2, ShieldOff, Palette, Tv, Trophy, Smartphone, LogOut, QrCode, Users, KeyRound } from 'lucide-react';
 import ShareButtons from './ShareButtons';
+import { getDeviceInfo } from '../services/device';
+import { Fingerprint, Wifi, Clock, Server } from 'lucide-react';
 import { hasAppPin, setAppPin, clearAppPin, weekReport, getKidLimit, setKidLimit, fmtDur } from '../services/kids';
 import { useProfile } from '../contexts/ProfileContext';
 import QrScanner from './QrScanner';
@@ -28,6 +30,20 @@ function Toggle({ on, onClick, label }) {
   );
 }
 
+// Dòng info trong About
+function AboutRow({ Icon, label, value, loading, mono, accent }) {
+  return (
+    <div className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
+      <span className="flex items-center gap-2 text-slate-400 shrink-0">{Icon && <Icon className="w-3.5 h-3.5" />} {label}</span>
+      {loading ? (
+        <span className="w-20 h-3.5 rounded bg-white/10 animate-pulse" />
+      ) : (
+        <span className={`font-bold text-right truncate ${mono ? 'font-mono text-[11px]' : ''} ${accent || 'text-slate-200'}`}>{value || '—'}</span>
+      )}
+    </div>
+  );
+}
+
 export default function SettingsPage({ onClose }) {
   const { profiles } = useProfile();
   const [pinOn, setPinOn] = useState(() => hasAppPin());
@@ -51,6 +67,25 @@ export default function SettingsPage({ onClose }) {
   const [sessLoading, setSessLoading] = useState(false);
   const [achStats, setAchStats] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [devInfo, setDevInfo] = useState(null);
+  const [fpCopied, setFpCopied] = useState(false);
+
+  // Nạp thông tin thiết bị khi mở mục Giới thiệu
+  useEffect(() => {
+    if (active !== 'about' || devInfo) return;
+    let on = true;
+    getDeviceInfo().then((d) => { if (on) setDevInfo(d); }).catch(() => {});
+    return () => { on = false; };
+  }, [active]);
+
+  const copyFp = async () => {
+    if (!devInfo?.fingerprint) return;
+    try {
+      await navigator.clipboard.writeText(devInfo.fingerprint);
+      setFpCopied(true);
+      setTimeout(() => setFpCopied(false), 1500);
+    } catch {}
+  };
 
   const { token, user } = useAuth();
   const isAdmin = user?.role === 'admin';
@@ -159,20 +194,20 @@ export default function SettingsPage({ onClose }) {
           </div>
           <h1 className="text-2xl font-extrabold text-white">{t('settings.title')}</h1>
         </div>
-        {onClose && (
-          <button onClick={onClose} className="px-4 py-2 text-xs text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors">
-            {t('common.close')}
-          </button>
-        )}
+        <div className="hidden md:flex items-center gap-1.5 text-[11px] text-stone-500">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          {t('settings.synced')}
+        </div>
       </div>
 
       <div className="flex flex-col md:flex-row gap-4 items-start">
         {/* LEFT: nav */}
-        <nav className="w-full md:w-60 shrink-0 md:sticky md:top-3 flex md:flex-col gap-1 overflow-x-auto md:overflow-visible pb-1 scrollbar-none bg-[#14151c] border border-white/[0.07] rounded-2xl p-2">
+        <nav className="w-full md:w-60 shrink-0 flex md:flex-col gap-1 overflow-x-auto md:overflow-visible pb-1 scrollbar-none bg-[#14151c] border border-white/[0.07] rounded-2xl p-2 md:self-start">
           {navItems.map(({ id, label, Icon }) => (
             <button
               key={id}
-              onClick={() => setActive(id)}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => { setActive(id); try { document.querySelector('main')?.scrollTo({ top: 0 }); } catch {} }}
               className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[12px] font-bold whitespace-nowrap transition-all active:scale-[0.98] flex-1 md:flex-none ${
                 active === id
                   ? 'grad-brand text-white shadow-lg shadow-[#f36f21]/25'
@@ -648,10 +683,37 @@ export default function SettingsPage({ onClose }) {
             <span className="text-slate-400">{t('settings.version')}</span>
             <span className="text-slate-200 font-bold">CHRTV PLAY 2.0</span>
           </div>
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-slate-400">Region</span>
-            <span className="text-slate-200 font-bold">{countryFlag} {countryName}</span>
+          {/* ===== Thiết bị đang dùng ===== */}
+          <div className="rounded-xl border border-white/[0.06] bg-black/30 divide-y divide-white/[0.05] overflow-hidden">
+            <AboutRow Icon={Globe} label={t('about.browser')} value={devInfo?.browser} loading={!devInfo} />
+            <AboutRow Icon={Cpu} label={t('about.os')} value={devInfo?.os ? `${devInfo.os}${devInfo.cores ? ` · ${devInfo.cores} CPU` : ''}` : ''} loading={!devInfo} />
+            <AboutRow Icon={device.isMobile ? Smartphone : Monitor} label={t('about.device')} value={devInfo ? t(`about.kind_${devInfo.kind}`) : ''} loading={!devInfo} />
+            <AboutRow Icon={Monitor} label={t('about.screen')} value={devInfo?.screen ? `${devInfo.screen}${devInfo.viewport ? ` · view ${devInfo.viewport}` : ''}` : ''} loading={!devInfo} />
+            <AboutRow Icon={Languages} label={t('about.lang_tz')} value={devInfo ? `${devInfo.lang || '?'} · ${devInfo.tz || '?'}` : ''} loading={!devInfo} />
+            <AboutRow Icon={MapPin} label={t('about.country')} value={`${countryFlag} ${countryName} (${country})`} />
+            <AboutRow Icon={Wifi} label={t('about.net')} value={devInfo ? (devInfo.online ? t('about.online') : t('about.offline')) : ''} loading={!devInfo} accent={devInfo ? (devInfo.online ? 'text-emerald-400' : 'text-red-400') : ''} />
+            {devInfo?.standalone && <AboutRow Icon={CheckCircle2} label={t('about.app_mode')} value={t('about.pwa')} accent="text-emerald-400" />}
+            <AboutRow Icon={Server} label={t('about.server')} value={API_BASE.replace(/^https?:\/\//, '').slice(0, 40)} mono />
           </div>
+          {/* Fingerprint */}
+          <div className="rounded-xl border border-[#f36f21]/25 bg-[#f36f21]/[0.05] p-3">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="flex items-center gap-1.5 text-[11px] font-bold text-stone-300"><Fingerprint className="w-3.5 h-3.5 text-[#ff9a3d]" /> {t('about.fp')}</span>
+              <button onClick={copyFp} className="flex items-center gap-1 text-[11px] font-bold text-stone-400 hover:text-white transition-colors">
+                {fpCopied ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                {fpCopied ? t('about.copied') : t('about.copy')}
+              </button>
+            </div>
+            <div className="font-mono text-[15px] font-black tracking-[0.2em] text-white text-center select-all">{devInfo?.fingerprint || '…'}</div>
+            <p className="text-[10px] text-stone-500 text-center mt-1">{t('about.fp_hint')}</p>
+          </div>
+          {/* User-Agent */}
+          {devInfo?.ua && (
+            <div className="rounded-xl border border-white/[0.06] bg-black/30 p-3">
+              <div className="flex items-center gap-1.5 text-[11px] font-bold text-stone-400 mb-1"><Clock className="w-3.5 h-3.5" /> User-Agent</div>
+              <p className="text-[10px] text-stone-500 break-all leading-relaxed font-mono">{devInfo.ua}</p>
+            </div>
+          )}
           <div className="pt-3 border-t border-slate-800/40">
             <button
               onClick={handleReset}

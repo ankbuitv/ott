@@ -507,7 +507,7 @@ export default function AdminPanel({ onClose }) {
                           }}
                           className="p-1.5 text-slate-500 hover:text-white" title={p.is_active === 0 ? 'Hiện' : 'Ẩn'}
                         ><Eye className="w-3.5 h-3.5" /></button>
-                        {!['standard', 'recreational', 'vip'].includes(p.code) && (
+                        {!['standard', 'recreational', 'ultimate', 'elite', 'signature'].includes(p.code) && (
                           <button
                             onClick={async () => {
                               if (!confirm('Xoá gói ' + p.code + '?')) return;

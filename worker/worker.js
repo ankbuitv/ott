@@ -684,7 +684,7 @@ const SCHEMA_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_comments_target ON comments(target, status, id)`,
   `CREATE TABLE IF NOT EXISTS fan_groups (id INTEGER PRIMARY KEY AUTOINCREMENT, target TEXT UNIQUE NOT NULL, name TEXT NOT NULL, created_by INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS fan_members (group_id INTEGER NOT NULL, user_id INTEGER NOT NULL, name TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(group_id, user_id))`,
-  `CREATE TABLE IF NOT EXISTS gift_codes (code TEXT PRIMARY KEY, plan TEXT DEFAULT 'vip', days INTEGER DEFAULT 30, max_uses INTEGER DEFAULT 1, used INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1, note TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS gift_codes (code TEXT PRIMARY KEY, plan TEXT DEFAULT 'signature', days INTEGER DEFAULT 30, max_uses INTEGER DEFAULT 1, used INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1, note TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS gift_redemptions (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL, user_id INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS user_plans (user_id INTEGER PRIMARY KEY, plan TEXT DEFAULT 'standard', expires_at INTEGER DEFAULT 0, updated_at INTEGER DEFAULT 0)`,
   `CREATE TABLE IF NOT EXISTS payments (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, username TEXT DEFAULT '', plan TEXT NOT NULL, amount INTEGER DEFAULT 0, order_code TEXT UNIQUE NOT NULL, status TEXT DEFAULT 'pending', payload TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, paid_at DATETIME DEFAULT NULL)`,
@@ -735,9 +735,19 @@ async function ensureSchema(env) {
     }
     // Seed gói mặc định (admin sửa/thêm sau trong Admin → Gói cước)
     try {
-      await env.DB.prepare("INSERT OR IGNORE INTO plans (code, name, rank, price, price_text, tagline, allows, color) VALUES ('standard', 'STANDARD', 1, 0, 'TẠM FREE', 'Kênh Việt Nam', ?, '#42a5f5')").bind(JSON.stringify(["Kênh truyền hình Việt Nam (VTV, HTV, THVL, SCTV...)"])).run();
-      await env.DB.prepare("INSERT OR IGNORE INTO plans (code, name, rank, price, price_text, tagline, allows, color) VALUES ('recreational', 'RECREATIONAL', 2, 0, 'TẠM FREE', 'Kênh VN + Kênh Phim', ?, '#ab47bc')").bind(JSON.stringify(["Toàn bộ kênh Việt Nam", "Các kênh Phim / Giải trí (BOX, HBO, AXN...)"])).run();
-      await env.DB.prepare("INSERT OR IGNORE INTO plans (code, name, rank, price, price_text, tagline, allows, color) VALUES ('vip', 'VIP', 3, 0, 'TẠM FREE', 'Xem hết — tất cả kênh', ?, '#f36f21')").bind(JSON.stringify(["Toàn bộ kênh VN + Phim + Thể thao", "Kênh Quốc tế & đặc biệt", "Ưu tiên hỗ trợ 24/7"])).run();
+      await env.DB.prepare("INSERT OR IGNORE INTO plans (code, name, rank, price, price_text, tagline, allows, color) VALUES ('standard', 'STANDARD', 1, 0, 'TẠM FREE', 'Các kênh VTV', ?, '#42a5f5')").bind(JSON.stringify(["Các kênh VTV (VTV1, VTV2, VTV3...)", "Shorts xem miễn phí mọi gói"])).run();
+      await env.DB.prepare("INSERT OR IGNORE INTO plans (code, name, rank, price, price_text, tagline, allows, color) VALUES ('recreational', 'RECREATIONAL', 2, 0, 'TẠM FREE', 'VTV + BOX Giải trí', ?, '#ab47bc')").bind(JSON.stringify(["Toàn bộ gói Standard", "38 kênh BOX - Giải trí"])).run();
+      await env.DB.prepare("INSERT OR IGNORE INTO plans (code, name, rank, price, price_text, tagline, allows, color) VALUES ('ultimate', 'ULTIMATE', 3, 0, 'TẠM FREE', 'VTV + BOX + Thể thao', ?, '#22c55e')").bind(JSON.stringify(["Toàn bộ gói Recreational", "19 kênh SPORTS - Thể thao"])).run();
+      await env.DB.prepare("INSERT OR IGNORE INTO plans (code, name, rank, price, price_text, tagline, allows, color) VALUES ('elite', 'ELITE', 4, 0, 'TẠM FREE', 'Thêm kênh Phim', ?, '#f59e0b')").bind(JSON.stringify(["Toàn bộ gói Ultimate", "Các kênh Phim (phim / movie)"])).run();
+      await env.DB.prepare("INSERT OR IGNORE INTO plans (code, name, rank, price, price_text, tagline, allows, color) VALUES ('signature', 'SIGNATURE', 5, 0, 'TẠM FREE', 'Tất cả mọi kênh', ?, '#f36f21')").bind(JSON.stringify(["Toàn bộ gói Elite", "Mọi kênh hiện tại & tương lai", "Ưu tiên hỗ trợ 24/7"])).run();
+      // MIGRATION gói 3 -> 5: cập nhật gói cũ, tắt vip, chuyển user vip -> signature
+      try {
+        await env.DB.prepare("UPDATE plans SET name='STANDARD', rank=1, tagline='Các kênh VTV', color='#42a5f5', allows=? WHERE code='standard'").bind(JSON.stringify(["Các kênh VTV (VTV1, VTV2, VTV3...)", "Shorts xem miễn phí mọi gói"])).run();
+        await env.DB.prepare("UPDATE plans SET name='RECREATIONAL', rank=2, tagline='VTV + BOX Giải trí', color='#ab47bc', allows=? WHERE code='recreational'").bind(JSON.stringify(["Toàn bộ gói Standard", "38 kênh BOX - Giải trí"])).run();
+        await env.DB.prepare("UPDATE plans SET is_active=0 WHERE code='vip'").run();
+        await env.DB.prepare("UPDATE users SET plan='signature' WHERE plan='vip'").run();
+        await env.DB.prepare("UPDATE gift_codes SET plan='signature' WHERE plan='vip'").run();
+      } catch (e) { /* DB mới — bỏ qua */ }
       try {
         const { results: evCount } = await env.DB.prepare("SELECT COUNT(*) AS c FROM events").all();
         if (!evCount?.[0]?.c) {
@@ -1412,31 +1422,37 @@ function streamErr(obj, status, request, env) {
   return new Response(JSON.stringify(obj), { status, headers: jsonHeaders(request, env) });
 }
 
-// ---- GATING theo nhóm kênh: Standard=VN, Recreational=VN+PHIM, VIP=tất cả ----
-// Khớp playlist thực tế: "TH - Truyền hình Việt"->VN, "BOX - Giải trí"->PHIM, "SPORTS"->KHAC
+// ---- GATING theo nhóm kênh (5 gói): Standard=VTV, Recreational=+BOX, Ultimate=+SPORT, Elite=+FILM, Signature=tất cả ----
+// Khớp playlist thực tế: "TH - Truyền hình Việt"->VTV, "BOX - Giải trí"->BOX, "SPORTS"->SPORT
 function normGroupChrtv(s) {
   return String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
 }
 function classifyGroupChrtv(g) {
   const n = normGroupChrtv(g);
-  if (!n) return "VN";
-  if (/\b(th\s*truyen\s*hinh\s*viet|truyen\s*hinh\s*viet)\b/.test(n)) return "VN";
-  if (/(box|giai\s*tri|phim|movie|cinema|film|hollywood|classic|series|drama|hbo|axn|warner|cinemax|discovery|nat\s*geo|cartoon|anim|kids|thieu\s*nhi)/.test(n)) return "PHIM";
-  if (/(viet(\s*nam)?|\bvn\b|vtv|htv|thvl|sctv|vtc|vtvcab|antv|quoc\s*gia|nhan\s*dan|quoc\s*hoi|dia\s*phuong|ha\s*noi|vinh\s*long|can\s*tho|nong\s*nghiep|pho\s*thong|dan\s*toc|truyen\s*hinh|tong\s*hop|du\s*phong|fpt\s*su\s*kien)/.test(n)) return "VN";
-  return "KHAC";
+  if (!n) return "VTV"; // nhóm trống = FTA mặc định
+  if (/\b(th\s*truyen\s*hinh\s*viet|truyen\s*hinh\s*viet)\b/.test(n)) return "VTV";
+  if (/\bvtv\w*/.test(n)) return "VTV";
+  if (/\bbox\b/.test(n)) return "BOX";
+  if (/(\bsport|the\s*thao|bong\s*da|\bespn\b|\bbein\b)/.test(n)) return "SPORT";
+  if (/(phim|movie|cinema|film|hollywood|classic|series|drama|\bhbo\b|\baxn\b|warner|cinemax|discovery|nat\s*geo)/.test(n)) return "FILM";
+  if (/(cartoon|\banim\b|\bkids\b|thieu\s*nhi|giai\s*tri)/.test(n)) return "BOX"; // thiếu nhi/giải trí -> BOX
+  return "OTHER";
 }
+const PLAN_RANK_FALLBACK = { signature: 5, elite: 4, ultimate: 3, recreational: 2, standard: 1, vip: 5 };
 function planAllowsGroupChrtv(plan, g) {
-  const c = String(plan || "standard").toLowerCase();
-  if (c === "vip") return true;
+  const rank = PLAN_RANK_FALLBACK[String(plan || "standard").toLowerCase()] || 1;
+  if (rank >= 5) return true;
   const cls = classifyGroupChrtv(g);
-  if (c === "recreational") return cls === "VN" || cls === "PHIM";
-  return cls === "VN"; // standard / guest / mặc định
+  if (rank >= 4) return cls === "VTV" || cls === "BOX" || cls === "SPORT" || cls === "FILM";
+  if (rank === 3) return cls === "VTV" || cls === "BOX" || cls === "SPORT";
+  if (rank === 2) return cls === "VTV" || cls === "BOX";
+  return cls === "VTV"; // standard / guest / mặc định
 }
 // Rank gói từ DB (cache 60s) — gói admin tự thêm vẫn phân quyền đúng theo rank
 let _planRankCache = { at: 0, map: null };
 async function planRank(env, code) {
   const c = String(code || "standard").toLowerCase();
-  const fallback = { vip: 3, recreational: 2, standard: 1 };
+  const fallback = PLAN_RANK_FALLBACK;
   try {
     if (!hasDB(env)) return fallback[c] || 1;
     const now = Date.now();
@@ -1451,10 +1467,12 @@ async function planRank(env, code) {
 }
 async function planAllowsGroupChrtvAsync(env, plan, g) {
   const rank = await planRank(env, plan);
-  if (rank >= 3) return true;
+  if (rank >= 5) return true;
   const cls = classifyGroupChrtv(g);
-  if (rank === 2) return cls === "VN" || cls === "PHIM";
-  return cls === "VN";
+  if (rank >= 4) return cls === "VTV" || cls === "BOX" || cls === "SPORT" || cls === "FILM";
+  if (rank === 3) return cls === "VTV" || cls === "BOX" || cls === "SPORT";
+  if (rank === 2) return cls === "VTV" || cls === "BOX";
+  return cls === "VTV";
 }
 
 // Catalog kênh (cache 5 phút): byId / byUrl / byDir
@@ -2059,9 +2077,11 @@ async function handleUser(path, request, env) {
 
   // ========== GÓI CƯỚC (đăng ký gói) — tạm thời FREE toàn bộ ==========
   const PLANS = {
-    standard:     { code: "standard",     name: "Standard",     rank: 1, price: 0, priceText: "TẠM FREE", allows: "Kênh truyền hình Việt Nam" },
-    recreational: { code: "recreational", name: "Recreational", rank: 2, price: 0, priceText: "TẠM FREE", allows: "Kênh Việt Nam + kênh Phim" },
-    vip:          { code: "vip",          name: "VIP",          rank: 3, price: 0, priceText: "TẠM FREE", allows: "Tất cả kênh — VN + Phim + Thể thao + Quốc tế" },
+    standard:     { code: "standard",     name: "Standard",     rank: 1, price: 0, priceText: "TẠM FREE", allows: "Các kênh VTV" },
+    recreational: { code: "recreational", name: "Recreational", rank: 2, price: 0, priceText: "TẠM FREE", allows: "VTV + BOX Giải trí" },
+    ultimate:     { code: "ultimate",     name: "Ultimate",     rank: 3, price: 0, priceText: "TẠM FREE", allows: "VTV + BOX + Thể thao" },
+    elite:        { code: "elite",        name: "Elite",        rank: 4, price: 0, priceText: "TẠM FREE", allows: "Thêm kênh Phim" },
+    signature:    { code: "signature",    name: "Signature",    rank: 5, price: 0, priceText: "TẠM FREE", allows: "Tất cả mọi kênh" },
   };
   if (path === "/user/plan" && request.method === "GET") {
     let plans = PLANS;
@@ -2352,7 +2372,7 @@ async function handleAdmin(path, request, env, ctx) {
   if (path === "/admin/plans" && request.method === "DELETE") {
     const { code } = await request.json().catch(() => ({}));
     if (!code) return json({ error: "Thiếu code" }, 400, request, env);
-    if (["standard", "recreational", "vip"].includes(String(code).toLowerCase())) return json({ error: "Không xoá gói mặc định — hãy tắt hiển thị." }, 400, request, env);
+    if (["standard", "recreational", "ultimate", "elite", "signature"].includes(String(code).toLowerCase())) return json({ error: "Không xoá gói mặc định — hãy tắt hiển thị." }, 400, request, env);
     await env.DB.prepare("DELETE FROM plans WHERE code = ?").bind(code).run();
     _planRankCache = { at: 0, map: null };
     return json({ success: true }, 200, request, env);
@@ -2674,7 +2694,7 @@ async function handleAdmin(path, request, env, ctx) {
       code = "CHRTV-" + [...rnd].map((x) => abc[x % abc.length]).join("").slice(0, 8);
     }
     try {
-      await env.DB.prepare("INSERT INTO gift_codes (code, plan, days, max_uses, note) VALUES (?, ?, ?, ?, ?)").bind(code, ["vip", "recreational", "standard"].includes(b.plan) ? b.plan : "vip", Math.max(1, Math.min(3650, parseInt(b.days) || 30)), Math.max(1, Math.min(100000, parseInt(b.max_uses) || 1)), String(b.note || "").slice(0, 200)).run();
+      await env.DB.prepare("INSERT INTO gift_codes (code, plan, days, max_uses, note) VALUES (?, ?, ?, ?, ?)").bind(code, ["signature", "elite", "ultimate", "recreational", "standard"].includes(b.plan) ? b.plan : "signature", Math.max(1, Math.min(3650, parseInt(b.days) || 30)), Math.max(1, Math.min(100000, parseInt(b.max_uses) || 1)), String(b.note || "").slice(0, 200)).run();
     } catch (e) {
       if (String(e?.message || "").includes("UNIQUE")) return json({ error: "Mã đã tồn tại" }, 409, request, env);
       throw e;
@@ -3500,7 +3520,7 @@ async function handleFanGroups(request, env) {
 
 // Kích hoạt gói cho user (payments/gift/admin dùng chung)
 async function activatePlan(env, userId, plan, days) {
-  const p = ["vip", "recreational", "standard"].includes(String(plan)) ? String(plan) : "vip";
+  const p = ["signature", "elite", "ultimate", "recreational", "standard"].includes(String(plan)) ? String(plan) : "signature";
   const d = Math.max(1, Math.min(3650, parseInt(days) || 30));
   const nowS = Math.floor(Date.now() / 1000);
   let base = nowS;

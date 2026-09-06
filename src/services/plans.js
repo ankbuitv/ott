@@ -1,37 +1,65 @@
 import { API_BASE } from "./config";
 
 // ===== GÓI CƯỚC CHRTV PLAY — tạm thời FREE toàn bộ =====
-// standard     : chỉ kênh truyền hình Việt Nam (nhóm "TH - Truyền hình Việt" + VTV/HTV/...)
-// recreational : kênh VN + kênh Phim/Giải trí (nhóm "BOX - Giải trí" / phim)
-// vip          : tất cả (VN + Phim + Thể thao + Quốc tế)
+// standard     : các kênh VTV (nhóm "TH - Truyền hình Việt")
+// recreational : + BOX - Giải trí
+// ultimate     : + SPORTS - Thể thao
+// elite        : + kênh Phim (phim/movie)
+// signature    : tất cả mọi kênh
+// Shorts xem miễn phí mọi gói (không gating)
 export const SUPPORT_EMAIL = "support@ankb.qzz.io";
 
+// art/grad: hình minh hoạ cho thẻ gói (PlansScreen)
 export const PLANS = [
   {
     code: "standard", name: "STANDARD", rank: 1,
-    tagline: "Kênh Việt Nam", tagline_en: "Vietnamese channels", color: "#42a5f5",
-    allows: ["Kênh truyền hình Việt Nam (VTV, HTV, THVL, SCTV...)"],
-    allows_en: ["Vietnamese TV channels (VTV, HTV, THVL, SCTV...)"],
-    not: ["Kênh Phim / Giải trí", "Kênh Thể thao & Quốc tế"],
-    not_en: ["Movie / Entertainment channels", "Sports & International channels"],
+    tagline: "Các kênh VTV", tagline_en: "VTV channels", color: "#42a5f5",
+    art: "📺", grad: "linear-gradient(135deg,#0c4a6e,#0284c7 55%,#38bdf8)",
+    allows: ["Các kênh VTV (VTV1, VTV2, VTV3...)", "Shorts xem miễn phí"],
+    allows_en: ["VTV channels (VTV1, VTV2, VTV3...)", "Free Shorts"],
+    not: ["Kênh BOX - Giải trí", "Kênh Thể thao", "Kênh Phim"],
+    not_en: ["BOX - Entertainment", "Sports channels", "Movie channels"],
   },
   {
     code: "recreational", name: "RECREATIONAL", rank: 2,
-    tagline: "Kênh VN + Kênh Phim", tagline_en: "VN + Movie channels", color: "#ab47bc",
-    allows: ["Toàn bộ kênh Việt Nam", "Các kênh Phim / Giải trí (BOX, HBO, AXN...)"],
-    allows_en: ["All Vietnamese channels", "Movie / Entertainment channels (BOX, HBO, AXN...)"],
-    not: ["Kênh Thể thao & Quốc tế"],
-    not_en: ["Sports & International channels"],
+    tagline: "VTV + BOX Giải trí", tagline_en: "VTV + BOX Entertainment", color: "#ab47bc",
+    art: "🎬", grad: "linear-gradient(135deg,#581c87,#a855f7 55%,#e879f9)",
+    allows: ["Toàn bộ gói Standard", "38 kênh BOX - Giải trí", "Kênh thiếu nhi"],
+    allows_en: ["Everything in Standard", "38 BOX - Entertainment channels", "Kids channels"],
+    not: ["Kênh Thể thao", "Kênh Phim"],
+    not_en: ["Sports channels", "Movie channels"],
   },
   {
-    code: "vip", name: "VIP", rank: 3,
-    tagline: "Xem hết — tất cả kênh", tagline_en: "Everything — all channels", color: "#f36f21",
-    allows: ["Toàn bộ kênh VN + Phim + Thể thao", "Kênh Quốc tế & đặc biệt", "Ưu tiên hỗ trợ 24/7"],
-    allows_en: ["All VN + Movies + Sports channels", "International & special channels", "Priority 24/7 support"],
+    code: "ultimate", name: "ULTIMATE", rank: 3,
+    tagline: "VTV + BOX + Thể thao", tagline_en: "VTV + BOX + Sports", color: "#22c55e",
+    art: "⚽", grad: "linear-gradient(135deg,#14532d,#16a34a 55%,#4ade80)",
+    allows: ["Toàn bộ gói Recreational", "19 kênh SPORTS - Thể thao"],
+    allows_en: ["Everything in Recreational", "19 SPORTS channels"],
+    not: ["Kênh Phim"],
+    not_en: ["Movie channels"],
+  },
+  {
+    code: "elite", name: "ELITE", rank: 4,
+    tagline: "Thêm kênh Phim", tagline_en: "Plus Movie channels", color: "#f59e0b",
+    art: "🎞️", grad: "linear-gradient(135deg,#78350f,#d97706 55%,#fbbf24)",
+    allows: ["Toàn bộ gói Ultimate", "Các kênh Phim (phim / movie)"],
+    allows_en: ["Everything in Ultimate", "Movie channels (phim / movie)"],
+    not: ["Kênh đặc biệt mới"],
+    not_en: ["New special channels"],
+  },
+  {
+    code: "signature", name: "SIGNATURE", rank: 5,
+    tagline: "Tất cả mọi kênh", tagline_en: "Every single channel", color: "#f36f21",
+    art: "👑", grad: "linear-gradient(135deg,#7c2d12,#f36f21 55%,#fbbf24)",
+    allows: ["Toàn bộ gói Elite", "Mọi kênh hiện tại & tương lai", "Ưu tiên hỗ trợ 24/7"],
+    allows_en: ["Everything in Elite", "All current & future channels", "Priority 24/7 support"],
     not: [],
     not_en: [],
   },
 ];
+
+// Rank mặc định khi chưa sync server (admin thêm gói mới vẫn phân quyền đúng theo rank)
+export const PLAN_RANK_FALLBACK = { signature: 5, elite: 4, ultimate: 3, recreational: 2, standard: 1, vip: 5 };
 
 export function planByCode(code) { return PLANS.find((p) => p.code === (code || "").toLowerCase()) || null; }
 
@@ -45,35 +73,32 @@ function normGroup(s) {
     .trim();
 }
 
-// Phân loại kênh theo group_title: 'VN' | 'PHIM' | 'KHAC' (thể thao/quốc tế/khác)
+// Phân loại kênh theo group_title: 'VTV' | 'BOX' | 'SPORT' | 'FILM' | 'OTHER'
 // Khớp với playlist thực tế:
-//   "TH - Truyền hình Việt" -> VN | "BOX - Giải trí"/phim -> PHIM | "SPORTS - Thể thao" -> KHAC
+//   "TH - Truyền hình Việt" -> VTV | "BOX - Giải trí" -> BOX | "SPORTS - Thể thao" -> SPORT
+// (giữ đồng bộ 1:1 với classifyGroupChrtv trong worker/worker.js)
 export function classifyGroup(groupTitle = "") {
-  const raw = String(groupTitle || "");
-  const g = normGroup(raw);
-  if (!g) return "VN"; // nhóm trống = kênh VN mặc định (FTA)
-
-  // PHIM / Giải trí — check trước vì tên kênh VN cũng có thể chứa "phim" (HTVC Phim...)
-  // nhưng group "TH - Truyền hình Việt" phải luôn là VN.
-  if (/\b(th\s*truyen\s*hinh\s*viet|truyen\s*hinh\s*viet)\b/.test(g)) return "VN";
-  if (/(box|giai\s*tri|phim|movie|cinema|film|hollywood|classic|series|drama|hbo|axn|warner|cinemax|discovery|nat\s*geo|cartoon|anim|kids|thieu\s*nhi)/.test(g)) return "PHIM";
-
-  // VN — tên nhóm hoặc mã đài Việt
-  if (/(viet(\s*nam)?|\bvn\b|vtv|htv|thvl|sctv|vtc|vtvcab|antv|quoc\s*gia|nhan\s*dan|quoc\s*hoi|dia\s*phuong|ha\s*noi|vinh\s*long|can\s*tho|nong\s*nghiep|pho\s*thong|dan\s*toc|truyen\s*hinh|tong\s*hop|du\s*phong|fpt\s*su\s*kien)/.test(g)) return "VN";
-
-  return "KHAC";
+  const g = normGroup(groupTitle);
+  if (!g) return "VTV"; // nhóm trống = FTA mặc định
+  if (/\b(th\s*truyen\s*hinh\s*viet|truyen\s*hinh\s*viet)\b/.test(g)) return "VTV";
+  if (/\bvtv\w*/.test(g)) return "VTV";
+  if (/\bbox\b/.test(g)) return "BOX";
+  if (/(\bsport|the\s*thao|bong\s*da|\bespn\b|\bbein\b)/.test(g)) return "SPORT";
+  if (/(phim|movie|cinema|film|hollywood|classic|series|drama|\bhbo\b|\baxn\b|warner|cinemax|discovery|nat\s*geo)/.test(g)) return "FILM";
+  if (/(cartoon|\banim\b|\bkids\b|thieu\s*nhi|giai\s*tri)/.test(g)) return "BOX";
+  return "OTHER";
 }
 
 // Rank gói (cache từ server — admin thêm gói mới vẫn phân quyền đúng)
-const _rankCache = { at: 0, map: { vip: 3, recreational: 2, standard: 1 } };
+const _rankCache = { at: 0, map: { ...PLAN_RANK_FALLBACK } };
 export function rankOf(plan) {
   const c = String(plan || "standard").toLowerCase();
-  return _rankCache.map[c] ?? ({ vip: 3, recreational: 2 }[c] || 1);
+  return _rankCache.map[c] ?? (PLAN_RANK_FALLBACK[c] || 1);
 }
 export function refreshPlanRanks(plans) {
   const list = Array.isArray(plans) ? plans : Object.values(plans || {});
   if (!list.length) return;
-  const m = { vip: 3, recreational: 2, standard: 1 };
+  const m = { ...PLAN_RANK_FALLBACK };
   for (const p of list) {
     if (p?.code) m[String(p.code).toLowerCase()] = Number(p.rank) || 1;
   }
@@ -98,18 +123,22 @@ export async function fetchPlanList() {
 // Gói hiện có được xem nhóm kênh nào không (theo rank)
 export function planAllows(plan, groupTitle = "") {
   const rank = rankOf(plan);
-  if (rank >= 3) return true;
+  if (rank >= 5) return true;
   const cls = classifyGroup(groupTitle);
-  if (rank === 2) return cls === "VN" || cls === "PHIM";
-  return cls === "VN"; // rank 1 / mặc định
+  if (rank >= 4) return cls === "VTV" || cls === "BOX" || cls === "SPORT" || cls === "FILM";
+  if (rank === 3) return cls === "VTV" || cls === "BOX" || cls === "SPORT";
+  if (rank === 2) return cls === "VTV" || cls === "BOX";
+  return cls === "VTV"; // rank 1 / mặc định
 }
 
 // Gói tối thiểu để xem 1 nhóm kênh (dùng cho thông báo nâng cấp)
 export function minPlanForGroup(groupTitle = "") {
   const cls = classifyGroup(groupTitle);
-  if (cls === "VN") return "standard";
-  if (cls === "PHIM") return "recreational";
-  return "vip";
+  if (cls === "VTV") return "standard";
+  if (cls === "BOX") return "recreational";
+  if (cls === "SPORT") return "ultimate";
+  if (cls === "FILM") return "elite";
+  return "signature";
 }
 
 function authHeaders() {

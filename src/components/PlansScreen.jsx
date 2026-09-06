@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Check, Mail, BadgeCheck, ShieldCheck, RefreshCcw, Lock, Crown, Gift } from 'lucide-react';
+import { Check, X, Mail, BadgeCheck, ShieldCheck, RefreshCcw, Lock, Crown, Gift, Sparkles, ChevronRight, Play } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { PLANS, activatePlan, fetchPlan, fetchPlanList, refreshPlanRanks, SUPPORT_EMAIL } from '../services/plans';
@@ -13,6 +13,18 @@ function fmtPrice(p, lang) {
   try {
     return price.toLocaleString(lang === 'vi' ? 'vi-VN' : 'en-US') + 'đ';
   } catch { return `${price}đ`; }
+}
+
+// Art dự phòng theo mã gói (server không trả art)
+function planArt(p) {
+  const fb = PLANS.find((f) => f.code === p.code) || {};
+  return {
+    art: p.art || fb.art || '📦',
+    grad: p.grad || fb.grad || `linear-gradient(135deg, ${p.color || '#f36f21'}, #1a1b22)`,
+    tagline_en: p.tagline_en || fb.tagline_en || p.tagline || '',
+    not: Array.isArray(p.not) && p.not.length ? p.not : (fb.not || []),
+    not_en: Array.isArray(p.not_en) && p.not_en.length ? p.not_en : (fb.not_en || []),
+  };
 }
 
 // ===== MÀN HÌNH MUA GÓI — giá & gói do admin quản lý (API), fallback gói cứng =====
@@ -87,53 +99,72 @@ export default function PlansScreen() {
   return (
     <div className="min-h-full pb-16 relative">
       <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(700px 260px at 50% 0%, rgba(243,111,33,.12), transparent 70%)' }}></div>
-      <div className="max-w-[1100px] mx-auto px-5 md:px-6 relative">
+      <div className="max-w-[1200px] mx-auto px-4 md:px-6 relative">
         <div className="flex items-center justify-end gap-2 text-[12px] pt-4 text-stone-500">
           <Mail className="w-3.5 h-3.5 text-[#f36f21]" />
           {t('plans.support')}:
           <a href={`mailto:${SUPPORT_EMAIL}`} className="font-bold text-[#ff9a3d] hover:underline">{SUPPORT_EMAIL}</a>
         </div>
 
-        <h1 className="text-center text-[28px] md:text-[34px] font-black tracking-tight pt-4 text-white">{t('plans.title')}</h1>
-        <p className="text-center text-[13px] text-stone-400 mt-2 flex items-center justify-center gap-1.5">
-          <BadgeCheck className="w-4 h-4 text-emerald-400" />
-          {t('plans.promo', { email: SUPPORT_EMAIL })}
-        </p>
-
-        {/* Stepper */}
-        <div className="max-w-[760px] mx-auto mt-8 mb-8">
-          <div className="relative flex items-start">
-            <div className="absolute left-[12%] right-[12%] top-[15px] h-[2px] bg-white/10" />
-            {[
-              { n: 1, t: t('plans.s1'), s: t('plans.s1s'), on: true },
-              { n: 2, t: t('plans.s2'), s: t('plans.s2s'), on: true },
-              { n: 3, t: t('plans.s3'), s: t('plans.s3s'), on: false },
-            ].map((st, i) => (
-              <React.Fragment key={st.n}>
-                <div className="flex-1 flex items-center gap-2.5 relative z-10 justify-center">
-                  <span className={`w-8 h-8 rounded-full flex items-center justify-center text-[13px] font-extrabold shrink-0 ${st.on ? 'grad-brand text-white shadow-lg shadow-[#f36f21]/30' : 'bg-white/10 text-stone-500'}`}>{st.n}</span>
-                  <div className="text-left hidden sm:block">
-                    <div className={`text-[13px] font-bold ${st.on ? 'text-white' : 'text-stone-500'}`}>{st.t}</div>
-                    <div className="text-[11px] text-stone-500">{st.s}</div>
+        {/* ===== HERO minh hoạ ===== */}
+        <div className="relative overflow-hidden rounded-3xl border border-white/10 mt-3 mb-6" style={{ background: 'linear-gradient(120deg,#1a0f08 0%,#2b1410 40%,#101828 100%)' }}>
+          <div className="absolute -right-10 -top-10 w-64 h-64 rounded-full opacity-30 blur-2xl" style={{ background: 'radial-gradient(circle,#f36f21,transparent 70%)' }} />
+          <div className="absolute -left-14 -bottom-14 w-72 h-72 rounded-full opacity-20 blur-2xl" style={{ background: 'radial-gradient(circle,#42a5f5,transparent 70%)' }} />
+          <div className="relative flex flex-col md:flex-row items-center gap-5 p-6 md:p-8">
+            {/* Minh hoạ gói */}
+            <div className="flex items-end gap-1 shrink-0 select-none" aria-hidden>
+              {plans.slice(0, 5).map((p, i) => {
+                const a = planArt(p);
+                const h = 44 + i * 12;
+                return (
+                  <div key={p.code} className="flex flex-col items-center gap-1.5">
+                    <div className="rounded-2xl flex items-center justify-center shadow-lg border border-white/20" style={{ width: 52, height: h, background: a.grad }}>
+                      <span style={{ fontSize: 20 + i * 2 }}>{a.art}</span>
+                    </div>
+                    <span className="text-[8px] font-black tracking-wide" style={{ color: p.color || '#fff' }}>{(p.name || '').slice(0, 4)}</span>
                   </div>
-                </div>
-                {i < 2 && <div className="flex-1 h-[2px] bg-white/10 mt-[15px] max-w-[70px]" />}
-              </React.Fragment>
-            ))}
+                );
+              })}
+            </div>
+            {/* Tiêu đề */}
+            <div className="text-center md:text-left flex-1">
+              <div className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-[#ff9a3d] bg-[#f36f21]/10 border border-[#f36f21]/30 rounded-full px-3 py-1 mb-2">
+                <Sparkles className="w-3 h-3" /> CHRTV PLAY
+              </div>
+              <h1 className="text-[26px] md:text-[32px] font-black tracking-tight text-white leading-tight">{t('plans.title')}</h1>
+              <p className="text-[13px] text-stone-400 mt-1.5 flex items-center justify-center md:justify-start gap-1.5">
+                <BadgeCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                {t('plans.promo', { email: SUPPORT_EMAIL })}
+              </p>
+            </div>
+            {/* Gói hiện tại */}
+            {currentRank > 0 && (
+              <div className="shrink-0 rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.07] px-4 py-3 text-center">
+                <div className="flex items-center justify-center gap-1.5 text-[11px] text-stone-400 font-bold"><ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />{t('plans.current')}</div>
+                <div className="text-lg font-black" style={{ color: cur?.color || '#ff9a3d' }}>{cur?.name || current.toUpperCase()}</div>
+                {currentRank < maxRank && <div className="text-[11px] text-stone-500">{t('plans.upgrade_anytime')}</div>}
+              </div>
+            )}
+          </div>
+          {/* Thang gói */}
+          <div className="relative border-t border-white/[0.07] px-4 md:px-8 py-3 flex items-center gap-1 overflow-x-auto scrollbar-none">
+            {plans.map((p, i) => {
+              const a = planArt(p);
+              const isCur = current === p.code;
+              return (
+                <React.Fragment key={p.code}>
+                  <button onClick={() => startBuy(p)} className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] font-black whitespace-nowrap border transition-all active:scale-95 ${isCur ? 'text-white border-transparent' : 'text-stone-300 border-white/10 bg-white/[0.04] hover:border-white/25'}`} style={isCur ? { background: a.grad } : {}}>
+                    <span>{a.art}</span> {p.name}
+                  </button>
+                  {i < plans.length - 1 && <ChevronRight className="w-3.5 h-3.5 text-stone-600 shrink-0" />}
+                </React.Fragment>
+              );
+            })}
           </div>
         </div>
 
-        {/* Gói hiện tại */}
-        {currentRank > 0 && (
-          <div className="max-w-[760px] mx-auto mb-6 flex items-center justify-center gap-2 text-[13px] text-stone-300">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            {t('plans.current')}: <b className="text-[#ff9a3d]">{cur?.name || current.toUpperCase()}</b>
-            {currentRank < maxRank && <span className="text-stone-500">— {t('plans.upgrade_anytime')}</span>}
-          </div>
-        )}
-
-        {/* Thẻ gói */}
-        <div className={`grid gap-5 ${plans.length >= 4 ? 'md:grid-cols-4' : plans.length === 2 ? 'md:grid-cols-2 max-w-[760px] mx-auto' : 'md:grid-cols-3'}`}>
+        {/* ===== Thẻ gói ===== */}
+        <div className={`grid gap-5 ${plans.length >= 5 ? 'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5' : plans.length >= 4 ? 'sm:grid-cols-2 lg:grid-cols-4' : plans.length === 2 ? 'md:grid-cols-2 max-w-[760px] mx-auto' : 'md:grid-cols-3'}`}>
           {plans.map((p) => {
             const isCurrent = current === p.code;
             const rank = Number(p.rank) || 1;
@@ -141,48 +172,64 @@ export default function PlansScreen() {
             const isTop = rank === maxRank && maxRank > 1;
             const allows = Array.isArray(p.allows) ? p.allows : [];
             const priceStr = fmtPrice(p, lang);
+            const a = planArt(p);
             return (
               <div key={p.code} className={`rounded-3xl overflow-hidden flex flex-col border transition-all hover:-translate-y-1 ${isCurrent ? 'border-[#f36f21] shadow-[0_10px_40px_rgba(243,111,33,.25)]' : isTop ? 'border-amber-400/40 shadow-[0_10px_40px_rgba(251,191,36,.12)]' : 'border-white/10 shadow-xl shadow-black/30'} bg-[#14151c]`}>
-                <div className="px-6 pt-5 pb-4 relative" style={{ background: `linear-gradient(180deg, ${p.color || '#f36f21'}26, transparent)` }}>
-                  <div className="text-[22px] font-black italic tracking-tight" style={{ color: p.color || '#f36f21' }}>{p.name}</div>
-                  <div className="text-[12px] text-stone-400 mt-0.5">{lang === 'vi' ? p.tagline : (p.tagline_en || p.tagline)}</div>
+                {/* Minh hoạ gói */}
+                <div className="relative h-[118px] flex items-center justify-center overflow-hidden" style={{ background: a.grad }}>
+                  <div className="absolute -left-6 -top-8 w-28 h-28 rounded-full bg-white/15" />
+                  <div className="absolute -right-4 -bottom-10 w-32 h-32 rounded-full bg-black/20" />
+                  <div className="absolute left-3 top-2.5 flex gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-white/70" /><span className="w-1.5 h-1.5 rounded-full bg-white/40" /><span className="w-1.5 h-1.5 rounded-full bg-white/25" />
+                  </div>
+                  <span className="text-[52px] leading-none drop-shadow-[0_6px_16px_rgba(0,0,0,.45)] relative">{a.art}</span>
+                  <span className="absolute bottom-2 right-3 text-[10px] font-black text-white/85 tracking-widest">RANK {rank}</span>
                   {isTop && (
-                    <span className="absolute top-4 right-4 bg-amber-400 text-black text-[10px] font-black px-2.5 py-1 rounded-full flex items-center gap-1"><Crown className="w-3 h-3" /> HOT</span>
+                    <span className="absolute top-2.5 right-2.5 bg-amber-400 text-black text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1"><Crown className="w-3 h-3" /> HOT</span>
                   )}
-                  {!priceStr && (
-                    <span className="absolute top-4 right-4 bg-[#e53935] text-white text-[10px] font-black px-2.5 py-1 rounded-full">{p.price_text || t('plans.temp_free')}</span>
+                  {!priceStr && !isTop && (
+                    <span className="absolute top-2.5 right-2.5 bg-[#e53935] text-white text-[10px] font-black px-2 py-0.5 rounded-full">{p.price_text || t('plans.temp_free')}</span>
                   )}
                 </div>
-                <div className="px-6 pt-2 flex items-baseline">
+                <div className="px-5 pt-4 pb-1">
+                  <div className="text-[19px] font-black italic tracking-tight" style={{ color: p.color || '#f36f21' }}>{p.name}</div>
+                  <div className="text-[12px] text-stone-400 mt-0.5 min-h-[18px]">{lang === 'vi' ? p.tagline : (a.tagline_en || p.tagline)}</div>
+                </div>
+                <div className="px-5 pt-1.5 flex items-baseline">
                   {priceStr ? (
                     <>
-                      <span className="text-[30px] font-black text-white">{priceStr}</span>
-                      <span className="text-[13px] text-stone-500 ml-1">{t('plans.per_month')}</span>
+                      <span className="text-[26px] font-black text-white">{priceStr}</span>
+                      <span className="text-[12px] text-stone-500 ml-1">{t('plans.per_month')}</span>
                     </>
                   ) : (
                     <>
-                      <span className="text-[30px] font-black text-emerald-400">{t('plans.free_price')}</span>
-                      <span className="text-[13px] text-stone-500 ml-1">{t('plans.per_month')}</span>
+                      <span className="text-[26px] font-black text-emerald-400">{t('plans.free_price')}</span>
+                      <span className="text-[12px] text-stone-500 ml-1">{t('plans.per_month')}</span>
                     </>
                   )}
                 </div>
                 {!priceStr && (
-                  <div className="px-6 pt-1.5 text-[11px] font-bold">
-                    <span className="inline-block grad-brand text-white px-2.5 py-1 rounded-lg">{t('plans.launch_deal')}</span>
+                  <div className="px-5 pt-1.5 text-[11px] font-bold">
+                    <span className="inline-flex items-center gap-1 grad-brand text-white px-2.5 py-1 rounded-lg"><Play className="w-3 h-3" />{t('plans.launch_deal')}</span>
                   </div>
                 )}
                 <button
                   onClick={() => startBuy(p)}
                   disabled={busy === p.code || isCurrent}
-                  className={`mx-6 mt-4 py-3 rounded-2xl font-extrabold text-[14px] transition active:scale-[0.98] ${isCurrent ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/40 cursor-default' : 'text-white hover:brightness-110 disabled:opacity-60 shadow-lg'}`}
+                  className={`mx-5 mt-3 py-2.5 rounded-2xl font-extrabold text-[13px] transition active:scale-[0.98] ${isCurrent ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/40 cursor-default' : 'text-white hover:brightness-110 disabled:opacity-60 shadow-lg'}`}
                   style={!isCurrent ? { background: `linear-gradient(135deg, ${p.color || '#f36f21'}, ${p.color || '#f36f21'}bb)`, boxShadow: `0 8px 24px ${p.color || '#f36f21'}44` } : {}}
                 >
                   {isCurrent ? t('plans.is_current') : busy === p.code ? t('plans.activating') : canUp || currentRank === 0 ? (priceStr ? t('plans.activate') : t('plans.activate_free')) : t('plans.downgrade')}
                 </button>
-                <ul className="px-6 py-5 flex flex-col gap-2.5">
+                <ul className="px-5 py-4 flex flex-col gap-2">
                   {allows.map((f, i) => (
-                    <li key={i} className="flex gap-2.5 text-[13px] text-stone-300 leading-snug">
-                      <span className="w-[18px] h-[18px] rounded-full bg-[#f36f21]/20 text-[#ff9a3d] flex items-center justify-center shrink-0 mt-0.5"><Check className="w-3 h-3" /></span>{f}
+                    <li key={i} className="flex gap-2 text-[12px] text-stone-300 leading-snug">
+                      <span className="w-[17px] h-[17px] rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 mt-px"><Check className="w-3 h-3" /></span>{f}
+                    </li>
+                  ))}
+                  {(lang === 'vi' ? a.not : a.not_en).slice(0, 3).map((f, i) => (
+                    <li key={`n${i}`} className="flex gap-2 text-[12px] text-stone-600 leading-snug">
+                      <span className="w-[17px] h-[17px] rounded-full bg-white/[0.06] text-stone-600 flex items-center justify-center shrink-0 mt-px"><X className="w-3 h-3" /></span>{f}
                     </li>
                   ))}
                   {allows.length === 0 && <li className="text-[12px] text-stone-600">—</li>}

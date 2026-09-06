@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Flame, Play } from 'lucide-react';
 import { useI18n } from '../contexts/I18nContext';
 import { fetchTopChannels, fetchTrendingChannels } from '../services/social';
+import ScrollRow from './ScrollRow';
 
 // BXH kênh xem nhiều nhất (từ heartbeat toàn app)
 export default function TopChannelsStrip({ channels = [], onSelectChannel }) {
@@ -38,7 +39,7 @@ export default function TopChannelsStrip({ channels = [], onSelectChannel }) {
           <p className="text-[11px] text-stone-500">{live ? 'Kênh nhiều người xem nhất ngay lúc này' : t('topch.sub')}</p>
         </div>
       </div>
-      <div className="flex gap-3 overflow-x-auto scrollbar-none pb-2 snap-x">
+      <ScrollRow>
         {top.slice(0, 10).map((r, i) => {
           const ch = byId.get(r.channel_id);
           const name = ch?.name || r.name || r.channel_id;
@@ -64,7 +65,7 @@ export default function TopChannelsStrip({ channels = [], onSelectChannel }) {
             </button>
           );
         })}
-      </div>
+      </ScrollRow>
     </section>
   );
 }

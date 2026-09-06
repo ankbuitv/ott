@@ -6,10 +6,11 @@ import { parseEpgDate } from '../utils/dateUtils';
 import { useI18n } from '../contexts/I18nContext';
 import { MovieAPI, imgPath, bgPath } from '../services/tmdb';
 import { fetchEvents } from '../services/events';
-import { fetchLatestResults, eventIsLive, LEAGUES } from '../services/sports';
+import { fetchLatestScoresAll } from '../services/sports';
 import { API_BASE } from '../services/config';
 import Footer from './Footer';
 import TopChannelsStrip from './TopChannelsStrip';
+import ScrollRow from './ScrollRow';
 
 /**
  * TRANG CHỦ:
@@ -58,12 +59,11 @@ export default function HomePage({
     MovieAPI.trending().then(r => { if (on) setTrending((r.results || []).slice(0, 12)); }).catch(() => {});
     fetchEvents().then(ev => { if (on) setEvents(ev || []); }).catch(() => {});
     fetch(`${API_BASE}/api/shorts?limit=12`).then(r => r.json()).then(d => { if (on) setShorts(d.shorts || []); }).catch(() => {});
-    // TỈ SỐ MỚI NHẤT — tự cập nhật mỗi 60s (bỏ qua khi tab ẩn): trận ĐANG ĐÁ lên đầu
-    const epl = LEAGUES.find(l => l.id === 'epl');
+    // TỈ SỐ MỚI NHẤT (MỌI GIẢI: EPL, La Liga, Serie A, Bundesliga, Ligue 1, UCL,
+    // V.League, NBA...) — tự cập nhật mỗi 60s (bỏ qua khi tab ẩn): trận ĐANG ĐÁ lên đầu
     const loadScores = () => {
-      if (!epl) return;
-      fetchLatestResults(epl)
-        .then(d => { if (on) setScores([...(d.live || []), ...(d.past || [])].slice(0, 6)); })
+      fetchLatestScoresAll(8)
+        .then(list => { if (on) setScores(list || []); })
         .catch(() => {});
     };
     loadScores();
@@ -220,7 +220,7 @@ export default function HomePage({
         {trendingCh.length > 0 && (
           <section className="anim-fade-up">
             <SectionHead icon={<Flame className="w-4 h-4 text-[#ff9a3d]" />} wrap="bg-[#f36f21]/15 border-[#f36f21]/25" title={t('home.trending_ch')} sub={t('home.trending_ch_sub')} action={onGoTab ? { label: t('home.view_all'), onClick: () => onGoTab('tv') } : null} />
-            <div className="flex gap-3 overflow-x-auto scrollbar-none pb-2 snap-x">
+            <ScrollRow>
               {trendingCh.map(({ ch, epg }, i) => (
                 <button
                   key={ch.channel_id}
@@ -245,7 +245,7 @@ export default function HomePage({
                   </span>
                 </button>
               ))}
-            </div>
+            </ScrollRow>
           </section>
         )}
 
@@ -253,7 +253,7 @@ export default function HomePage({
         {trending.length > 0 && (
           <section className="anim-fade-up">
             <SectionHead icon={<Clapperboard className="w-4 h-4 text-amber-400" />} wrap="bg-amber-500/15 border-amber-500/30" title={t('home.trending_movies')} sub={t('home.trending_sub')} action={onGoTab ? { label: t('home.view_all'), onClick: () => onGoTab('movies') } : null} />
-            <div className="flex gap-3 overflow-x-auto scrollbar-none pb-2 snap-x">
+            <ScrollRow>
               {trending.map(m => (
                 <button
                   key={`${m.media_type}-${m.id}`}
@@ -277,7 +277,7 @@ export default function HomePage({
                   </span>
                 </button>
               ))}
-            </div>
+            </ScrollRow>
           </section>
         )}
 
@@ -285,7 +285,7 @@ export default function HomePage({
         {shorts.length > 0 && (
           <section className="anim-fade-up">
             <SectionHead icon={<Play className="w-4 h-4 text-cyan-300" />} wrap="bg-cyan-500/15 border-cyan-500/30" title={t('home.shorts')} sub={t('home.shorts_sub')} action={onGoTab ? { label: t('home.view_all'), onClick: () => onGoTab('shorts') } : null} />
-            <div className="flex gap-3 overflow-x-auto scrollbar-none pb-2 snap-x">
+            <ScrollRow>
               {shorts.map(s => (
                 <button
                   key={s.id}
@@ -312,7 +312,7 @@ export default function HomePage({
                   </span>
                 </button>
               ))}
-            </div>
+            </ScrollRow>
           </section>
         )}
 
@@ -337,31 +337,31 @@ export default function HomePage({
               {scores.length === 0 && (
                 <p className="text-[12px] text-stone-600 italic text-center py-6">{t('sports.no_data')}</p>
               )}
-              {scores.map(ev => {
-                const live = eventIsLive(ev);
-                return (
-                <div key={ev.idEvent} className={`flex items-center gap-2 rounded-2xl px-3 py-2.5 border ${live ? 'bg-[#f36f21]/10 border-[#f36f21]/40' : 'bg-black/30 border-white/[0.05]'}`}>
-                  {live ? (
-                    <span className="text-[9px] font-black text-white rounded-full grad-brand px-1.5 py-0.5 w-10 shrink-0 flex items-center justify-center gap-1">
-                      <span className="w-1 h-1 rounded-full bg-white animate-pulse"></span>LIVE
-                    </span>
-                  ) : (
-                    <span className="text-[10px] font-bold text-stone-500 w-10 shrink-0">{fmtDate(ev.dateEvent)}</span>
-                  )}
-                  <span className="flex-1 min-w-0 flex items-center justify-end gap-1.5">
-                    <span className="text-[12px] font-bold text-slate-200 truncate text-right">{ev.strHomeTeam}</span>
-                    {ev.strHomeTeamBadge && <img src={ev.strHomeTeamBadge} alt="" loading="lazy" className="w-6 h-6 object-contain shrink-0" onError={e => { e.target.style.display = 'none'; }} />}
+              {scores.map(s => (
+                <div key={`${s.league?.id}-${s.ev?.idEvent}`} className={`flex items-center gap-2 rounded-2xl px-3 py-2.5 border ${s.live ? 'bg-[#f36f21]/10 border-[#f36f21]/40' : 'bg-black/30 border-white/[0.05]'}`}>
+                  <span className="w-11 shrink-0 flex flex-col items-start gap-0.5" title={s.league?.name}>
+                    {s.live ? (
+                      <span className="text-[8px] font-black text-white rounded-full grad-brand px-1.5 py-0.5 flex items-center gap-1">
+                        <span className="w-1 h-1 rounded-full bg-white animate-pulse"></span>LIVE
+                      </span>
+                    ) : (
+                      <span className="text-[9px] font-black text-stone-400">{s.league?.short || ''}</span>
+                    )}
+                    <span className="text-[9px] font-bold text-stone-600">{fmtDate(s.ev?.dateEvent)}</span>
                   </span>
-                  <span className={`px-2.5 py-1 rounded-lg text-[13px] font-black tabular-nums shrink-0 ${live ? 'bg-[#f36f21]/25 text-[#ffb37a]' : 'bg-white/[0.07] text-white'}`}>
-                    {ev.intHomeScore ?? '-'} - {ev.intAwayScore ?? '-'}
+                  <span className="flex-1 min-w-0 flex items-center justify-end gap-1.5">
+                    <span className="text-[12px] font-bold text-slate-200 truncate text-right">{s.ev?.strHomeTeam}</span>
+                    {s.ev?.strHomeTeamBadge && <img src={s.ev.strHomeTeamBadge} alt="" loading="lazy" className="w-6 h-6 object-contain shrink-0" onError={e => { e.target.style.display = 'none'; }} />}
+                  </span>
+                  <span className={`px-2.5 py-1 rounded-lg text-[13px] font-black tabular-nums shrink-0 ${s.live ? 'bg-[#f36f21]/25 text-[#ffb37a]' : 'bg-white/[0.07] text-white'}`}>
+                    {s.ev?.intHomeScore ?? '-'} - {s.ev?.intAwayScore ?? '-'}
                   </span>
                   <span className="flex-1 min-w-0 flex items-center gap-1.5">
-                    {ev.strAwayTeamBadge && <img src={ev.strAwayTeamBadge} alt="" loading="lazy" className="w-6 h-6 object-contain shrink-0" onError={e => { e.target.style.display = 'none'; }} />}
-                    <span className="text-[12px] font-bold text-slate-200 truncate">{ev.strAwayTeam}</span>
+                    {s.ev?.strAwayTeamBadge && <img src={s.ev.strAwayTeamBadge} alt="" loading="lazy" className="w-6 h-6 object-contain shrink-0" onError={e => { e.target.style.display = 'none'; }} />}
+                    <span className="text-[12px] font-bold text-slate-200 truncate">{s.ev?.strAwayTeam}</span>
                   </span>
                 </div>
-                );
-              })}
+              ))}
             </div>
           </div>
           {/* Sự kiện */}

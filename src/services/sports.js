@@ -170,6 +170,27 @@ export function fetchLatestResults(league) {
   }, 45 * 1000);
 }
 
+// TỈ SỐ MỚI NHẤT GHÉP TẤT CẢ GIẢI (EPL, La Liga, Serie A, Bundesliga, Ligue 1,
+// UCL, V.League 1/2, NBA...) — trận đang đá đứng đầu, sau đó là FT mới nhất.
+// Cache ngắn 45s: poll mỗi phút là có dữ liệu mới thật từ API.
+export function fetchLatestScoresAll(limit = 8) {
+  const season = currentSeason();
+  return cached(`latest_all_${season}`, async () => {
+    const parts = await Promise.all(LEAGUES.map(l =>
+      fetchLatestResults(l).catch(() => ({ live: [], past: [] }))
+    ));
+    const all = [];
+    for (let i = 0; i < LEAGUES.length; i++) {
+      const lg = LEAGUES[i];
+      for (const ev of (parts[i].live || [])) all.push({ ev, ts: tsOfEvent(ev), live: true, league: lg });
+      for (const ev of (parts[i].past || [])) all.push({ ev, ts: tsOfEvent(ev), live: eventIsLive(ev), league: lg });
+    }
+    // đang đá trước (mới nhất trước), rồi FT mới nhất
+    all.sort((a, b) => (Number(b.live) - Number(a.live)) || (b.ts - a.ts));
+    return all.slice(0, limit);
+  }, 45 * 1000);
+}
+
 // Icon theo môn thể thao (explorer "Môn khác")
 export const SPORT_ICONS = {
   Soccer: '⚽', Basketball: '🏀', Baseball: '⚾', 'American Football': '🏈', 'Ice Hockey': '🏒',

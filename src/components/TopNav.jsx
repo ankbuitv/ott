@@ -154,8 +154,10 @@ function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, s
   return (
     <nav className="topbar-mytv px-4 md:px-6 h-16 flex items-center justify-between sticky top-0 z-40 shrink-0">
       <div className="flex items-center gap-6">
-        {/* Logo */}
-        <Logo size="sm" />
+        {/* Logo — bấm để về Trang chủ */}
+        <button onClick={() => setActiveTab && setActiveTab('channels')} className="shrink-0 hover:opacity-90 active:scale-95 transition-all" title="Trang chủ">
+          <Logo size="sm" />
+        </button>
 
         {/* Search */}
         <div className="relative hidden md:block" ref={boxRef}>

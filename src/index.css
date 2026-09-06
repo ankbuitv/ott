@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800;900&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -19,8 +20,10 @@
 @layer base {
   body {
     background-color: #0b0b0d;
+    background-image: radial-gradient(900px 320px at 12% -5%, rgba(243,111,33,.07), transparent 70%), radial-gradient(800px 300px at 88% -5%, rgba(34,211,238,.06), transparent 70%);
+    background-attachment: fixed;
     color: #f2f2f2;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: 'Be Vietnam Pro', 'Inter', system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }

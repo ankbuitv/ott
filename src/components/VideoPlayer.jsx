@@ -24,10 +24,6 @@ import { sendFeedback } from '../services/feedback';
 import { maskScores } from '../utils/spoiler';
 import { parseEpgDate } from '../utils/dateUtils';
 
-const FALLBACK_STREAM_URL_HTTP = "http://bore.pub:30113/hls/index.m3u8";
-const FALLBACK_STREAM_URL = (typeof window !== 'undefined' && window.location?.protocol === 'https:')
-  ? `/api/proxy?url=${encodeURIComponent("http://bore.pub:30113/hls/index.m3u8")}`
-  : FALLBACK_STREAM_URL_HTTP;
 const VLC_USER_AGENT = "VLC/3.0.21 LibVLC/3.0.21";
 
 
@@ -64,9 +60,14 @@ export default function VideoPlayer({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showOverlay, setShowOverlay] = useState(true);
   const [isBuffering, setIsBuffering] = useState(true);
-  const [isFallbackActive, setIsFallbackActive] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
-  const [activeUrl, setActiveUrl] = useState(streamUrl || FALLBACK_STREAM_URL);
+  const [showErrorPopup, setShowErrorPopup] = useState(false);
+  const [loadToken, setLoadToken] = useState(0);
+  // Lỗi phát -> popup (không tự chuyển dự phòng)
+  const showStreamError = (msg) => { setErrorMessage(msg); setShowErrorPopup(true); setIsBuffering(false); };
+  const clearStreamError = () => { setErrorMessage(null); setShowErrorPopup(false); };
+  const retryStream = () => { clearStreamError(); setIsBuffering(true); setLoadToken(x => x + 1); };
+  const [activeUrl, setActiveUrl] = useState(streamUrl || '');
   const streamFilterRef = useRef(null);  // filter xoay token manifest theo kênh/điểm bắt đầu hiện tại
   const tokenRetryRef = useRef(false);   // chỉ tự xoay token lại 1 lần mỗi lần load
   const activeUrlRef = useRef(activeUrl);
@@ -472,10 +473,10 @@ export default function VideoPlayer({
       }
     }
 
-    const targetUrl = streamUrl || FALLBACK_STREAM_URL;
+    const targetUrl = streamUrl || '';
     setActiveUrl(targetUrl);
-    setIsFallbackActive(false);
     setErrorMessage(null);
+    setShowErrorPopup(false);
     setIsBuffering(true);
 
     // === 2. Đặt filter xoay token + header upstream UA cho lần load này ===
@@ -561,12 +562,12 @@ export default function VideoPlayer({
         // Bị chặn theo gói/đăng nhập — hiện thông báo, KHÔNG tự fallback (tránh lách)
         if (/LOGIN_REQUIRED/.test(errText)) {
           setIsBuffering(false);
-          setErrorMessage('🔒 Kênh này cần đăng nhập để xem — đóng trình phát rồi đăng nhập/đăng ký (miễn phí).');
+          showStreamError(t('vp.err_login'));
           return;
         }
         if (/PLAN_REQUIRED/.test(errText)) {
           setIsBuffering(false);
-          setErrorMessage('💎 Kênh thuộc gói cao hơn — vào mục Mua Gói kích hoạt (tạm miễn phí).');
+          showStreamError(t('vp.err_plan'));
           return;
         }
         // Token hết hạn/bị từ chối → xin token MỚI từ server, load lại đúng 1 lần
@@ -582,28 +583,17 @@ export default function VideoPlayer({
               setActiveUrl(retryUrl);
               await player.load(retryUrl);
               videoEl.play().catch(() => {});
-              setIsBuffering(false); setIsFallbackActive(false); setErrorMessage(null);
+              setIsBuffering(false); setErrorMessage(null); setShowErrorPopup(false);
               return;
             }
           } catch (e) {
-            if (e?.code === 'LOGIN_REQUIRED') setErrorMessage('Cần đăng nhập để xem kênh này');
-            else if (e?.code === 'PLAN_REQUIRED') setErrorMessage('Kênh này thuộc gói cao hơn — vào Mua Gói để xem');
+            if (e?.code === 'LOGIN_REQUIRED') showStreamError(t('vp.err_login_short'));
+            else if (e?.code === 'PLAN_REQUIRED') showStreamError(t('vp.err_plan_short'));
           }
           /* rơi xuống fallback bên dưới */
         }
-        // MPD fails → try fallback HLS (không proxy, proxy không handle MPD segments)
-        const isMpd = isMpdUrl(targetUrl) || channel?.manifest_type === 'mpd';
-        if (isMpd && !targetUrl.includes('bore.pub')) {
-          setIsFallbackActive(true);
-          setErrorMessage("MPD không phát được. Đã chuyển sang HLS dự phòng.");
-          try { await player.load(FALLBACK_STREAM_URL); videoEl.play().catch(() => {}); setIsBuffering(false); }
-          catch { setErrorMessage("Không thể kết nối MPD và cả HLS dự phòng."); setIsBuffering(false); }
-        } else {
-          setIsFallbackActive(true);
-          setErrorMessage("Luồng chính gián đoạn, chuyển dự phòng...");
-          try { await player.load(FALLBACK_STREAM_URL); videoEl.play().catch(() => {}); setIsBuffering(false); }
-          catch { setErrorMessage("Không thể kết nối."); setIsBuffering(false); }
-        }
+        // Kênh lỗi -> hiện popup báo lỗi (KHÔNG tự chuyển dự phòng)
+        showStreamError(t('vp.err_play', { msg: errText ? errText.slice(0, 120) : '' }));
       }
     };
 
@@ -647,9 +637,9 @@ export default function VideoPlayer({
         }
       } catch (e2) {
         if (e2 && e2.code === 'LOGIN_REQUIRED') {
-          setErrorMessage('Cần đăng nhập để xem kênh này');
+          showStreamError(t('vp.err_login_short'));
         } else if (e2 && e2.code === 'PLAN_REQUIRED') {
-          setErrorMessage('Kênh này thuộc gói cao hơn — vào Mua Gói để xem');
+          showStreamError(t('vp.err_plan_short'));
         }
       }
     };
@@ -662,7 +652,7 @@ export default function VideoPlayer({
         player.removeEventListener('error', onFatalError);
       }
     };
-  }, [streamUrl, parseClearKey, channel?.clearKeyId, channel?.clearKey, channel?.clear_key_id, channel?.clear_key, channel?.user_agent, channel?.manifest_type]);
+  }, [streamUrl, loadToken, parseClearKey, channel?.clearKeyId, channel?.clearKey, channel?.clear_key_id, channel?.clear_key, channel?.user_agent, channel?.manifest_type]);
 
   // Mạng realtime (Network Information API)
   useEffect(() => {
@@ -875,7 +865,8 @@ export default function VideoPlayer({
         case 'l': case 'L': seekBy(10); break;
         case '?': case '/': if (e.shiftKey) { /* open shortcuts */ } break;
         case 'Escape': case 'BackSpace':
-          if (showChannelList) setShowChannelList(false);
+          if (showErrorPopup) setShowErrorPopup(false);
+          else if (showChannelList) setShowChannelList(false);
           else if (showInfo) setShowInfo(false);
           else if (showQualityMenu) setShowQualityMenu(false);
           else if (showUAMenu) setShowUAMenu(false);
@@ -910,7 +901,7 @@ export default function VideoPlayer({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [resetOverlayTimer, onPrevChannel, onNextChannel, onClose, showChannelList, showInfo, showQualityMenu, showUAMenu, showSleepTimer, showVolumeSlider, isMuted, addToast, togglePiP, takeScreenshot, allChannels, seekBy, kidLocked]);
+  }, [resetOverlayTimer, onPrevChannel, onNextChannel, onClose, showChannelList, showInfo, showQualityMenu, showUAMenu, showSleepTimer, showVolumeSlider, isMuted, addToast, togglePiP, takeScreenshot, allChannels, seekBy, kidLocked, showErrorPopup]);
 
   // Touch gestures (mobile)
   useEffect(() => {
@@ -987,6 +978,7 @@ export default function VideoPlayer({
     if (!p || p.destroyed()) return;
     setIsBuffering(true);
     setErrorMessage(null);
+    setShowErrorPopup(false);
     try {
       let at = 0;
       if (isCatchupMode && catchupProgram?.start) {
@@ -1002,7 +994,7 @@ export default function VideoPlayer({
         addToast(clean ? `Đã đổi UA → ${clean.slice(0, 40)}` : 'Đã về chế độ Tự động (theo kênh)', 'success');
       }
     } catch (e) {
-      setErrorMessage('Đổi UA xong nhưng tải lại thất bại — thử UA khác.');
+      showStreamError(t('vp.err_ua'));
     } finally {
       setIsBuffering(false);
     }
@@ -1068,18 +1060,31 @@ export default function VideoPlayer({
         </div>
       )}
 
-      {/* Fallback notice */}
-      {isFallbackActive && (
-        <div className="absolute top-14 right-3 z-30 bg-amber-600/90 text-white px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-lg">
-          <AlertTriangle className="w-3.5 h-3.5 text-yellow-300" />
-          <span className="text-[10px] font-medium">{t('vp.fallback')}</span>
-        </div>
-      )}
-
-      {errorMessage && (
-        <div className="absolute top-14 left-3 z-30 bg-[#f36f21]/90 text-white px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-lg max-w-[280px]">
-          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-          <span className="text-[10px] font-medium">{errorMessage}</span>
+      {/* Popup báo lỗi phát */}
+      {showErrorPopup && (
+        <div className="absolute inset-0 z-[70] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-panel w-full max-w-sm p-6 text-center">
+            <div className="w-16 h-16 mx-auto rounded-full bg-[#f36f21]/15 border border-[#f36f21]/40 flex items-center justify-center mb-4">
+              <AlertTriangle className="w-8 h-8 text-[#ff9a3d]" />
+            </div>
+            <h3 className="text-lg font-black text-white mb-1">{t('vp.err_title')}</h3>
+            <p className="text-[13px] font-bold text-[#ffb37a] mb-2 truncate">{channelName}</p>
+            <p className="text-xs text-stone-400 leading-relaxed mb-5 break-words">{errorMessage || t('vp.err_play', { msg: '' })}</p>
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={retryStream} className="py-2.5 btn-orange text-white text-[13px] font-bold rounded-2xl flex items-center justify-center gap-1.5">
+                <RefreshCw className="w-4 h-4" /> {t('vp.err_retry')}
+              </button>
+              <button onClick={() => { setShowErrorPopup(false); setShowReport(true); resetOverlayTimer(); }} className="py-2.5 bg-amber-600/90 hover:bg-amber-600 text-white text-[13px] font-bold rounded-2xl flex items-center justify-center gap-1.5">
+                <Flag className="w-4 h-4" /> {t('vp.report')}
+              </button>
+              <button onClick={() => { setShowErrorPopup(false); setShowChannelList(true); resetOverlayTimer(); }} className="py-2.5 bg-white/10 hover:bg-white/15 text-white text-[13px] font-bold rounded-2xl">
+                {t('vp.err_other')}
+              </button>
+              <button onClick={() => { setShowErrorPopup(false); onClose && onClose(); }} className="py-2.5 bg-white/10 hover:bg-white/15 text-stone-300 text-[13px] font-bold rounded-2xl">
+                {t('common.close')}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Search, Star, Play, X, Info, Calendar, Clock, Tv, Film, SlidersHorizontal, TrendingUp, Heart, History, Plus, Check } from 'lucide-react';
+import { Search, Star, Play, X, Info, Calendar, Clock, Tv, Film, SlidersHorizontal, TrendingUp, Heart, History, Plus, Check, Crown } from 'lucide-react';
 import { MovieAPI, imgPath, bgPath, COUNTRY_INFO, countryInfoOf, REGION_LIST, setTMDBRegion, getUpcoming, getMovieGenres, getTMDBKey, setTMDBKey, isDefaultTMDBKey, getCredits, getPerson, getPersonCredits, getRecommendations, getCollection, getMovieDetails } from '../services/tmdb';
 import { getMovieHistory, recordMovieWatch, isWatched, toggleWatchlistLocal, fetchWatchlist } from '../services/movieList';
 import { resolveCountry, currentCountry, setManualCountry } from '../services/geo';
@@ -59,6 +59,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
 
   const [hero, setHero] = useState(null);
   const [rows, setRows] = useState({ trending: [], nowPlaying: [], topRated: [], popularTV: [], upcoming: [] });
+  const [topMonth, setTopMonth] = useState([]);
   const [catalog, setCatalog] = useState([]);          // toàn bộ phim
   const [genres, setGenres] = useState([]);            // danh sách thể loại
   const [visibleCount, setVisibleCount] = useState(CATALOG_PAGE);
@@ -124,7 +125,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
     setTMDBRegion(country); // ngôn ngữ + region TMDB theo quốc gia đang chọn
     (async () => {
       setLoading(true);
-      const [heroR, trR, npR, tR, tvR, upR, gR] = await Promise.all([
+      const [heroR, trR, npR, tR, tvR, upR, gR, tmR] = await Promise.all([
         MovieAPI.hero(country),
         MovieAPI.trending(),
         MovieAPI.nowPlaying(country),
@@ -132,6 +133,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
         MovieAPI.popularTV(country),
         getUpcoming(country).catch(() => ({ results: [] })),
         getMovieGenres().catch(() => ({ genres: [] })),
+        MovieAPI.topMonth(country).catch(() => ({ results: [] })),
       ]);
       if (!mounted) return;
       setTvLocal(!!(tvR && tvR.__local));
@@ -143,6 +145,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
         MovieAPI.trailer(firstHero).then((v) => { if (mounted && v?.key) setHeroTrailer(v.key); }).catch(() => {});
       }
       setRows({ trending: trR.results || [], nowPlaying: npR.results || [], topRated: tR.results || [], popularTV: tvR.results || [], upcoming: upR.results || [] });
+      setTopMonth((tmR.results || []).slice(0, 10));
       setGenres(gR.genres || []);
       setLoading(false);
     })();
@@ -318,6 +321,61 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
                   <Info className="w-5 h-5" /> {t('movies.btn.info')}
                 </button>
               </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* TOP 10 THÁNG NÀY — số viền trắng kiểu Netflix */}
+      {!search.trim() && topMonth.length > 0 && (
+        <section className="relative z-20 px-6 md:px-8 -mt-16 mb-2">
+          <div className="max-w-7xl mx-auto">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="w-8 h-8 rounded-xl grad-brand flex items-center justify-center shadow-lg shadow-[#f36f21]/30">
+                <Crown className="w-4 h-4 text-white" />
+              </span>
+              <div>
+                <h3 className="text-lg md:text-2xl font-black tracking-tight leading-none">{t('mv.top10_title')}</h3>
+                <p className="text-[10px] text-stone-500 font-semibold mt-0.5">{t('mv.top10_sub', { m: new Date().getMonth() + 1 })}</p>
+              </div>
+            </div>
+            <div className="flex gap-1 overflow-x-auto scrollbar-none pb-3 pt-1 snap-x">
+              {topMonth.map((m, i) => (
+                <button
+                  key={`${m.media_type}-${m.id}`}
+                  onClick={() => openDetail(m)}
+                  className="group relative shrink-0 flex items-end snap-start active:scale-[0.98] transition-transform"
+                  title={m.title || m.name}
+                >
+                  <span
+                    aria-hidden
+                    className="font-black leading-[0.8] select-none -mr-4 md:-mr-5 mb-[-6px] z-0 transition-all group-hover:[-webkit-text-stroke-color:#f36f21]"
+                    style={{
+                      fontSize: 'clamp(96px, 12vw, 170px)',
+                      color: 'transparent',
+                      WebkitTextStroke: '3px rgba(255,255,255,.85)',
+                      letterSpacing: '-0.05em',
+                    }}
+                  >{i + 1}</span>
+                  <span className="relative z-10 block w-[112px] md:w-[148px] aspect-[2/3] rounded-xl overflow-hidden bg-stone-900 border border-white/10 shadow-2xl shadow-black/60 group-hover:border-[#f36f21]/60 transition-all">
+                    <img
+                      src={imgPath(m.poster_path, 'w342')}
+                      alt={m.title || m.name}
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                      onError={e => { e.target.style.display = 'none'; }}
+                    />
+                    <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 to-transparent p-1.5 pt-6">
+                      <span className="block text-[10px] md:text-[11px] font-bold leading-tight line-clamp-2 text-left">{m.title || m.name}</span>
+                    </span>
+                    {(m.vote_average || 0) > 0 && (
+                      <span className="absolute top-1.5 right-1.5 flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-black/70 text-[9px] font-bold text-amber-400">
+                        <Star className="w-2 h-2 fill-current" /> {m.vote_average.toFixed(1)}
+                      </span>
+                    )}
+                  </span>
+                </button>
+              ))}
             </div>
           </div>
         </section>

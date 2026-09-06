@@ -100,6 +100,13 @@ function AppContent() {
   };
 
   const [showSettings, setShowSettings] = useState(false);
+  // Chuyển tab luôn thoát Settings + cuộn lên đầu (fix Home/kênh bị kẹt)
+  const goTab = useCallback((tab) => {
+    setShowSettings(false);
+    setShowAdmin(false);
+    setActiveTab(tab);
+    try { document.querySelector('main')?.scrollTo({ top: 0 }); window.scrollTo({ top: 0 }); } catch {}
+  }, []);
   const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
   const [channelInfoModal, setChannelInfoModal] = useState(null);
@@ -358,7 +365,7 @@ function AppContent() {
           setSearchQuery={setSearchQuery}
           user={effUser}
           currentProfile={currentProfile}
-          setActiveTab={setActiveTab}
+          setActiveTab={goTab}
           activeTab={activeTab}
           onShowAuth={() => setShowAuth(true)}
           onSelectChannel={handleSelectChannel}
@@ -366,7 +373,7 @@ function AppContent() {
         />
 
         <div className="flex flex-1 overflow-hidden">
-          <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onShowSettings={() => setShowSettings(true)} onShowAdmin={() => setShowAdmin(true)} />
+          <Sidebar activeTab={activeTab} setActiveTab={goTab} onShowSettings={() => setShowSettings(true)} onShowAdmin={() => setShowAdmin(true)} />
           <main className="flex-1 flex flex-col h-full overflow-y-auto pb-16 md:pb-0">
             {showSettings ? <SettingsPage onClose={() => setShowSettings(false)} /> : <MoviesScreen openMovie={movieToOpen} onOpenMovieHandled={() => setMovieToOpen(null)} onRequireLogin={() => promptLogin(t('app.need_login_movie'))} />}
           </main>
@@ -383,7 +390,7 @@ function AppContent() {
         setSearchQuery={setSearchQuery}
         user={effUser}
         currentProfile={currentProfile}
-        setActiveTab={setActiveTab}
+        setActiveTab={goTab}
         activeTab={activeTab}
         onShowAuth={() => setShowAuth(true)}
         onSelectChannel={handleSelectChannel}
@@ -391,7 +398,7 @@ function AppContent() {
       />
 
       <div className="flex flex-1 overflow-hidden">
-        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onShowSettings={() => setShowSettings(true)} onShowAdmin={() => setShowAdmin(true)} />
+        <Sidebar activeTab={activeTab} setActiveTab={goTab} onShowSettings={() => setShowSettings(true)} onShowAdmin={() => setShowAdmin(true)} />
 
         <main className="flex-1 flex flex-col h-full overflow-y-auto pb-16 md:pb-0">
           <div className="px-5 md:px-8 pt-3 max-w-[1400px] mx-auto w-full">

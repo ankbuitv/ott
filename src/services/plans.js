@@ -64,13 +64,44 @@ export function classifyGroup(groupTitle = "") {
   return "KHAC";
 }
 
-// Gói hiện có được xem nhóm kênh nào không
+// Rank gói (cache từ server — admin thêm gói mới vẫn phân quyền đúng)
+const _rankCache = { at: 0, map: { vip: 3, recreational: 2, standard: 1 } };
+export function rankOf(plan) {
+  const c = String(plan || "standard").toLowerCase();
+  return _rankCache.map[c] ?? ({ vip: 3, recreational: 2 }[c] || 1);
+}
+export function refreshPlanRanks(plans) {
+  const list = Array.isArray(plans) ? plans : Object.values(plans || {});
+  if (!list.length) return;
+  const m = { vip: 3, recreational: 2, standard: 1 };
+  for (const p of list) {
+    if (p?.code) m[String(p.code).toLowerCase()] = Number(p.rank) || 1;
+  }
+  _rankCache.at = Date.now();
+  _rankCache.map = m;
+}
+
+// Danh sách gói đang bán (admin quản lý) — null khi offline
+export async function fetchPlanList() {
+  try {
+    const res = await fetch(`${API_BASE}/api/plans`);
+    if (!res.ok) return null;
+    const d = await res.json();
+    if (d?.success && Array.isArray(d.plans) && d.plans.length) {
+      refreshPlanRanks(d.plans);
+      return d.plans;
+    }
+    return null;
+  } catch { return null; }
+}
+
+// Gói hiện có được xem nhóm kênh nào không (theo rank)
 export function planAllows(plan, groupTitle = "") {
-  const code = (plan || "standard").toLowerCase();
-  if (code === "vip") return true;
+  const rank = rankOf(plan);
+  if (rank >= 3) return true;
   const cls = classifyGroup(groupTitle);
-  if (code === "recreational") return cls === "VN" || cls === "PHIM";
-  return cls === "VN"; // standard / mặc định
+  if (rank === 2) return cls === "VN" || cls === "PHIM";
+  return cls === "VN"; // rank 1 / mặc định
 }
 
 // Gói tối thiểu để xem 1 nhóm kênh (dùng cho thông báo nâng cấp)

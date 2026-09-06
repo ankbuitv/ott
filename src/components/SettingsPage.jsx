@@ -31,6 +31,7 @@ export default function SettingsPage({ onClose }) {
   const [pin, setPin] = useState('');
   const [showPin, setShowPin] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [active, setActive] = useState('lang'); // master-detail: mục đang chọn
 
   // ===== 2FA (TOTP) =====
   const [twoFa, setTwoFa] = useState({ loading: true, enabled: false });
@@ -123,6 +124,19 @@ export default function SettingsPage({ onClose }) {
     }
   };
 
+  const navItems = [
+    { id: 'lang', label: t('settings.language'), Icon: Languages },
+    { id: 'appearance', label: t('settings.appearance'), Icon: Palette },
+    { id: 'video', label: t('settings.video'), Icon: Monitor },
+    { id: 'parental', label: t('settings.parental'), Icon: Shield },
+    { id: 'sleep', label: t('settings.sleep_timer'), Icon: Cpu },
+    ...(isAdmin ? [{ id: 'sources', label: t('settings.data_sources'), Icon: Globe }] : []),
+    { id: 'sessions', label: t('settings.sessions'), Icon: Smartphone },
+    { id: 'badges', label: t('settings.ach_title'), Icon: Trophy },
+    { id: '2fa', label: '2FA', Icon: QrCode },
+    { id: 'about', label: t('settings.about'), Icon: Info },
+  ];
+
   return (
     <div className="p-5 md:p-7 space-y-5 max-w-6xl mx-auto">
       {showQr && token && <QrScanner onClose={() => setShowQr(false)} />}
@@ -141,9 +155,28 @@ export default function SettingsPage({ onClose }) {
         )}
       </div>
 
-      <div className="grid md:grid-cols-2 gap-5">
+      <div className="flex flex-col md:flex-row gap-4 items-start">
+        {/* LEFT: nav */}
+        <nav className="w-full md:w-60 shrink-0 md:sticky md:top-3 flex md:flex-col gap-1 overflow-x-auto md:overflow-visible pb-1 scrollbar-none bg-[#14151c] border border-white/[0.07] rounded-2xl p-2">
+          {navItems.map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              onClick={() => setActive(id)}
+              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[12px] font-bold whitespace-nowrap transition-all active:scale-[0.98] flex-1 md:flex-none ${
+                active === id
+                  ? 'grad-brand text-white shadow-lg shadow-[#f36f21]/25'
+                  : 'text-stone-400 hover:text-white hover:bg-white/[0.06]'
+              }`}
+            >
+              <Icon className="w-4 h-4 shrink-0" /> {label}
+            </button>
+          ))}
+        </nav>
+        {/* RIGHT: content */}
+        <div className="flex-1 min-w-0 w-full">
         {/* ===== NGÔN NGỮ ===== */}
-        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 space-y-4 md:col-span-2">
+        {active === 'lang' && (
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 shadow-xl shadow-black/30 space-y-4 md:col-span-2">
           <h3 className="text-sm font-bold text-white flex items-center gap-2"><Languages className="w-4 h-4 text-[#ff9a3d]" /> {t('settings.language')}</h3>
           <div className="flex flex-wrap gap-2.5">
             {languages.map(l => {
@@ -177,9 +210,11 @@ export default function SettingsPage({ onClose }) {
             {t('settings.current_lang')}: <span className="text-stone-300 font-bold">{languages.find(l => l.code === lang)?.label || lang}</span>
           </div>
         </div>
+        )}
 
         {/* ===== GIAO DIỆN ===== */}
-        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 space-y-4">
+        {active === 'appearance' && (
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 shadow-xl shadow-black/30 space-y-4">
           <h3 className="text-sm font-bold text-white flex items-center gap-2"><Moon className="w-4 h-4 text-blue-400" /> {t('settings.appearance')}</h3>
           <div className="flex items-center justify-between">
             <span className="text-xs text-slate-400">{t('settings.theme')}</span>
@@ -220,9 +255,11 @@ export default function SettingsPage({ onClose }) {
             <Toggle on={!!settings.tvMode} onClick={() => updateSetting('tvMode', !settings.tvMode)} label="TV mode" />
           </div>
         </div>
+        )}
 
         {/* ===== VIDEO ===== */}
-        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 space-y-4">
+        {active === 'video' && (
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 shadow-xl shadow-black/30 space-y-4">
           <h3 className="text-sm font-bold text-white flex items-center gap-2"><Monitor className="w-4 h-4 text-blue-400" /> {t('settings.video')}</h3>
           <div className="flex items-center justify-between">
             <span className="text-xs text-slate-400">{t('settings.default_quality')}</span>
@@ -290,9 +327,11 @@ export default function SettingsPage({ onClose }) {
             <Toggle on={!!settings.spoilerMask} onClick={() => updateSetting('spoilerMask', !settings.spoilerMask)} label="Spoiler mask" />
           </div>
         </div>
+        )}
 
         {/* ===== KIỂM SOÁT PHỤ HUYNH ===== */}
-        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 space-y-4">
+        {active === 'parental' && (
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 shadow-xl shadow-black/30 space-y-4">
           <h3 className="text-sm font-bold text-white flex items-center gap-2"><Shield className="w-4 h-4 text-amber-400" /> {t('settings.parental')}</h3>
           <div className="flex items-center justify-between">
             <span className="text-xs text-slate-400">{t('settings.parental_enable')}</span>
@@ -359,9 +398,11 @@ export default function SettingsPage({ onClose }) {
             </p>
           </div>
         </div>
+        )}
 
         {/* ===== HẸN GIỜ TẮT ===== */}
-        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 space-y-4">
+        {active === 'sleep' && (
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 shadow-xl shadow-black/30 space-y-4">
           <h3 className="text-sm font-bold text-white flex items-center gap-2"><Cpu className="w-4 h-4 text-purple-400" /> {t('settings.sleep_timer')}</h3>
           <div className="flex items-center justify-between">
             <span className="text-xs text-slate-400">{t('settings.sleep_timer')}</span>
@@ -384,10 +425,11 @@ export default function SettingsPage({ onClose }) {
             </p>
           </div>
         </div>
+        )}
 
         {/* ===== EPG & NGUỒN (chỉ admin) ===== */}
-        {isAdmin && (
-        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 space-y-4">
+        {isAdmin && active === 'sources' && (
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 shadow-xl shadow-black/30 space-y-4">
           <h3 className="text-sm font-bold text-white flex items-center gap-2"><Globe className="w-4 h-4 text-emerald-400" /> {t('settings.data_sources')} <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">ADMIN</span></h3>
           <div className="space-y-2">
             <label className="text-xs text-slate-400 block">{t('settings.epg_url')}</label>
@@ -407,7 +449,8 @@ export default function SettingsPage({ onClose }) {
         )}
 
         {/* ===== PHIÊN ĐĂNG NHẬP ===== */}
-        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 space-y-3">
+        {active === 'sessions' && (
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 shadow-xl shadow-black/30 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-bold text-white flex items-center gap-2"><Smartphone className="w-4 h-4 text-cyan-400" /> {t('settings.sessions')}</h3>
             {token && (
@@ -449,9 +492,11 @@ export default function SettingsPage({ onClose }) {
             </div>
           )}
         </div>
+        )}
 
         {/* ===== HUY HIỆU ===== */}
-        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 space-y-3">
+        {active === 'badges' && (
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 shadow-xl shadow-black/30 space-y-3">
           <h3 className="text-sm font-bold text-white flex items-center gap-2"><Trophy className="w-4 h-4 text-amber-400" /> {t('settings.ach_title')}</h3>
           {achStats && (
             <p className="text-[11px] text-slate-400">
@@ -471,9 +516,11 @@ export default function SettingsPage({ onClose }) {
             })}
           </div>
         </div>
+        )}
 
         {/* ===== BẢO MẬT (2FA) ===== */}
-        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 space-y-3">
+        {active === '2fa' && (
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 shadow-xl shadow-black/30 space-y-3">
           <h3 className="text-sm font-bold text-white flex items-center gap-2"><Shield className="w-4 h-4 text-emerald-400" /> Bảo mật — Xác thực 2 lớp (2FA)</h3>
           {twoFa.loading ? (
             <p className="text-xs text-slate-500">{t('app.loading')}</p>
@@ -513,9 +560,11 @@ export default function SettingsPage({ onClose }) {
           )}
           {twoFaMsg && <p className="text-[11px] text-amber-400">{twoFaMsg}</p>}
         </div>
+        )}
 
         {/* ===== VỀ APP + RESET ===== */}
-        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 space-y-4">
+        {active === 'about' && (
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 shadow-xl shadow-black/30 space-y-4">
           <h3 className="text-sm font-bold text-white flex items-center gap-2"><Info className="w-4 h-4 text-slate-400" /> {t('settings.about')}</h3>
           <div className="flex items-center justify-between text-xs">
             <span className="text-slate-400">{t('settings.version')}</span>
@@ -540,6 +589,8 @@ export default function SettingsPage({ onClose }) {
               </button>
             )}
           </div>
+        </div>
+        )}
         </div>
       </div>
     </div>

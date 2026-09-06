@@ -627,7 +627,8 @@ const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, token TEXT UNIQUE NOT NULL, expires_at INTEGER NOT NULL, user_agent TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS feedback (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER DEFAULT 0, channel_id TEXT DEFAULT '', message TEXT NOT NULL, client_info TEXT DEFAULT '', status TEXT DEFAULT 'new', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS shorts (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT DEFAULT '', caption TEXT DEFAULT '', video_url TEXT NOT NULL, thumb_url TEXT DEFAULT '', duration INTEGER DEFAULT 0, author TEXT DEFAULT '', views INTEGER DEFAULT 0, likes INTEGER DEFAULT 0, status TEXT DEFAULT 'live', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
-  `CREATE TABLE IF NOT EXISTS qr_logins (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE NOT NULL, user_id INTEGER DEFAULT 0, status TEXT DEFAULT 'pending', device_info TEXT DEFAULT '', created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)`, 
+  `CREATE TABLE IF NOT EXISTS qr_logins (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE NOT NULL, user_id INTEGER DEFAULT 0, status TEXT DEFAULT 'pending', device_info TEXT DEFAULT '', created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS plans (code TEXT PRIMARY KEY, name TEXT NOT NULL, rank INTEGER DEFAULT 1, price INTEGER DEFAULT 0, price_text TEXT DEFAULT '', tagline TEXT DEFAULT '', allows TEXT DEFAULT '[]', color TEXT DEFAULT '#f36f21', is_active INTEGER DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,  
   `CREATE TABLE IF NOT EXISTS user_settings (user_id INTEGER PRIMARY KEY, theme TEXT DEFAULT 'dark', default_quality TEXT DEFAULT 'auto', buffer_goal INTEGER DEFAULT 10, language TEXT DEFAULT 'vi', parental_pin TEXT DEFAULT '', parental_enabled INTEGER DEFAULT 0, settings_json TEXT DEFAULT '{}', updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS user_favorites (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, channel_id TEXT NOT NULL, sort_order INTEGER DEFAULT 0, group_name TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, channel_id))`,
   `CREATE TABLE IF NOT EXISTS watch_history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, channel_id TEXT NOT NULL, last_position INTEGER DEFAULT 0, watch_count INTEGER DEFAULT 1, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, channel_id))`,
@@ -700,6 +701,12 @@ async function ensureSchema(env) {
     ]) {
       try { await env.DB.prepare(stmt).run(); } catch (e) { /* cột đã có — bỏ qua */ }
     }
+    // Seed gói mặc định (admin sửa/thêm sau trong Admin → Gói cước)
+    try {
+      await env.DB.prepare("INSERT OR IGNORE INTO plans (code, name, rank, price, price_text, tagline, allows, color) VALUES ('standard', 'STANDARD', 1, 0, 'TẠM FREE', 'Kênh Việt Nam', ?, '#42a5f5')").bind(JSON.stringify(["Kênh truyền hình Việt Nam (VTV, HTV, THVL, SCTV...)"])).run();
+      await env.DB.prepare("INSERT OR IGNORE INTO plans (code, name, rank, price, price_text, tagline, allows, color) VALUES ('recreational', 'RECREATIONAL', 2, 0, 'TẠM FREE', 'Kênh VN + Kênh Phim', ?, '#ab47bc')").bind(JSON.stringify(["Toàn bộ kênh Việt Nam", "Các kênh Phim / Giải trí (BOX, HBO, AXN...)"])).run();
+      await env.DB.prepare("INSERT OR IGNORE INTO plans (code, name, rank, price, price_text, tagline, allows, color) VALUES ('vip', 'VIP', 3, 0, 'TẠM FREE', 'Xem hết — tất cả kênh', ?, '#f36f21')").bind(JSON.stringify(["Toàn bộ kênh VN + Phim + Thể thao", "Kênh Quốc tế & đặc biệt", "Ưu tiên hỗ trợ 24/7"])).run();
+    } catch {}
     schemaReady = true;
     return true;
   } catch (e) {
@@ -750,6 +757,14 @@ async function handleAPI(path, request, env, ctx) {
   if (path === "/api/reminders") return await handleReminders(request, env);
   if (path === "/api/feedback") return await handleFeedback(request, env);
   if (path === "/api/shorts") return await handleShorts(request, env);
+  if (path === "/api/plans" && request.method === "GET") {
+    await ensureSchema(env);
+    try {
+      const { results } = await env.DB.prepare("SELECT code, name, rank, price, price_text, tagline, allows, color FROM plans WHERE is_active = 1 ORDER BY rank ASC").all();
+      const plans = (results || []).map(p => ({ ...p, allows: JSON.parse(p.allows || "[]") }));
+      return json({ success: true, plans }, 200, request, env);
+    } catch { return json({ success: true, plans: [] }, 200, request, env); }
+  }
   if (path === "/api/shorts/react") return await handleShortReact(request, env);
   if (path === "/auth/qr/request" || path === "/auth/qr/approve" || path === "/auth/qr/poll") return await handleQrLogin(request, env);
   if (path === "/api/broadcasts") return await handleBroadcasts(env, request);
@@ -1337,6 +1352,30 @@ function planAllowsGroupChrtv(plan, g) {
   if (c === "recreational") return cls === "VN" || cls === "PHIM";
   return cls === "VN"; // standard / guest / mặc định
 }
+// Rank gói từ DB (cache 60s) — gói admin tự thêm vẫn phân quyền đúng theo rank
+let _planRankCache = { at: 0, map: null };
+async function planRank(env, code) {
+  const c = String(code || "standard").toLowerCase();
+  const fallback = { vip: 3, recreational: 2, standard: 1 };
+  try {
+    if (!hasDB(env)) return fallback[c] || 1;
+    const now = Date.now();
+    if (!_planRankCache.map || now - _planRankCache.at > 60000) {
+      const { results } = await env.DB.prepare("SELECT code, rank FROM plans WHERE is_active = 1").all();
+      const m = { ...fallback };
+      for (const r of results || []) m[String(r.code).toLowerCase()] = Number(r.rank) || 1;
+      _planRankCache = { at: now, map: m };
+    }
+    return _planRankCache.map[c] ?? (fallback[c] || 1);
+  } catch { return fallback[c] || 1; }
+}
+async function planAllowsGroupChrtvAsync(env, plan, g) {
+  const rank = await planRank(env, plan);
+  if (rank >= 3) return true;
+  const cls = classifyGroupChrtv(g);
+  if (rank === 2) return cls === "VN" || cls === "PHIM";
+  return cls === "VN";
+}
 
 // Catalog kênh (cache 5 phút): byId / byUrl / byDir
 let _chanCache = null;
@@ -1375,7 +1414,7 @@ async function streamAccessDenied(request, env, urlStr) {
   if (!ch) return null; // không phải kênh đã đăng ký — caller tự xử lý
   const auth = await getAuth(request, env);
   const plan = auth ? auth.plan : "standard";
-  if (planAllowsGroupChrtv(plan, ch.group_title)) return null;
+  if (await planAllowsGroupChrtvAsync(env, plan, ch.group_title)) return null;
   return { error: auth ? "PLAN_REQUIRED" : "LOGIN_REQUIRED", group: ch.group_title, plan };
 }
 
@@ -1468,7 +1507,7 @@ async function handleStreamToken(request, env) {
   }
 
   // 3) Entitlement PHÍA SERVER theo gói — không tin client (P0-B.2)
-  if (channel && !planAllowsGroupChrtv(auth.plan, channel.group_title)) {
+  if (channel && !(await planAllowsGroupChrtvAsync(env, auth.plan, channel.group_title))) {
     return json({ error: "PLAN_REQUIRED", group: channel.group_title, plan: auth.plan }, 403, request, env);
   }
 
@@ -1539,7 +1578,7 @@ async function handleStreamProxy(request, env) {
   //    plan tại thời điểm ký, TTL 60s nên không đáng lo)
   const cat = await channelCatalog(env);
   const ch = payload.cid ? (cat ? (cat.byId.get(payload.cid) || null) : null) : channelForUrl(cat, tu);
-  if (auth && ch && !planAllowsGroupChrtv(auth.plan, ch.group_title)) {
+  if (auth && ch && !(await planAllowsGroupChrtvAsync(env, auth.plan, ch.group_title))) {
     return streamErr({ error: "PLAN_REQUIRED", group: ch.group_title }, 403, request, env);
   }
 
@@ -1915,14 +1954,29 @@ async function handleUser(path, request, env) {
     vip:          { code: "vip",          name: "VIP",          rank: 3, price: 0, priceText: "TẠM FREE", allows: "Tất cả kênh — VN + Phim + Thể thao + Quốc tế" },
   };
   if (path === "/user/plan" && request.method === "GET") {
-    return json({ success: true, current: user.plan || "", plans: PLANS, free: true, support: SUPPORT_EMAIL }, 200, request, env);
+    let plans = PLANS;
+    try {
+      const { results } = await env.DB.prepare("SELECT code, name, rank, price, price_text, tagline, allows, color FROM plans WHERE is_active = 1 ORDER BY rank ASC").all();
+      if (results && results.length) {
+        plans = {};
+        for (const pl of results) plans[pl.code] = { code: pl.code, name: pl.name, rank: Number(pl.rank) || 1, price: Number(pl.price) || 0, priceText: pl.price_text || "", tagline: pl.tagline || "", allows: JSON.parse(pl.allows || "[]"), color: pl.color || "#f36f21" };
+      }
+    } catch {}
+    return json({ success: true, current: user.plan || "", plans, free: true, support: SUPPORT_EMAIL }, 200, request, env);
   }
   if (path === "/user/plan/activate" && request.method === "POST") {
     const body = await request.json().catch(() => ({}));
     const code = (body.plan || "").toLowerCase();
-    if (!PLANS[code]) return json({ error: "Gói không hợp lệ" }, 400, request, env);
+    let planName = PLANS[code]?.name || "";
+    try {
+      const { results } = await env.DB.prepare("SELECT name FROM plans WHERE code = ? AND is_active = 1").all();
+      if (results && results.length) planName = results[0].name;
+      else if (!PLANS[code]) return json({ error: "Gói không hợp lệ" }, 400, request, env);
+    } catch {
+      if (!PLANS[code]) return json({ error: "Gói không hợp lệ" }, 400, request, env);
+    }
     await env.DB.prepare("UPDATE users SET plan = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(code, user.id).run();
-    return json({ success: true, plan: code, price: 0, free: true, message: `Kích hoạt gói ${PLANS[code].name} thành công — hiện tạm miễn phí. Hỗ trợ: ${SUPPORT_EMAIL}`, support: SUPPORT_EMAIL }, 200, request, env);
+    return json({ success: true, plan: code, price: 0, free: true, message: `Kích hoạt gói ${planName || code} thành công — hiện tạm miễn phí. Hỗ trợ: ${SUPPORT_EMAIL}`, support: SUPPORT_EMAIL }, 200, request, env);
   }
 
   // Get profile + profiles + settings
@@ -2158,6 +2212,41 @@ async function handleAdmin(path, request, env, ctx) {
   try { await logAudit(env, adminUser ? adminUser.id : 0, "admin.access", { path, ip, master: isMaster }); } catch {}
   adminAlert(env, ctx, "admin.access", { path, ip, user: adminUser ? adminUser.username : "master-token" });
 
+  // Gói cước do admin quản lý
+  if (path === "/admin/plans" && request.method === "GET") {
+    const { results } = await env.DB.prepare("SELECT * FROM plans ORDER BY rank ASC").all();
+    return json({ success: true, plans: results || [] }, 200, request, env);
+  }
+  if (path === "/admin/plans" && request.method === "POST") {
+    const b = await request.json().catch(() => ({}));
+    const code = String(b.code || "").trim().toLowerCase().replace(/[^a-z0-9_]/g, "");
+    if (!code || !b.name) return json({ error: "Thiếu code/tên gói" }, 400, request, env);
+    const allows = Array.isArray(b.allows) ? b.allows : String(b.allows || "").split("\n").map(s => s.trim()).filter(Boolean);
+    try {
+      await env.DB.prepare("INSERT INTO plans (code, name, rank, price, price_text, tagline, allows, color, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(code, String(b.name).slice(0, 60), parseInt(b.rank) || 1, parseInt(b.price) || 0, String(b.price_text || "").slice(0, 40), String(b.tagline || "").slice(0, 120), JSON.stringify(allows).slice(0, 2000), String(b.color || "#f36f21").slice(0, 20), b.is_active === 0 ? 0 : 1).run();
+    } catch (e) {
+      if (String(e?.message || "").includes("UNIQUE")) return json({ error: "Mã gói đã tồn tại" }, 409, request, env);
+      throw e;
+    }
+    _planRankCache = { at: 0, map: null };
+    return json({ success: true }, 200, request, env);
+  }
+  if (path === "/admin/plans" && request.method === "PUT") {
+    const b = await request.json().catch(() => ({}));
+    if (!b.code) return json({ error: "Thiếu code" }, 400, request, env);
+    const allows = b.allows === undefined ? null : JSON.stringify(Array.isArray(b.allows) ? b.allows : String(b.allows || "").split("\n").map(s => s.trim()).filter(Boolean)).slice(0, 2000);
+    await env.DB.prepare("UPDATE plans SET name = COALESCE(?, name), rank = COALESCE(?, rank), price = COALESCE(?, price), price_text = COALESCE(?, price_text), tagline = COALESCE(?, tagline), allows = COALESCE(?, allows), color = COALESCE(?, color), is_active = COALESCE(?, is_active) WHERE code = ?").bind(b.name ?? null, b.rank ?? null, b.price ?? null, b.price_text ?? null, b.tagline ?? null, allows, b.color ?? null, b.is_active ?? null, b.code).run();
+    _planRankCache = { at: 0, map: null };
+    return json({ success: true }, 200, request, env);
+  }
+  if (path === "/admin/plans" && request.method === "DELETE") {
+    const { code } = await request.json().catch(() => ({}));
+    if (!code) return json({ error: "Thiếu code" }, 400, request, env);
+    if (["standard", "recreational", "vip"].includes(String(code).toLowerCase())) return json({ error: "Không xoá gói mặc định — hãy tắt hiển thị." }, 400, request, env);
+    await env.DB.prepare("DELETE FROM plans WHERE code = ?").bind(code).run();
+    _planRankCache = { at: 0, map: null };
+    return json({ success: true }, 200, request, env);
+  }
   // Feedback báo lỗi kênh (1 chạm từ player)
   if (path === "/admin/feedback" && request.method === "GET") {
     const { results } = await env.DB.prepare("SELECT * FROM feedback ORDER BY created_at DESC LIMIT 100").all();

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Users, BarChart3, Bell, Radio, Send, Eye, TrendingUp, Calendar, Plus, Trash2, Save, X, ScrollText, Ban, KeyRound, ShieldCheck, ChevronDown, Flag, Clapperboard } from 'lucide-react';
+import { Settings, Users, BarChart3, Bell, Radio, Send, Eye, TrendingUp, Calendar, Plus, Trash2, Save, X, ScrollText, Ban, KeyRound, ShieldCheck, ChevronDown, Flag, Clapperboard, Crown } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { API_BASE } from '../services/config';
@@ -38,6 +38,9 @@ export default function AdminPanel({ onClose }) {
   const [feedback, setFeedback] = useState([]);
   const [shorts, setShorts] = useState([]);
   const [shortForm, setShortForm] = useState({ title: '', caption: '', video_url: '', thumb_url: '', author: 'CHRTV' });
+  const [plans, setPlans] = useState([]);
+  const [planForm, setPlanForm] = useState({ code: '', name: '', rank: 1, price: 0, price_text: '', tagline: '', allows: '', color: '#f36f21' });
+  const [editingPlan, setEditingPlan] = useState(null);
 
   // Notification form
   const [notifyTitle, setNotifyTitle] = useState('');
@@ -75,6 +78,7 @@ export default function AdminPanel({ onClose }) {
     fetch(`${BASE}/admin/stream-credentials`, { headers }).then(r => r.json()).then(d => setCreds(d.credentials || [])).catch(() => {});
     fetch(`${BASE}/admin/feedback`, { headers }).then(r => r.json()).then(d => setFeedback(d.feedback || [])).catch(() => {});
     fetch(`${BASE}/admin/shorts`, { headers }).then(r => r.json()).then(d => setShorts(d.shorts || [])).catch(() => {});
+    fetch(`${BASE}/admin/plans`, { headers }).then(r => r.json()).then(d => setPlans(d.plans || [])).catch(() => {});
   }, [token]);
 
   // ===== Quản lý user =====
@@ -226,7 +230,7 @@ export default function AdminPanel({ onClose }) {
         </div>
 
         <div className="flex border-b border-slate-800/40 overflow-x-auto">
-          {[{ id: 'stats', label: 'Thống kê', icon: BarChart3 }, { id: 'users', label: 'Người dùng', icon: Users }, { id: 'audit', label: 'Nhật ký', icon: ScrollText }, { id: 'notify', label: 'Thông báo', icon: Bell }, { id: 'broadcast', label: 'Broadcast', icon: Send }, { id: 'epg', label: 'EPG kênh', icon: Calendar }, { id: 'analytics', label: 'Analytics', icon: TrendingUp }, { id: 'credentials', label: 'Chìa khoá stream', icon: KeyRound }, { id: 'feedback', label: 'Báo lỗi', icon: Flag }, { id: 'shorts', label: 'Shorts', icon: Clapperboard }].map(t => (
+          {[{ id: 'stats', label: 'Thống kê', icon: BarChart3 }, { id: 'users', label: 'Người dùng', icon: Users }, { id: 'audit', label: 'Nhật ký', icon: ScrollText }, { id: 'notify', label: 'Thông báo', icon: Bell }, { id: 'broadcast', label: 'Broadcast', icon: Send }, { id: 'epg', label: 'EPG kênh', icon: Calendar }, { id: 'analytics', label: 'Analytics', icon: TrendingUp }, { id: 'credentials', label: 'Chìa khoá stream', icon: KeyRound }, { id: 'feedback', label: 'Báo lỗi', icon: Flag }, { id: 'shorts', label: 'Shorts', icon: Clapperboard }, { id: 'plans', label: 'Gói cước', icon: Crown }].map(t => (
             <button key={t.id} onClick={() => setTab(t.id)} className={`flex items-center gap-1.5 px-4 py-2 text-[11px] font-semibold transition-all whitespace-nowrap ${tab === t.id ? 'text-[#ff9a3d] border-b-2 border-[#f36f21]' : 'text-slate-500 hover:text-white'}`}>
               <t.icon className="w-3 h-3" /> {t.label}
             </button>
@@ -464,6 +468,114 @@ export default function AdminPanel({ onClose }) {
             </div>
           )}
 
+          {tab === 'plans' && (
+            <div className="space-y-3">
+              <div className="rounded-lg border border-cyan-600/30 bg-cyan-950/20 p-3">
+                <p className="text-[11px] text-cyan-200/90 leading-relaxed">
+                  <b>Rank quyết định quyền xem:</b> rank 1 = chỉ kênh VN · rank 2 = VN + Phim · rank ≥ 3 = xem hết.
+                  Giá 0 = miễn phí. Sửa xong có hiệu lực ngay (không cần deploy).
+                </p>
+              </div>
+              <div className="space-y-2">
+                {plans.map(p => {
+                  let allows = [];
+                  try { allows = JSON.parse(p.allows || '[]'); } catch {}
+                  const ed = editingPlan === p.code;
+                  return (
+                    <div key={p.code} className="bg-slate-900/40 rounded-xl px-3 py-2.5 border border-slate-800/30 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="w-3.5 h-3.5 rounded-full shrink-0" style={{ background: p.color || '#f36f21' }}></span>
+                        <span className="text-[12px] font-black text-white">{p.name}</span>
+                        <span className="text-[9px] font-mono text-slate-500">{p.code} · rank {p.rank}</span>
+                        <span className={`ml-auto text-[10px] font-bold ${Number(p.price) > 0 ? 'text-emerald-400' : 'text-amber-300'}`}>
+                          {Number(p.price) > 0 ? `${Number(p.price).toLocaleString('vi-VN')}đ` : (p.price_text || 'FREE')}
+                        </span>
+                        <button onClick={() => { setEditingPlan(ed ? null : p.code); setPlanForm({ code: p.code, name: p.name, rank: p.rank, price: p.price, price_text: p.price_text || '', tagline: p.tagline || '', allows: allows.join('\n'), color: p.color || '#f36f21' }); }} className="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-slate-800 text-slate-300 hover:text-white">{ed ? 'Đóng' : 'Sửa'}</button>
+                        <button
+                          onClick={async () => {
+                            const ns = p.is_active === 0 ? 1 : 0;
+                            await fetch(`${BASE}/admin/plans`, { method: 'PUT', headers, body: JSON.stringify({ code: p.code, is_active: ns }) });
+                            setPlans(prev => prev.map(x => x.code === p.code ? { ...x, is_active: ns } : x));
+                          }}
+                          className="p-1.5 text-slate-500 hover:text-white" title={p.is_active === 0 ? 'Hiện' : 'Ẩn'}
+                        ><Eye className="w-3.5 h-3.5" /></button>
+                        {!['standard', 'recreational', 'vip'].includes(p.code) && (
+                          <button
+                            onClick={async () => {
+                              if (!confirm('Xoá gói ' + p.code + '?')) return;
+                              const r = await fetch(`${BASE}/admin/plans`, { method: 'DELETE', headers, body: JSON.stringify({ code: p.code }) });
+                              const d = await r.json();
+                              if (d.success) setPlans(prev => prev.filter(x => x.code !== p.code));
+                              else addToast(d.error || 'Lỗi', 'error');
+                            }}
+                            className="p-1.5 text-slate-500 hover:text-[#ff9a3d]" title="Xoá"
+                          ><Trash2 className="w-3.5 h-3.5" /></button>
+                        )}
+                      </div>
+                      {p.is_active === 0 && <p className="text-[9px] text-slate-600">🙈 Đang ẩn với người dùng</p>}
+                      {ed && (
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                          <input value={planForm.name} onChange={e => setPlanForm({ ...planForm, name: e.target.value })} placeholder="Tên gói" className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                          <input value={planForm.tagline} onChange={e => setPlanForm({ ...planForm, tagline: e.target.value })} placeholder="Tagline" className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] text-slate-500">Rank</span>
+                            <input type="number" min={1} max={9} value={planForm.rank} onChange={e => setPlanForm({ ...planForm, rank: e.target.value })} className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-2 py-1.5 text-[11px] text-white" />
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] text-slate-500">Giáđ</span>
+                            <input type="number" min={0} value={planForm.price} onChange={e => setPlanForm({ ...planForm, price: e.target.value })} className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-2 py-1.5 text-[11px] text-white" />
+                          </div>
+                          <input value={planForm.price_text} onChange={e => setPlanForm({ ...planForm, price_text: e.target.value })} placeholder="Chữ thay giá (VD: TẠM FREE)" className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] text-slate-500">Màu</span>
+                            <input type="color" value={planForm.color} onChange={e => setPlanForm({ ...planForm, color: e.target.value })} className="w-10 h-8 bg-transparent" />
+                          </div>
+                          <textarea value={planForm.allows} onChange={e => setPlanForm({ ...planForm, allows: e.target.value })} placeholder="Quyền lợi (mỗi dòng 1 cái)" rows={3} className="col-span-2 bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white resize-none" />
+                          <button
+                            onClick={async () => {
+                              const r = await fetch(`${BASE}/admin/plans`, { method: 'PUT', headers, body: JSON.stringify({ ...planForm, rank: parseInt(planForm.rank) || 1, price: parseInt(planForm.price) || 0 }) });
+                              const d = await r.json();
+                              if (d.success) {
+                                addToast('Đã lưu gói ' + planForm.code, 'success');
+                                setEditingPlan(null);
+                                fetch(`${BASE}/admin/plans`, { headers }).then(r2 => r2.json()).then(dd => setPlans(dd.plans || [])).catch(() => {});
+                              } else addToast(d.error || 'Lỗi', 'error');
+                            }}
+                            className="col-span-2 py-2 btn-orange text-white text-[11px] font-bold rounded-xl"
+                          >Lưu gói</button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!planForm.code.trim() || !planForm.name.trim()) { addToast('Nhập mã + tên gói', 'error'); return; }
+                  const r = await fetch(`${BASE}/admin/plans`, { method: 'POST', headers, body: JSON.stringify({ ...planForm, rank: parseInt(planForm.rank) || 1, price: parseInt(planForm.price) || 0 }) });
+                  const d = await r.json();
+                  if (d.success) {
+                    addToast('Đã thêm gói!', 'success');
+                    setPlanForm({ code: '', name: '', rank: 1, price: 0, price_text: '', tagline: '', allows: '', color: '#f36f21' });
+                    fetch(`${BASE}/admin/plans`, { headers }).then(r2 => r2.json()).then(dd => setPlans(dd.plans || [])).catch(() => {});
+                  } else addToast(d.error || 'Lỗi', 'error');
+                }}
+                className="space-y-2 bg-slate-900/40 rounded-xl p-3 border border-slate-800/40"
+              >
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Thêm gói mới</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <input value={planForm.code} onChange={e => setPlanForm({ ...planForm, code: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '') })} placeholder="Mã gói (vd: sport)" className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white font-mono" />
+                  <input value={planForm.name} onChange={e => setPlanForm({ ...planForm, name: e.target.value })} placeholder="Tên hiển thị (vd: SPORT)" className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input type="number" min={1} max={9} value={planForm.rank} onChange={e => setPlanForm({ ...planForm, rank: e.target.value })} placeholder="Rank (1-9)" className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                  <input type="number" min={0} value={planForm.price} onChange={e => setPlanForm({ ...planForm, price: e.target.value })} placeholder="Giá VNĐ (0 = free)" className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                </div>
+                <button type="submit" className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold rounded-xl flex items-center justify-center gap-1.5"><Plus className="w-3.5 h-3.5" /> Thêm gói</button>
+              </form>
+            </div>
+          )}
           {tab === 'shorts' && (
             <div className="space-y-3">
               <form

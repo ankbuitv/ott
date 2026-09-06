@@ -187,6 +187,25 @@ input[type="range"]::-moz-range-thumb {
 /* Safe area for mobile */
 .safe-area-bottom { padding-bottom: env(safe-area-inset-bottom, 0); }
 
+/* ===== TỐI ƯU CHO ĐIỆN THOẠI / APK ===== */
+html, body { overscroll-behavior-y: none; }               /* không kéo trắng mép khi cuộn quá đà */
+* { -webkit-tap-highlight-color: transparent; }            /* bỏ ô xanh khi chạm */
+body { padding-top: env(safe-area-inset-top, 0); }         /* tránh tai thỏ / thanh trạng thái */
+input, select, textarea { font-size: 16px; }               /* iOS không tự zoom khi gõ */
+@media (max-width: 767px) {
+  /* thanh điều hướng dưới: chừa chỗ cho vạch home của Android/iOS */
+  .mobile-tabbar { padding-bottom: calc(env(safe-area-inset-bottom, 0) + 10px); }
+  /* vùng chạm tối thiểu 44px theo chuẩn Material/HIG */
+  .mobile-tabbar button { min-width: 56px; min-height: 46px; justify-content: center; }
+  /* nội dung không bị thanh dưới che */
+  main { padding-bottom: calc(64px + env(safe-area-inset-bottom, 0)) !important; }
+  /* chữ dễ đọc hơn trên màn nhỏ */
+  h1 { font-size: 1.35rem !important; line-height: 1.25 !important; }
+  h2 { font-size: 1.05rem !important; }
+  /* hàng thẻ cuộn ngang: bám snap cho mượt như app */
+  .snap-x { scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; }
+}
+
 /* ===== Skeleton shimmer (movies) ===== */
 .skeleton-shimmer {
   position: relative;

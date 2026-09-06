@@ -21,6 +21,28 @@ import { setPreviewState } from "./ads";
 
 export const CHRTV_CLIENT_UA = "CHRTV-OTT/0.0.1";
 
+// ---- UA gửi LÊN NGUỒN khi phát qua proxy ----
+// Nguồn IPTV Việt (FPT, TV360, VTVgo…) hầu hết chỉ nhận UA app Android; UA VLC
+// hay bị chặn 403. Mặc định app dùng DALVIK cho tất cả kênh; đổi trong Cài đặt.
+export const UA_DALVIK = "Dalvik/2.1.0 (Linux; U; Android 13; SM-S918B Build/TP1A.220624.014)";
+export const UA_CHROME_ANDROID = "Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36";
+
+function uaModeSetting() {
+  try {
+    const s = JSON.parse(localStorage.getItem("chrtv_settings") || "{}");
+    return s.upstreamUA || "dalvik";
+  } catch { return "dalvik"; }
+}
+
+/** UA nên gửi lên nguồn cho kênh này (theo Cài đặt; 'auto' thì ưu tiên UA riêng của kênh). */
+export function upstreamUAFor(channel) {
+  const mode = uaModeSetting();
+  if (mode === "chrome") return UA_CHROME_ANDROID;
+  if (mode === "dalvik") return UA_DALVIK;
+  const own = channel && (channel.user_agent || channel.userAgent);
+  return own || UA_DALVIK;
+}
+
 /** Base tuyệt đối cho URL phát — Capacitor/WebView không có origin http nên phải ghép API_BASE. */
 function absBase() {
   if (API_BASE) return API_BASE.replace(/\/+$/, "");
@@ -158,7 +180,7 @@ export function makeStreamRequestFilter(channel) {
       if (!uris.some((u) => isProxiedStreamUrl(u))) return;
       request.headers = request.headers || {};
       request.headers["X-CHRTV-Client"] = CHRTV_CLIENT_UA;
-      const ua = channel && (channel.user_agent || channel.userAgent);
+      const ua = upstreamUAFor(channel);
       const ref = channel && channel.referer;
       if (ua) request.headers["X-CHRTV-Upstream-UA"] = ua;
       if (ref) request.headers["X-CHRTV-Upstream-Referer"] = ref;
@@ -170,7 +192,7 @@ export function makeStreamRequestFilter(channel) {
 export function applyStreamClientHeaders(headers, channel) {
   const h = headers || {};
   h["X-CHRTV-Client"] = CHRTV_CLIENT_UA;
-  const ua = channel && (channel.user_agent || channel.userAgent);
+  const ua = upstreamUAFor(channel);
   const ref = channel && channel.referer;
   if (ua) h["X-CHRTV-Upstream-UA"] = ua;
   if (ref) h["X-CHRTV-Upstream-Referer"] = ref;

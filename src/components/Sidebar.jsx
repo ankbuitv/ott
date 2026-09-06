@@ -82,7 +82,7 @@ export default function Sidebar({ activeTab, setActiveTab, onShowSettings, onSho
       </aside>
 
       {/* Mobile Bottom Bar */}
-      <div className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-[#0d0d10] border-t border-[#1a1a1e] px-6 py-3">
+      <div className="mobile-tabbar md:hidden fixed bottom-0 inset-x-0 z-50 bg-[#0d0d10]/95 backdrop-blur border-t border-[#1a1a1e] px-4 py-2.5">
         <div className="flex items-center justify-around">
           {navItems.slice(0, 5).map((item) => {
             const Icon = item.icon;
@@ -91,8 +91,8 @@ export default function Sidebar({ activeTab, setActiveTab, onShowSettings, onSho
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
-                className={`flex flex-col items-center ${
-                  isActive ? 'text-white' : 'text-stone-500'
+                className={`flex flex-col items-center gap-0.5 rounded-xl px-2 py-1 transition-colors ${
+                  isActive ? 'text-white bg-white/[0.06]' : 'text-stone-500 active:bg-white/5'
                 }`}
               >
                 <Icon />

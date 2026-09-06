@@ -1057,6 +1057,20 @@ async function handleAPI(path, request, env, ctx) {
 //
 // ⚠️ `PUBLIC_STREAM_URL=1` = công tắc khẩn cấp trả lại URL gốc cho client (chế độ
 // phát trực tiếp, KHÔNG bảo vệ được link). Chỉ bật khi cần cứu sự cố phát, tắt ngay sau đó.
+// ---------------------------------------------------------------------------
+// UA GỬI LÊN NGUỒN (upstream): mặc định DALVIK — hầu hết nguồn IPTV Việt (FPT,
+// TV360, VTVgo...) chỉ chấp nhận UA của app Android; UA VLC hay bị chặn 403.
+// Thứ tự ưu tiên: client chỉ định (X-CHRTV-Upstream-UA) -> UA riêng của kênh
+// (#EXTVLCOPT trong M3U) -> mặc định (env UPSTREAM_UA_DEFAULT hoặc Dalvik).
+const UA_DALVIK = "Dalvik/2.1.0 (Linux; U; Android 13; SM-S918B Build/TP1A.220624.014)";
+const UA_CHROME_ANDROID = "Mozilla/5.0 (Linux; Android 13; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36";
+function defaultUpstreamUA(env) {
+  const v = String((env && env.UPSTREAM_UA_DEFAULT) || "").trim();
+  if (!v || v.toLowerCase() === "dalvik") return UA_DALVIK;
+  if (v.toLowerCase() === "chrome") return UA_CHROME_ANDROID;
+  return v.slice(0, 300); // cho phép dán nguyên chuỗi UA tuỳ ý
+}
+
 function streamUrlIsPublic(env) {
   return String((env && env.PUBLIC_STREAM_URL) || "") === "1";
 }
@@ -1458,7 +1472,7 @@ async function handleProxy(request, env) {
   }
 
   const proxyBase = `${reqUrl.origin}${reqUrl.pathname}`;
-  let proxyUA = "VLC/3.0.21 LibVLC/3.0.21";
+  let proxyUA = defaultUpstreamUA(env);
   try {
     const o = String(request.headers.get("X-CHRTV-Upstream-UA") || "").replace(/[\r\n]+/g, " ").trim().slice(0, 300);
     if (o) proxyUA = o;
@@ -2097,9 +2111,9 @@ async function handleStreamProxy(request, env) {
 
   // 6) Fetch upstream — redirect phải giữ nguyên origin
   // UA upstream: ưu tiên override từ client (người dùng chọn trong player, VD Dalvik),
-  // sau đó tới UA yêu cầu của kênh (từ #EXTVLCOPT trong M3U), cuối cùng mặc định VLC.
+  // sau đó tới UA yêu cầu của kênh (từ #EXTVLCOPT trong M3U), cuối cùng mặc định Dalvik.
   const cleanHeaderVal = (s, max) => String(s || "").replace(/[\r\n]+/g, " ").trim().slice(0, max || 300);
-  let upstreamUA = "VLC/3.0.21 LibVLC/3.0.21";
+  let upstreamUA = defaultUpstreamUA(env);
   let upstreamRef = target.origin + "/";
   try {
     const overrideUA = cleanHeaderVal(request.headers.get("X-CHRTV-Upstream-UA") || "", 300);
@@ -4135,7 +4149,7 @@ async function runDueJobs(env) {
 // khoảng 2 giờ mà không tốn subrequest của 1 request nào quá nhiều.
 async function checkOneChannel(ch) {
   const t0 = Date.now();
-  const headers = { "User-Agent": ch.user_agent || "Mozilla/5.0 (SmartTV) CHRTV-HealthCheck/1.0" };
+  const headers = { "User-Agent": ch.user_agent || UA_DALVIK };
   if (ch.referer) headers.Referer = ch.referer;
   try {
     const res = await fetch(ch.stream_url, { headers, redirect: "follow", signal: AbortSignal.timeout(6000) });

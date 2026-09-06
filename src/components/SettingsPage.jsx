@@ -440,6 +440,21 @@ export default function SettingsPage({ onClose }) {
             <Toggle on={!!settings.parentalEnabled} onClick={() => updateSetting('parentalEnabled', !settings.parentalEnabled)} label={t('settings.parental_enable')} />
           </div>
           <div className="flex items-center justify-between py-2">
+            <div className="min-w-0 pr-3">
+              <p className="text-xs font-medium text-slate-200">Trình duyệt giả lập khi lấy luồng (UA)</p>
+              <p className="text-[10px] text-slate-500">Nguồn IPTV Việt thường chỉ nhận UA app Android. Kênh nào lỗi 403 thì đổi thử Chrome.</p>
+            </div>
+            <select
+              value={settings.upstreamUA || 'dalvik'}
+              onChange={e => updateSetting('upstreamUA', e.target.value)}
+              className="bg-slate-800 text-xs text-slate-200 px-3 py-2 rounded-lg border border-slate-700 shrink-0"
+            >
+              <option value="dalvik">Dalvik (mặc định)</option>
+              <option value="chrome">Chrome Android</option>
+              <option value="auto">Theo từng kênh</option>
+            </select>
+          </div>
+          <div className="flex items-center justify-between py-2">
             <div>
               <p className="text-xs font-medium text-slate-200 flex items-center gap-1.5"><Leaf className="w-3.5 h-3.5 text-sky-400" /> Tự hạ chất lượng khi mạng yếu</p>
               <p className="text-[10px] text-slate-500">Rời Wi-Fi sang 4G hoặc mạng chậm là tự giảm xuống 480p và báo cho bạn biết</p>

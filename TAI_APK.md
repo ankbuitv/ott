@@ -76,6 +76,18 @@ Soi log `build-android.yml` ra 4 lỗi cộng dồn:
 - `android/app/build.gradle`: thêm `signingConfigs.release` đọc keystore từ biến môi trường, **không có keystore thì rơi về debug key** để APK luôn cài được; `versionCode`/`versionName` nhận override từ CI (`-PCI_VERSION_CODE`, `-PCI_VERSION_NAME`) để mỗi bản build tự tăng version.
 - `.github/workflows/build-android.yml`: workflow viết lại HOÀN CHỈNH (file cũ bị cắt cụt giữa dòng nên Action không bao giờ chạy — đó là lý do "không thấy file APK ở đâu"): `npm ci` → build web → `cap sync` → JDK 21 → SDK 36/build-tools 36 → keystore (secret > cache > tự sinh + cache giữ chữ ký ổn định) → `assembleRelease` → **artifact + TỰ ĐĂNG LÊN GITHUB RELEASE** (tag `latest`).
 
+### Kích hoạt workflow (ĐÚNG 1 BƯỚC — bot không có quyền sửa file trong `.github/workflows/`)
+
+Token của Arena **thiếu quyền `workflows`** nên không push được file `.github/workflows/build-android.yml`
+(GitHub trả 403 cả git lẫn API). Workflow mới đã nằm sẵn trong repo ở **`ci/build-android.yml`**. Chọn 1 trong 2:
+
+- **Cách 1 (30 giây):** mở <https://github.com/ankbuitv/ott/edit/arena/01a075fc-ott/.github/workflows/build-android.yml>,
+  bôi đen xoá hết, dán nguyên nội dung **`ci/build-android.yml`** ([bản raw](https://github.com/ankbuitv/ott/blob/arena/01a075fc-ott/ci/build-android.yml)),
+  commit thẳng vào nhánh `arena/01a075fc-ott`.
+- **Cách 2:** reconnect GitHub trong Arena có quyền `workflows` rồi bảo agent push nốt commit cuối (đang chờ sẵn trong nhánh local).
+
+> Làm xong bước này là MỌI lần push vào `main` tự build + tự đăng Release, không cần đụng gì thêm.
+
 ### Tải APK (không cần bấm gì thêm)
 
 Workflow chạy tự động mỗi khi push vào `main` (hoặc chạy tay ở tab **Actions → Build Android APK (CHRTV) → Run workflow**). Xong bản build:

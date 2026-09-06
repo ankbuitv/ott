@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CHRTV PLAY — Xem thử trên khung điện thoại</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    min-height:100vh;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    background:radial-gradient(1000px 600px at 20% -10%,#132033,#07070a 60%);
+    color:#e7e9ee;display:flex;flex-direction:column;align-items:center;gap:22px;padding:28px 16px 48px;
+  }
+  h1{font-size:20px;font-weight:800;letter-spacing:.3px}
+  h1 span{color:#f36f21}
+  .sub{font-size:13px;color:#93a0b4;text-align:center;max-width:640px;line-height:1.6}
+  .stage{display:flex;flex-wrap:wrap;gap:34px;justify-content:center;align-items:flex-start}
+  .device{
+    position:relative;background:#111318;border:10px solid #1b1d24;border-radius:44px;
+    box-shadow:0 30px 70px rgba(0,0,0,.65),0 0 0 2px #2a2d36 inset;padding:10px;
+  }
+  .device::before{
+    content:"";position:absolute;top:16px;left:50%;transform:translateX(-50%);
+    width:104px;height:22px;background:#0b0c10;border-radius:14px;z-index:3;pointer-events:none;
+  }
+  .device::after{
+    content:"";position:absolute;bottom:14px;left:50%;transform:translateX(-50%);
+    width:110px;height:4px;background:#4b515e;border-radius:4px;z-index:3;pointer-events:none;
+  }
+  iframe{border:0;border-radius:34px;background:#000;display:block}
+  .label{margin-top:12px;text-align:center;font-size:12px;color:#8b96a8}
+  .card{
+    background:#12141a;border:1px solid #23262f;border-radius:18px;padding:18px 20px;max-width:420px;width:100%;
+  }
+  .card h2{font-size:14px;margin-bottom:10px;color:#fff}
+  .card p, .card li{font-size:12.5px;color:#9aa5b6;line-height:1.75}
+  .card ol{padding-left:18px}
+  .btn{
+    display:inline-block;margin-top:12px;background:linear-gradient(90deg,#f36f21,#ff9a3d);color:#fff;
+    text-decoration:none;font-weight:700;font-size:13px;padding:11px 18px;border-radius:12px;
+  }
+  .btn.ghost{background:#1d212a;color:#c9d3e2;border:1px solid #2c313c}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  .pill{display:inline-block;font-size:11px;padding:4px 10px;border-radius:99px;background:#1b2330;color:#7fd3ff;margin-right:6px}
+  .sizes{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:4px}
+  .sizes button{
+    background:#171a21;color:#c2ccdb;border:1px solid #272b35;border-radius:10px;
+    padding:7px 13px;font-size:12px;cursor:pointer
+  }
+  .sizes button.on{background:#f36f21;border-color:#f36f21;color:#fff;font-weight:700}
+</style>
+</head>
+<body>
+  <h1>CHRTV <span>PLAY</span> — xem thử giao diện điện thoại</h1>
+  <p class="sub">
+    Khung dưới đây chạy đúng bản web thật của app (cùng code sẽ đóng gói vào APK), chỉ khác là bị bó vào kích thước màn hình điện thoại.
+    Bấm thử menu dưới đáy, mở kênh, vào Cài đặt… y hệt lúc cầm máy.
+  </p>
+
+  <div class="sizes">
+    <button data-w="390" data-h="844" class="on">iPhone 14 · 390×844</button>
+    <button data-w="360" data-h="800">Android phổ thông · 360×800</button>
+    <button data-w="412" data-h="915">Pixel 7 Pro · 412×915</button>
+    <button data-w="844" data-h="390">Nằm ngang · 844×390</button>
+  </div>
+
+  <div class="stage">
+    <div>
+      <div class="device" id="device">
+        <iframe id="frame" src="/" width="390" height="844" title="CHRTV PLAY mobile"></iframe>
+      </div>
+      <div class="label" id="lab">390 × 844 — chạm/kéo trực tiếp trong khung</div>
+    </div>
+
+    <div class="card">
+      <h2>📦 Bản APK</h2>
+      <p><span class="pill">com.chrtv.app</span><span class="pill">v1.1.0</span></p>
+      <p>
+        Máy build trong workspace không tải được Android SDK (chặn mạng tới dl.google.com), nên APK phải build trên
+        GitHub Actions. Workflow đã được sửa lại đầy đủ, chỉ còn thiếu 1 bước bấm tay vì token bot không có quyền
+        ghi file trong <code>.github/workflows</code>.
+      </p>
+      <ol>
+        <li>Mở repo → file <code>.github/workflows/build-android.yml</code> → nút bút chì.</li>
+        <li>Xoá hết, dán nội dung file <code>ci/build-android.yml</code> trong repo.</li>
+        <li>Commit thẳng vào nhánh <code>arena/01a0759f-ott</code>.</li>
+        <li>Tab <b>Actions</b> → chờ ~10 phút → tải artifact <b>chrtv-apk</b>.</li>
+      </ol>
+      <div class="row">
+        <a class="btn" href="https://github.com/ankbuitv/ott/edit/arena/01a0759f-ott/.github/workflows/build-android.yml" target="_blank" rel="noopener">Sửa workflow trên GitHub</a>
+        <a class="btn ghost" href="https://github.com/ankbuitv/ott/actions" target="_blank" rel="noopener">Xem Actions</a>
+      </div>
+    </div>
+  </div>
+
+<script>
+  const frame = document.getElementById('frame');
+  const lab = document.getElementById('lab');
+  document.querySelectorAll('.sizes button').forEach(b => {
+    b.onclick = () => {
+      document.querySelectorAll('.sizes button').forEach(x => x.classList.remove('on'));
+      b.classList.add('on');
+      frame.width = b.dataset.w; frame.height = b.dataset.h;
+      lab.textContent = b.dataset.w + ' × ' + b.dataset.h + ' — chạm/kéo trực tiếp trong khung';
+    };
+  });
+</script>
+</body>
+</html>

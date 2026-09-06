@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Check, X, Mail, BadgeCheck, ShieldCheck, RefreshCcw, Lock, Crown, Gift, Sparkles, ChevronRight, Play } from 'lucide-react';
+import { Check, X, Mail, BadgeCheck, ShieldCheck, RefreshCcw, Lock, Crown, Gift, Sparkles, ChevronRight } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
-import { PLANS, activatePlan, fetchPlan, fetchPlanList, refreshPlanRanks, SUPPORT_EMAIL } from '../services/plans';
+import { PLANS, PLAN_FEATURES, planHasFeature, activatePlan, fetchPlan, fetchPlanList, refreshPlanRanks, SUPPORT_EMAIL } from '../services/plans';
 import { useI18n } from '../contexts/I18nContext';
 import PayModal from './PayModal';
 import GiftModal from './GiftModal';
@@ -230,76 +230,61 @@ export default function PlansScreen({ initialCode = '' }) {
         )}
 
         {/* ===== Thẻ gói ===== */}
-        <div className={`grid gap-5 ${plans.length >= 5 ? 'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5' : plans.length >= 4 ? 'sm:grid-cols-2 lg:grid-cols-4' : plans.length === 2 ? 'md:grid-cols-2 max-w-[760px] mx-auto' : 'md:grid-cols-3'}`}>
+        <div className={`grid gap-5 items-stretch ${plans.length >= 5 ? 'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5' : plans.length >= 4 ? 'sm:grid-cols-2 lg:grid-cols-4' : plans.length === 2 ? 'md:grid-cols-2 max-w-[760px] mx-auto' : 'md:grid-cols-3'}`}>
           {plans.map((p) => {
             const isCurrent = current === p.code;
             const rank = Number(p.rank) || 1;
-            const canUp = rank > currentRank;
             const isTop = rank === maxRank && maxRank > 1;
-            const allows = Array.isArray(p.allows) ? p.allows : [];
             const priceStr = fmtPrice(p, lang);
             const a = planArt(p);
             return (
-              <div key={p.code} className={`rounded-3xl overflow-hidden flex flex-col border transition-all hover:-translate-y-1 ${isCurrent ? 'border-[#f36f21] shadow-[0_10px_40px_rgba(243,111,33,.25)]' : isTop ? 'border-amber-400/40 shadow-[0_10px_40px_rgba(251,191,36,.12)]' : 'border-white/10 shadow-xl shadow-black/30'} bg-[#14151c]`}>
-                {/* Minh hoạ gói */}
-                <div className="relative h-[118px] flex items-center justify-center overflow-hidden" style={{ background: a.grad }}>
+              <div key={p.code} className={`rounded-3xl overflow-hidden flex flex-col h-full border transition-all hover:-translate-y-1 ${isCurrent ? 'border-[#f36f21] shadow-[0_10px_40px_rgba(243,111,33,.25)]' : isTop ? 'border-amber-400/40 shadow-[0_10px_40px_rgba(251,191,36,.12)]' : 'border-white/10 shadow-xl shadow-black/30'} bg-[#14151c]`}>
+                <div className="relative h-[118px] flex items-center justify-center overflow-hidden shrink-0" style={{ background: a.grad }}>
                   <div className="absolute -left-6 -top-8 w-28 h-28 rounded-full bg-white/15" />
                   <div className="absolute -right-4 -bottom-10 w-32 h-32 rounded-full bg-black/20" />
-                  <div className="absolute left-3 top-2.5 flex gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-white/70" /><span className="w-1.5 h-1.5 rounded-full bg-white/40" /><span className="w-1.5 h-1.5 rounded-full bg-white/25" />
-                  </div>
                   <span className="text-[52px] leading-none drop-shadow-[0_6px_16px_rgba(0,0,0,.45)] relative">{a.art}</span>
-                  <span className="absolute bottom-2 right-3 text-[10px] font-black text-white/85 tracking-widest">RANK {rank}</span>
                   {isTop && (
                     <span className="absolute top-2.5 right-2.5 bg-amber-400 text-black text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-1"><Crown className="w-3 h-3" /> HOT</span>
-                  )}
-                  {!priceStr && !isTop && (
-                    <span className="absolute top-2.5 right-2.5 bg-[#e53935] text-white text-[10px] font-black px-2 py-0.5 rounded-full">{p.price_text || t('plans.temp_free')}</span>
                   )}
                 </div>
                 <div className="px-5 pt-4 pb-1">
                   <div className="text-[19px] font-black italic tracking-tight" style={{ color: p.color || '#f36f21' }}>{p.name}</div>
                   <div className="text-[12px] text-stone-400 mt-0.5 min-h-[18px]">{lang === 'vi' ? p.tagline : (a.tagline_en || p.tagline)}</div>
                 </div>
-                <div className="px-5 pt-1.5 flex items-baseline">
+                <div className="px-5 pt-1.5 h-10 flex items-baseline">
                   {priceStr ? (
                     <>
-                      <span className="text-[26px] font-black text-white">{priceStr}</span>
+                      <span className="text-[26px] font-black text-white leading-none">{priceStr}</span>
                       <span className="text-[12px] text-stone-500 ml-1">{t('plans.per_month')}</span>
                     </>
                   ) : (
                     <>
-                      <span className="text-[26px] font-black text-emerald-400">{t('plans.free_price')}</span>
+                      <span className="text-[26px] font-black text-emerald-400 leading-none">{t('plans.free_price')}</span>
                       <span className="text-[12px] text-stone-500 ml-1">{t('plans.per_month')}</span>
                     </>
                   )}
                 </div>
-                {!priceStr && (
-                  <div className="px-5 pt-1.5 text-[11px] font-bold">
-                    <span className="inline-flex items-center gap-1 grad-brand text-white px-2.5 py-1 rounded-lg"><Play className="w-3 h-3" />{t('plans.launch_deal')}</span>
-                  </div>
-                )}
+                <ul className="px-5 py-4 flex flex-col gap-2 flex-1">
+                  {PLAN_FEATURES.map((feat) => {
+                    const ok = planHasFeature(p, feat.id);
+                    return (
+                      <li key={feat.id} className={`flex gap-2 text-[12px] leading-snug ${ok ? 'text-stone-300' : 'text-stone-600'}`}>
+                        <span className={`w-[17px] h-[17px] rounded-full flex items-center justify-center shrink-0 mt-px ${ok ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/[0.06] text-stone-600'}`}>
+                          {ok ? <Check className="w-3 h-3" strokeWidth={3} /> : <X className="w-3 h-3" strokeWidth={3} />}
+                        </span>
+                        {lang === 'vi' ? feat.vi : feat.en}
+                      </li>
+                    );
+                  })}
+                </ul>
                 <button
                   onClick={() => startBuy(p)}
                   disabled={busy === p.code || isCurrent}
-                  className={`mx-5 mt-3 py-2.5 rounded-2xl font-extrabold text-[13px] transition active:scale-[0.98] ${isCurrent ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/40 cursor-default' : 'text-white hover:brightness-110 disabled:opacity-60 shadow-lg'}`}
+                  className={`mx-5 mb-5 mt-auto h-11 rounded-2xl font-extrabold text-[13px] transition active:scale-[0.98] shrink-0 ${isCurrent ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/40 cursor-default' : 'text-white hover:brightness-110 disabled:opacity-60 shadow-lg'}`}
                   style={!isCurrent ? { background: `linear-gradient(135deg, ${p.color || '#f36f21'}, ${p.color || '#f36f21'}bb)`, boxShadow: `0 8px 24px ${p.color || '#f36f21'}44` } : {}}
                 >
                   {isCurrent ? t('plans.is_current') : busy === p.code ? t('plans.activating') : t('plans.buy_now')}
                 </button>
-                <ul className="px-5 py-4 flex flex-col gap-2">
-                  {allows.map((f, i) => (
-                    <li key={i} className="flex gap-2 text-[12px] text-stone-300 leading-snug">
-                      <span className="w-[17px] h-[17px] rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 mt-px"><Check className="w-3 h-3" /></span>{f}
-                    </li>
-                  ))}
-                  {(lang === 'vi' ? a.not : a.not_en).slice(0, 3).map((f, i) => (
-                    <li key={`n${i}`} className="flex gap-2 text-[12px] text-stone-600 leading-snug">
-                      <span className="w-[17px] h-[17px] rounded-full bg-white/[0.06] text-stone-600 flex items-center justify-center shrink-0 mt-px"><X className="w-3 h-3" /></span>{f}
-                    </li>
-                  ))}
-                  {allows.length === 0 && <li className="text-[12px] text-stone-600">—</li>}
-                </ul>
               </div>
             );
           })}

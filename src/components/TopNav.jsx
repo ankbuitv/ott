@@ -367,7 +367,6 @@ function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, s
           <button onClick={() => { if (onShowAuth) onShowAuth(); else if (setActiveTab) setActiveTab('movies'); }} className="px-4 py-2 bg-white text-black text-sm font-bold rounded-xl hover:bg-stone-200 transition">{t('nav.login')}</button>
         )}
       </div>
-      {apkOpen && <DownloadAppModal onClose={() => setApkOpen(false)} />}
     </nav>
   );
 }

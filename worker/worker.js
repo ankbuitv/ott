@@ -149,14 +149,14 @@ export default {
     try {
       // API routes
       if (p.startsWith("/api/v1/") || p.startsWith("/api/")) {
-        return await handleAPI(p.startsWith("/api/v1/") ? p.replace("/api/v1", "/api") : p, request, env, ctx);
+        return await guardApiRes(request, await handleAPI(p.startsWith("/api/v1/") ? p.replace("/api/v1", "/api") : p, request, env, ctx));
       }
       // Auth API
-      if (p.startsWith("/auth/")) return await handleAuth(p, request, env);
+      if (p.startsWith("/auth/")) return await guardApiRes(request, await handleAuth(p, request, env));
       // User API
-      if (p.startsWith("/user/")) return await handleUser(p, request, env);
+      if (p.startsWith("/user/")) return await guardApiRes(request, await handleUser(p, request, env));
       // Admin API
-      if (p.startsWith("/admin/")) return await handleAdmin(p, request, env, ctx);
+      if (p.startsWith("/admin/")) return await guardApiRes(request, await handleAdmin(p, request, env, ctx));
       // WebSocket upgrade
       if (p === "/ws" && request.headers.get("Upgrade") === "websocket") {
         return handleWebSocket(request, env, ctx);
@@ -168,12 +168,54 @@ export default {
         Object.entries(SECURITY_HEADERS).forEach(([k, v]) => { if (!headers.has(k)) headers.set(k, v); });
         return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
       }
+      if (wantsHtml(request)) return html404(request, 404);
       return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: jsonHeaders(request, env) });
     } catch (err) {
       return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: jsonHeaders(request, env) });
     }
   }
 };
+
+// Trình duyệt mở tay (Accept text/html, không phải app fetch JSON) -> trả trang 404 HTML
+function wantsHtml(request) {
+  const a = (request.headers.get("Accept") || "").toLowerCase();
+  return a.includes("text/html") && !a.includes("application/json");
+}
+// Bọc response API: ai mở API mà thiếu quyền/sai header (401/403/404) bằng trình duyệt -> trang 404
+async function guardApiRes(request, res) {
+  try {
+    if (res && [401, 403, 404].includes(res.status) && wantsHtml(request)) {
+      return html404(request, res.status);
+    }
+  } catch {}
+  return res;
+}
+// Trang 404 thương hiệu CHRTV PLAY
+function html404(request, status = 404) {
+  const path = (() => { try { return new URL(request.url).pathname; } catch { return ""; } })();
+  const esc = String(path || "").replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]));
+  const body = `<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>404 — CHRTV PLAY</title><style>
+*{box-sizing:border-box;margin:0;padding:0}body{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0b0c10;color:#e7e5e4;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;padding:24px}
+.card{max-width:520px;width:100%;text-align:center;background:#14151c;border:1px solid rgba(255,255,255,.08);border-radius:24px;padding:44px 32px;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+.logo{display:inline-flex;align-items:center;gap:8px;font-weight:900;letter-spacing:.2em;font-size:12px;color:#ff9a3d;margin-bottom:20px}
+.code{font-size:96px;font-weight:900;line-height:1;background:linear-gradient(135deg,#f36f21,#fbbf24);-webkit-background-clip:text;background-clip:text;color:transparent}
+h1{font-size:20px;margin:12px 0 8px}.path{font-family:monospace;font-size:12px;color:#a8a29e;background:#00000055;border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:8px 12px;margin:12px 0;word-break:break-all}
+p{font-size:13px;color:#a8a29e;line-height:1.7}.btns{display:flex;gap:10px;justify-content:center;margin-top:22px;flex-wrap:wrap}
+a.btn{display:inline-block;padding:11px 22px;border-radius:14px;font-weight:800;font-size:14px;text-decoration:none}
+a.primary{background:linear-gradient(135deg,#f36f21,#c2570f);color:#fff}a.ghost{background:rgba(255,255,255,.07);color:#e7e5e4;border:1px solid rgba(255,255,255,.1)}
+small{display:block;margin-top:18px;font-size:11px;color:#57534e}
+</style></head><body><div class="card">
+<div class="logo">▶ CHRTV PLAY</div>
+<div class="code">404</div>
+<h1>Không tìm thấy trang này</h1>
+${esc ? `<div class="path">${esc}</div>` : ""}
+<p>Khu vực API chỉ dành cho ứng dụng CHRTV PLAY có xác thực.<br>Nếu bạn là người xem, hãy về trang chủ để tiếp tục giải trí nhé 🍿</p>
+<div class="btns"><a class="btn primary" href="/">Về trang chủ</a><a class="btn ghost" href="/?tab=plans">Xem gói cước</a></div>
+<small>support@ankb.qzz.io</small>
+</div></body></html>`;
+  return new Response(body, { status, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", ...SECURITY_HEADERS } });
+}
 
 // ========== HELPERS ==========
 // Pure JS SHA-256 (no crypto.subtle.digestSync in Workers)

@@ -15,8 +15,8 @@ export const LANGUAGES = [
 // Dùng cú pháp: { vi: '...', en: '...', zh: '...', fil: '...', fr: '...' }
 const T = {
   // ============== APP CHUNG ==============
-  'app.brand': { vi: 'CHRTV PLAY', en: 'CHRTV PLAY', zh: 'CHRTV PLAY', fil: 'CHRTV PLAY', fr: 'CHRTV PLAY' },
-  'app.tagline': { vi: 'Truyền hình & phim trực tuyến', en: 'Live TV & Movies Online', zh: '在线电视与电影', fil: 'Live TV at Mga Pelikula Online', fr: 'TV en direct & Films en ligne' },
+  'app.brand': { vi: 'CHRTV PL▷Y', en: 'CHRTV PL▷Y', zh: 'CHRTV PL▷Y', fil: 'CHRTV PL▷Y', fr: 'CHRTV PL▷Y' },
+  'app.tagline': { vi: 'Entertainment in your hands', en: 'Entertainment in your hands', zh: 'Entertainment in your hands', fil: 'Entertainment in your hands', fr: 'Entertainment in your hands' },
   'app.search.placeholder': { vi: 'Tìm kênh, phim...', en: 'Search channels, movies...', zh: '搜索频道、电影...', fil: 'Maghanap ng channel, pelikula...', fr: 'Rechercher chaînes, films...' },
   'app.live_now': { vi: 'TRỰC TIẾP', en: 'LIVE NOW', zh: '直播中', fil: 'LIVE NGAYON', fr: 'EN DIRECT' },
   'app.loading': { vi: 'Đang tải...', en: 'Loading...', zh: '加载中...', fil: 'Naglo-load...', fr: 'Chargement...' },
@@ -51,7 +51,7 @@ const T = {
   'shorts.share': { vi: 'Chia sẻ', en: 'Share', zh: '分享', fil: 'I-share', fr: 'Partager' },
 
   // ============== WELCOME ==============
-  'welcome.title': { vi: 'Chào mừng đến CHRTV PLAY', en: 'Welcome to CHRTV PLAY', zh: '欢迎使用 CHRTV PLAY', fil: 'Maligayang pagdating sa CHRTV PLAY', fr: 'Bienvenue sur CHRTV PLAY' },
+  'welcome.title': { vi: 'Chào mừng đến CHRTV PL▷Y', en: 'Welcome to CHRTV PL▷Y', zh: '欢迎使用 CHRTV PL▷Y', fil: 'Maligayang pagdating sa CHRTV PL▷Y', fr: 'Bienvenue sur CHRTV PL▷Y' },
   'welcome.sub': { vi: 'Truyền hình • Phim • Thể thao — xem miễn phí ngay', en: 'Live TV • Movies • Sports — watch free now', zh: '电视 • 电影 • 体育 — 立即免费观看', fil: 'Live TV • Pelikula • Sports — libre pang panoorin', fr: 'TV • Films • Sport — regardez gratuitement' },
   'welcome.f1': { vi: 'Hàng trăm kênh truyền hình trong nước & quốc tế', en: 'Hundreds of local & international channels', zh: '数百个国内与国际电视频道', fil: 'Daang-daang channel sa Pilipinas at global', fr: 'Des centaines de chaînes locales et internationales' },
   'welcome.f2': { vi: 'Phim & series mới — cập nhật liên tục', en: 'New movies & series — updated daily', zh: '最新电影与剧集 — 每日更新', fil: 'Mga bagong pelikula at series — araw-araw', fr: 'Nouveaux films et séries — chaque jour' },
@@ -518,7 +518,7 @@ const T = {
   'plans.sec2': { vi: 'Hỗ trợ qua email khi cần', en: 'Email support when you need it' },
   'nav.download_app': { vi: 'Tải app', en: 'Get the app' },
   'apk.kicker': { vi: 'Android APK', en: 'Android APK' },
-  'apk.title': { vi: 'Tải CHRTV PLAY', en: 'Get CHRTV PLAY' },
+  'apk.title': { vi: 'Tải CHRTV PL▷Y', en: 'Get CHRTV PL▷Y' },
   'apk.sub': { vi: 'Xem TV, phim và thể thao trên điện thoại — file APK chính thức.', en: 'Watch TV, movies and sports on your phone — official APK.' },
   'apk.preparing': { vi: 'Đang chuẩn bị file…', en: 'Preparing the file…' },
   'apk.ready': { vi: 'Sẵn sàng tải về', en: 'Ready to download' },
@@ -658,7 +658,7 @@ const T = {
   'app.need_login_catchup': { vi: 'Xem chương trình đã phát cần đăng nhập — miễn phí nhé!', en: 'Sign in to watch replays — free!' },
   'app.need_login_ch': { vi: '"{{name}}" cần đăng nhập để xem — đăng ký miễn phí nhé!', en: '"{{name}}" needs sign-in — free to join!' },
   'app.need_login_movie': { vi: 'Đăng nhập để xem phim nhé — miễn phí!', en: 'Sign in to watch movies — free!' },
-  'app.plan_needed': { vi: '"{{name}}" thuộc gói cao hơn — vào Mua Gói kích hoạt (tạm miễn phí)', en: '"{{name}}" needs a higher plan — activate in Plans (temp free)' },
+  'app.plan_needed': { vi: '"{{name}}" thuộc gói cao hơn — vào Mua Gói để đăng ký', en: '"{{name}}" needs a higher plan — subscribe in Plans' },
   'app.stream_fail': { vi: 'Không tải được luồng kênh — thử lại nhé', en: 'Could not load channel — try again' },
   'app.unfav': { vi: 'Đã bỏ yêu thích', en: 'Removed from favorites' },
   'app.faved': { vi: 'Đã thêm yêu thích', en: 'Added to favorites' },
@@ -942,8 +942,5 @@ export function detectCountry() {
     // Mặc định: quốc tế
     return 'US';
   } catch { return 'US'; }
-}
-
-US'; }
 }
 

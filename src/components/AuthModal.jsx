@@ -8,7 +8,7 @@ import { API_BASE } from '../services/config';
 import Logo from './Logo';
 import LegalModal from './LegalModal';
 
-const inputCls = 'w-full pl-10 pr-3 py-2.5 bg-slate-800/60 border border-slate-700/50 rounded-xl text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-[#f36f21]/60';
+const inputCls = 'w-full pl-11 pr-3 py-3 bg-white/[0.04] border border-white/10 rounded-2xl text-[13px] text-white placeholder:text-stone-600 focus:outline-none focus:border-[#f36f21]/70 focus:bg-white/[0.07] transition';
 
 export default function AuthModal({ open, onClose, initialView = 'login' }) {
   const { t } = useI18n();
@@ -195,15 +195,14 @@ export default function AuthModal({ open, onClose, initialView = 'login' }) {
         className={`modal-panel bg-[#141419] border border-white/10 rounded-3xl shadow-2xl w-full overflow-hidden ${showSplit ? 'max-w-2xl' : 'max-w-sm'}`}
         onClick={e => e.stopPropagation()}
       >
-        {/* Logo trên cùng */}
-        <div className="px-6 pt-5 pb-2 relative">
+        <div className="px-6 pt-6 pb-3 relative bg-gradient-to-b from-[#1a120c] to-transparent">
           <button onClick={onClose} className="absolute top-3 right-3 p-1.5 rounded-full hover:bg-white/10 transition-colors">
-            <X className="w-4 h-4 text-slate-500" />
+            <X className="w-4 h-4 text-stone-500" />
           </button>
-          <div className="flex justify-center"><Logo size="sm" showSubtext={false} /></div>
-          <h2 className="text-base font-black text-white text-center mt-2">{titles[view]}</h2>
-          {view === 'login' && <p className="text-[11px] text-slate-500 mt-0.5 text-center">{t('auth.login.help')}</p>}
-          {view === 'register' && <p className="text-[11px] text-slate-500 mt-0.5 text-center">{t('auth.register.help')}</p>}
+          <div className="flex justify-center"><Logo size="md" showSubtext /></div>
+          <h2 className="text-[17px] font-black text-white text-center mt-3 tracking-tight">{titles[view]}</h2>
+          {view === 'login' && <p className="text-[12px] text-stone-500 mt-1 text-center">{t('auth.login.help')}</p>}
+          {view === 'register' && <p className="text-[12px] text-stone-500 mt-1 text-center">{t('auth.register.help')}</p>}
         </div>
 
         {showSplit ? (
@@ -248,20 +247,20 @@ export default function AuthModal({ open, onClose, initialView = 'login' }) {
               {error && <div className="mb-3 px-3 py-2 bg-[#f36f21]/15 border border-[#f36f21]/30 rounded-xl text-[11px] text-[#ff9a3d]">{error}</div>}
               <form onSubmit={handleLogin} className="space-y-2.5">
                 <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
-                  <input type="text" value={loginVal} onChange={e => setLoginVal(e.target.value)} placeholder={t('auth.email_or_username')} required className={inputCls} />
+                  <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#ff9a3d]" />
+                  <input type="text" value={loginVal} onChange={e => setLoginVal(e.target.value)} placeholder={t('auth.email_or_username')} required className={inputCls} autoComplete="username" />
                 </div>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
-                  <input type={showPass ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder={t('auth.password')} required className={`${inputCls} pr-10`} />
+                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#ff9a3d]" />
+                  <input type={showPass ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder={t('auth.password')} required className={`${inputCls} pr-11`} autoComplete="current-password" />
                   <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5">
-                    {showPass ? <EyeOff className="w-4 h-4 text-slate-600" /> : <Eye className="w-4 h-4 text-slate-600" />}
+                    {showPass ? <EyeOff className="w-4 h-4 text-stone-500" /> : <Eye className="w-4 h-4 text-stone-500" />}
                   </button>
                 </div>
                 {needTotp && (
                   <input type="text" value={totpCode} onChange={e => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Mã 2FA (6 số)" inputMode="numeric" required className="w-full px-3 py-2.5 bg-amber-500/5 border border-amber-500/30 rounded-xl text-sm font-mono tracking-[0.3em] text-center text-amber-200 placeholder:text-amber-700 focus:outline-none focus:border-amber-500" />
                 )}
-                <button type="submit" disabled={loading} className="w-full py-2.5 btn-orange disabled:opacity-50 text-white font-bold text-sm rounded-xl transition-all flex items-center justify-center gap-1.5">
+                <button type="submit" disabled={loading} className="w-full h-11 btn-orange disabled:opacity-50 text-white font-black text-[13px] rounded-2xl transition-all flex items-center justify-center gap-1.5">
                   {loading ? t('app.loading') : <>{t('auth.btn.login')} <ArrowRight className="w-4 h-4" /></>}
                 </button>
                 <div className="flex items-center justify-between text-[11px] pt-1">
@@ -279,18 +278,18 @@ export default function AuthModal({ open, onClose, initialView = 'login' }) {
             {view === 'register' && (
               <form onSubmit={handleRegister} className="space-y-2.5">
                 <div className="relative">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
+                  <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#ff9a3d]" />
                   <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder={t('auth.username')} required className={inputCls} />
                 </div>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
-                  <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder={t('auth.email')} required className={inputCls} />
+                  <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#ff9a3d]" />
+                  <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder={t('auth.email')} required className={inputCls} autoComplete="email" />
                 </div>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
-                  <input type={showPass ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder={t('auth.password_hint')} required minLength={6} className={`${inputCls} pr-10`} />
+                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#ff9a3d]" />
+                  <input type={showPass ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder={t('auth.password_hint')} required minLength={6} className={`${inputCls} pr-11`} autoComplete="new-password" />
                   <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5">
-                    {showPass ? <EyeOff className="w-4 h-4 text-slate-600" /> : <Eye className="w-4 h-4 text-slate-600" />}
+                    {showPass ? <EyeOff className="w-4 h-4 text-stone-500" /> : <Eye className="w-4 h-4 text-stone-500" />}
                   </button>
                 </div>
                 <label className="flex items-start gap-2 cursor-pointer select-none">
@@ -302,7 +301,7 @@ export default function AuthModal({ open, onClose, initialView = 'login' }) {
                     <button type="button" onClick={() => setLegal('policy')} className="text-[#ff9a3d] hover:underline font-semibold">{t('footer.policy')}</button>
                   </span>
                 </label>
-                <button type="submit" disabled={loading} className="w-full py-2.5 btn-orange disabled:opacity-50 text-white font-bold text-sm rounded-xl transition-all flex items-center justify-center gap-1.5">
+                <button type="submit" disabled={loading} className="w-full h-11 btn-orange disabled:opacity-50 text-white font-black text-[13px] rounded-2xl transition-all flex items-center justify-center gap-1.5">
                   {loading ? t('app.loading') : <>{t('auth.btn.register')} <ArrowRight className="w-4 h-4" /></>}
                 </button>
                 <button type="button" onClick={() => gotoView('login')} className="w-full text-center text-[11px] text-slate-500 hover:text-white pt-1">

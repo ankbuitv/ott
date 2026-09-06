@@ -131,7 +131,7 @@ export default function PlansScreen({ initialCode = '' }) {
             {/* Tiêu đề */}
             <div className="text-center md:text-left flex-1">
               <div className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-[#ff9a3d] bg-[#f36f21]/10 border border-[#f36f21]/30 rounded-full px-3 py-1 mb-2">
-                <Sparkles className="w-3 h-3" /> CHRTV PLAY
+                <Sparkles className="w-3 h-3" /> CHRTV PL▷Y
               </div>
               <h1 className="text-[26px] md:text-[32px] font-black tracking-tight text-white leading-tight">{t('plans.title')}</h1>
               <p className="text-[13px] text-stone-400 mt-1.5 flex items-center justify-center md:justify-start gap-1.5">

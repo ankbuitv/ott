@@ -120,6 +120,9 @@ function ShortPlayer({ short, active, muted, onToggleMute, onAuthorClick, onFoll
         playsInline
         preload="metadata"
         onClick={togglePlay}
+        controlsList="nodownload noplaybackrate noremoteplayback"
+        disablePictureInPicture
+        onContextMenu={(e) => e.preventDefault()}
         className="absolute inset-0 w-full h-full object-cover cursor-pointer"
       />
       <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(180deg, rgba(0,0,0,.35) 0%, transparent 25%, transparent 55%, rgba(0,0,0,.85) 100%)' }}></div>

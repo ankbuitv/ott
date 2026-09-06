@@ -1,28 +1,57 @@
+# ============================================================================
+# CHRTV PL▷Y — BUILD ANDROID APK + TỰ ĐĂNG LÊN GITHUB RELEASE
+#
+# File cũ bị cắt cụt giữa chừng (kết thúc ngay dòng comment JDK) nên Action
+# không bao giờ chạy -> không có APK. File này build lại từ đầu, hoàn chỉnh:
+#
+#   npm ci -> vite build -> cap sync -> gradle assembleRelease (JDK 21,
+#   SDK 36) -> APK có chữ ký -> upload artifact + TỰ TẠO GITHUB RELEASE
+#   (tag "latest") khi push vào nhánh main hoặc chạy thủ công.
+#
+# Tải APK: repo -> Releases -> "CHRTV PL▷Y Android APK (mới nhất)".
+#
+# Keystore (chữ ký để cài đè bản cũ mà không phải gỡ app):
+#   1. Tốt nhất: set secret ANDROID_KEYSTORE_BASE64 (+ CHRTV_KEYSTORE_PASSWORD,
+#      CHRTV_KEY_ALIAS, CHRTV_KEY_PASSWORD) — chữ ký ổn định mãi mãi.
+#   2. Chưa set: CI tự tạo keystore và CACHE lại theo key cố định, các lần
+#      build sau dùng lại keystore cũ -> chữ ký vẫn ổn định giữa các lần build.
+# ============================================================================
+
 name: Build Android APK (CHRTV)
 
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Đăng APK lên GitHub Release sau khi build'
+        type: boolean
+        default: true
   push:
     branches: [main, 'arena/**']
   pull_request:
     branches: [main]
+
+# Cần ghi repo để tạo Release + upload APK vào Release
+permissions:
+  contents: write
+
+concurrency:
+  group: build-android-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build_apk:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      ANDROID_HOME: ${{ github.workspace }}/.android-sdk
-      ANDROID_SDK_ROOT: ${{ github.workspace }}/.android-sdk
-      CMDLINE_TOOLS_VERSION: '11076708'
-      # PHẢI khớp compileSdk/targetSdk trong android/variables.gradle (đang là 36)
-      BUILD_TOOLS_VERSION: '36.0.0'
+      # Phải khớp compileSdk/targetSdk trong android/variables.gradle (đang là 36)
       PLATFORM_VERSION: 'android-36'
-      # Keystore ký APK (CI tự tạo nếu chưa có secret) — không có chữ ký thì máy Android từ chối cài
+      BUILD_TOOLS_VERSION: '36.0.0'
       CHRTV_KEYSTORE_FILE: ${{ github.workspace }}/android/app/chrtv-release.jks
-      CHRTV_KEYSTORE_PASSWORD: chrtv2026
-      CHRTV_KEY_ALIAS: chrtv
-      CHRTV_KEY_PASSWORD: chrtv2026
+      # Mật khẩu mặc định nếu chưa đặt secret (khớp fallback trong app/build.gradle)
+      CHRTV_KEYSTORE_PASSWORD: ${{ secrets.CHRTV_KEYSTORE_PASSWORD || 'chrtv2026' }}
+      CHRTV_KEY_ALIAS: ${{ secrets.CHRTV_KEY_ALIAS || 'chrtv' }}
+      CHRTV_KEY_PASSWORD: ${{ secrets.CHRTV_KEY_PASSWORD || 'chrtv2026' }}
 
     steps:
       - name: Checkout source
@@ -34,15 +63,22 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      # THIẾU BƯỚC NÀY LÀ HỎNG: trước đây chạy thẳng `npm run build` khi chưa cài
-      # node_modules -> vite không tồn tại -> exit code 127.
+      # THIẾU BƯỚC NÀY LÀ HỎNG: build khi chưa có node_modules -> vite không
+      # tồn tại -> exit code 127.
       - name: Install dependencies
         run: npm ci
 
       - name: Create .env with TMDB key
-        run: echo "VITE_TMDB_KEY=${{ secrets.VITE_TMDB_KEY }}" > .env
+        env:
+          TMDB_KEY: ${{ secrets.VITE_TMDB_KEY }}
+        run: |
+          if [ -n "$TMDB_KEY" ]; then
+            echo "VITE_TMDB_KEY=$TMDB_KEY" > .env
+          else
+            echo "::warning::Không có secret VITE_TMDB_KEY — dùng file .env sẵn trong repo."
+          fi
 
-      - name: Build web assets
+      - name: Build web assets (vite -> dist/)
         run: npm run build
 
       - name: Sync Capacitor -> Android
@@ -55,30 +91,29 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Install Android SDK command-line tools
-        run: |
-          mkdir -p $ANDROID_HOME/cmdline-tools
-          cd $ANDROID_HOME/cmdline-tools
-          curl -sSLf "https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS_VERSION}_latest.zip" -o tools.zip
-          unzip -q tools.zip
-          mv cmdline-tools latest
-          rm tools.zip
-
-      - name: Accept Android SDK licenses
-        run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null
-
       - name: Install Android platform & build-tools
         run: |
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
-            "platform-tools" \
-            "platforms;${PLATFORM_VERSION}" \
-            "build-tools;${BUILD_TOOLS_VERSION}"
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" --install "platform-tools" "platforms;${PLATFORM_VERSION}" "build-tools;${BUILD_TOOLS_VERSION}" > /dev/null
+
+      # ---- Keystore ------------------------------------------------------
+      - name: Restore cached keystore (giữ chữ ký ổn định giữa các lần build)
+        if: secrets.ANDROID_KEYSTORE_BASE64 == ''
+        uses: actions/cache@v4
+        with:
+          path: android/app/chrtv-release.jks
+          key: chrtv-release-keystore-v1
 
       - name: Prepare signing keystore
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
-          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
-            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$CHRTV_KEYSTORE_FILE"
+          if [ -n "$KS_B64" ]; then
+            printf '%s' "$KS_B64" | base64 -d > "$CHRTV_KEYSTORE_FILE"
             echo "Dùng keystore từ secret ANDROID_KEYSTORE_BASE64"
+          elif [ -f "$CHRTV_KEYSTORE_FILE" ]; then
+            echo "Dùng lại keystore đã cache — chữ ký giữ nguyên với các bản build trước."
           else
             keytool -genkeypair -v \
               -keystore "$CHRTV_KEYSTORE_FILE" \
@@ -86,42 +121,73 @@ jobs:
               -keyalg RSA -keysize 2048 -validity 10000 \
               -storepass "$CHRTV_KEYSTORE_PASSWORD" -keypass "$CHRTV_KEY_PASSWORD" \
               -dname "CN=CHRTV PLAY, OU=ANKB CO., O=ANKB, L=Bien Hoa, S=Dong Nai, C=VN"
-            echo "::warning::Chưa có secret ANDROID_KEYSTORE_BASE64 — CI tự tạo keystore tạm. Mỗi lần build là chữ ký khác nhau nên phải GỠ app cũ trước khi cài bản mới. Muốn cập nhật đè lên thì tạo secret này."
+            echo "::warning::Chưa có secret ANDROID_KEYSTORE_BASE64 — CI tự tạo keystore và cache lại theo key 'chrtv-release-keystore-v1'. Muốn tự quản chữ ký thì tạo secret này."
           fi
 
-      - name: Build APK (release + debug)
+      - name: Build release APK
+        env:
+          CI_VERSION_CODE: ${{ github.run_number }}
+          CI_VERSION_NAME: '1.0.${{ github.run_number }}'
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon --stacktrace
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleRelease --no-daemon --stacktrace \
+            -PCI_VERSION_CODE="$CI_VERSION_CODE" \
+            -PCI_VERSION_NAME="$CI_VERSION_NAME"
 
-      - name: Build App Bundle (AAB cho Google Play)
-        continue-on-error: true
-        run: |
-          cd android
-          ./gradlew bundleRelease --no-daemon
-
-      - name: Rename outputs
+      - name: Collect APK + checksum
         run: |
           mkdir -p out
-          cp android/app/build/outputs/apk/release/app-release.apk out/CHRTV-PLAY-1.0.0-beta-release.apk 2>/dev/null || true
-          cp android/app/build/outputs/apk/debug/app-debug.apk out/CHRTV-PLAY-1.0.0-beta-debug.apk 2>/dev/null || true
-          cp android/app/build/outputs/bundle/release/app-release.aab out/CHRTV-PLAY.aab 2>/dev/null || true
+          APK="out/CHRTV-PLAY-${CI_VERSION_NAME}.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "$APK"
+          (cd out && sha256sum *.apk > "CHRTV-PLAY-${CI_VERSION_NAME}.apk.sha256")
           ls -lh out
+        env:
+          CI_VERSION_NAME: '1.0.${{ github.run_number }}'
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: chrtv-apk
-          path: out/*.apk
+          name: chrtv-apk-${{ github.run_number }}
+          path: |
+            out/*.apk
+            out/*.sha256
           if-no-files-found: error
           retention-days: 30
 
-      - name: Upload App Bundle artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: chrtv-appbundle
-          path: out/*.aab
-          if-no-files-found: warn
-          retention-days: 30
+      # ---- Tự push APK ra GitHub Release ---------------------------------
+      # Chạy khi: push vào main, hoặc chạy thủ công với input publish=true.
+      # Release lăn (rolling) trên tag "latest": bản mới thay bản cũ, link tải
+      # không bao giờ chết -> chia sẻ 1 link cho mọi người là đủ.
+      - name: Publish APK to GitHub Release
+        if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.publish)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          CI_VERSION_NAME: '1.0.${{ github.run_number }}'
+        run: |
+          cat > release-notes.md <<EOF
+          ## 📱 CHRTV PL▷Y — Android APK (bản tự động)
+
+          | | |
+          |---|---|
+          | Phiên bản | ${CI_VERSION_NAME} (build #${{ github.run_number }}) |
+          | Commit | \`${{ github.sha }}\` |
+          | Thời điểm build | $(date -u '+%Y-%m-%d %H:%M UTC') |
+
+          ### Cách cài
+          1. Tải file \`CHRTV-PLAY-${CI_VERSION_NAME}.apk\` bên dưới.
+          2. Mở file trên máy Android -> cho phép "Cài ứng dụng không rõ nguồn" nếu được hỏi.
+          3. Nếu đã cài bản cũ: cài đè trực tiếp (cùng chữ ký) — KHÔNG cần gỡ.
+
+          > Máy Android TV: cài bằng file manager hoặc \`adb install -r CHRTV-PLAY-*.apk\`.
+          > Kiểm tra toàn vẹn: đối chiếu file \`.sha256\` (\`sha256sum -c\`).
+          EOF
+          # Xoá release + tag "latest" cũ (nếu có) rồi tạo lại với APK mới
+          gh release delete latest --repo "$REPO" --yes --cleanup-tag || true
+          gh release create latest out/*.apk out/*.sha256 \
+            --repo "$REPO" \
+            --title "CHRTV PL▷Y Android APK (mới nhất)" \
+            --notes-file release-notes.md \
+            --latest
+          echo "✅ Đã đăng APK lên Release 'latest'"

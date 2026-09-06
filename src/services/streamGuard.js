@@ -1,16 +1,17 @@
 /**
- * CHRTV STREAM GUARD — phát qua proxy có token, KHÔNG lộ link m3u8 gốc.
+ * CHRTV STREAM GUARD — xin quyền phát từ server trước khi chạy luồng.
  *
- * Vì sao phải có file này: nếu client cầm `stream_url` gốc thì mọi công cụ
- * (DevTools Network, Charles/Fiddler, yt-dlp, IDM…) đều lấy được link thật chỉ
- * bằng 1 cú nhìn — mọi lớp bảo vệ khác trở thành vô nghĩa. Giờ:
+ * Luồng hiện tại (chế độ DIRECT — mặc định từ 2026-09):
  *
  *   1. /api/playlist chỉ trả METADATA (không có stream_url).
  *   2. Muốn phát -> POST/GET /api/stream/token?channel=<id> kèm JWT (user hoặc guest)
- *      -> server kiểm tra gói cước rồi trả `proxy_url` = /api/stream/proxy?t=<token>
- *      (token AES-GCM, bind user + IP/UA, TTL ngắn, URL thật nằm BÊN TRONG token).
- *   3. Worker tải playlist gốc, viết lại từng URI con thành token riêng -> client
- *      không bao giờ thấy origin thật, copy link ra chỗ khác cũng chết (khác IP/UA + hết hạn).
+ *      -> server kiểm tra đăng nhập + gói cước + xem thử 5 phút, rồi trả
+ *      `url` = LINK GỐC để client phát TRỰC TIẾP.
+ *      (Vì sao bỏ proxy: nguồn IPTV chặn dải IP Cloudflare Workers nên phát qua
+ *      proxy toàn bị 403/đứng hình. Phát trực tiếp, nguồn thấy IP người xem.)
+ *   3. Server vẫn bật lại được chế độ proxy cũ (STREAM_MODE=proxy) khi muốn giấu
+ *      link — lúc đó response có `proxy_url` = /api/stream/proxy?t=<token> và
+ *      client tự động dùng nó, xoay token như trước.
  *
  * Kênh do NGƯỜI DÙNG tự import (M3U cá nhân) vẫn phát thẳng vì link là của họ.
  */
@@ -153,15 +154,26 @@ export async function requestStreamAccess(channel, { at = 0 } = {}) {
   // Phiên xem thử: server trả quota còn lại sau mỗi lần cấp token
   if (data.preview) setPreviewState({ ...data.preview, enabled: true });
 
-  const url = data.proxy_url ? `${base}${data.proxy_url}` : "";
+  // Chế độ DIRECT (mặc định): server trả thẳng `url` gốc — nguồn thấy IP của
+  // người xem nên không bị chặn như khi đi qua IP Cloudflare của proxy.
+  // Chế độ PROXY (server set STREAM_MODE=proxy): nhận `proxy_url` như cũ.
+  const directUrl = data.url || "";
+  const proxyUrl = data.proxy_url ? `${base}${data.proxy_url}` : "";
+  const url = directUrl || proxyUrl;
   if (!url) throw err("TOKEN_ERROR", "Máy chủ không trả URL phát.");
 
   const nowS = Math.floor(Date.now() / 1000);
-  const rotateAtS = data.rotate_at || (data.exp ? data.exp - 60 : nowS + 240);
+  // Direct: rotate_at = 0 -> URL gốc không hết hạn, không cần xoay (trừ phiên
+  // XEM THỬ — server trả rotate_at 60s để trừ dần quota 5 phút).
+  // Proxy: xoay token trước khi hết hạn để phát liền mạch.
+  const rotateAtS = directUrl
+    ? Number(data.rotate_at) || 0
+    : (data.rotate_at || (data.exp ? data.exp - 60 : nowS + 240));
   rotateInfo.set(channel.channel_id || raw, {
     url,
+    direct: !!directUrl,
     exp: (data.exp || nowS + 300) * 1000,
-    rotateAt: Math.max(Date.now() + 15000, rotateAtS * 1000),
+    rotateAt: rotateAtS > 0 ? Math.max(Date.now() + 15000, rotateAtS * 1000) : 0,
   });
   return url;
 }

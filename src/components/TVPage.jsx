@@ -33,9 +33,10 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
       try { if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; } } catch {}
       try { if (shakaRef.current) { shakaRef.current.destroy(); shakaRef.current = null; } } catch {}
     };
-    // Xoay token phát trước khi hết hạn (URL proxy TTL ngắn)
+    // Xoay URL phát trước khi hết hạn (phiên xem thử / URL proxy TTL ngắn;
+    // URL direct thông thường rotate_at = 0 -> thoát ngay)
     const scheduleRotate = () => {
-      if (!proxied || !channel) return;
+      if (!channel) return;
       const at = getRotateAtMs(channel.channel_id);
       if (!at) return;
       if (rotateTimer) clearTimeout(rotateTimer);
@@ -47,7 +48,13 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
           if (hlsRef.current) hlsRef.current.loadSource(fresh);
           else if (shakaRef.current) await shakaRef.current.load(fresh);
           scheduleRotate();
-        } catch { if (!cancelled) rotateTimer = setTimeout(scheduleRotate, 20000); }
+        } catch (e) {
+          if (e?.code === "PREVIEW_EXPIRED") {
+            if (!cancelled) { setError(e.message || "Hết thời gian xem thử — nâng gói để xem tiếp."); setBuffering(false); }
+            return;
+          }
+          if (!cancelled) rotateTimer = setTimeout(scheduleRotate, 20000);
+        }
       }, Math.max(15000, at - Date.now()));
     };
     const loadShaka = async () => {

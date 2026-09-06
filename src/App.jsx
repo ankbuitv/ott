@@ -154,13 +154,21 @@ function AppContent() {
 
   // ============ DEEP LINK: ?channel=ID&party=CODE (share từ player) ============
   // + ?movie=tv-123 (chia sẻ phim) + ?u=handle (hồ sơ công khai)
+  // + ?gift=CODE (bạn bè tặng gói quà kênh — mở trang Gói cước, điền sẵn mã)
   const [deepPartyRoom, setDeepPartyRoom] = useState(null);
+  const [deepGiftCode, setDeepGiftCode] = useState('');
   const deepMovieDone = useRef(false);
   useEffect(() => {
     try {
       const params = new URLSearchParams(window.location.search || (window.location.hash || '').split('?')[1] || '');
       const chId = params.get('channel');
       const party = params.get('party');
+      const giftCd = params.get('gift');
+      if (giftCd) {
+        setDeepGiftCode(giftCd.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 32));
+        setActiveTab('plans');
+        addToast('🎁 ' + t('gift.received_link'), 'info');
+      }
       if (party) setDeepPartyRoom(`party:${party.toUpperCase()}`);
       const uh = params.get('u');
       if (uh && !publicHandle) setPublicHandle(uh);
@@ -618,7 +626,7 @@ function AppContent() {
           ) : showSettings ? (
             <SettingsPage onClose={() => setShowSettings(false)} />
           ) : activeTab === 'plans' ? (
-            <PlansScreen />
+            <PlansScreen initialCode={deepGiftCode} />
           ) : (
             <>
               {/* Home (mặc định) — đã bỏ tab Yêu thích/Lịch sử */}

@@ -111,7 +111,9 @@ export default function VideoPlayer({
 
     // Xoay token phát: xin URL mới rồi nạp lại nguồn (live tiếp tục ở mép sóng).
     const scheduleRotate = () => {
-      if (!proxied || !channel) return;
+      // URL trực tiếp (direct) thường không cần xoay (rotate_at = 0, thoát ngay);
+      // chỉ phiên XEM THỬ và URL proxy mới có rotate_at > 0.
+      if (!channel) return;
       const at = getRotateAtMs(channel.channel_id);
       if (!at) return;
       const delay = Math.max(15000, at - Date.now());
@@ -124,7 +126,12 @@ export default function VideoPlayer({
           if (hlsRef.current) hlsRef.current.loadSource(fresh);
           else if (shakaRef.current) await shakaRef.current.load(fresh);
           scheduleRotate();
-        } catch {
+        } catch (e) {
+          // Hết 5 phút xem thử -> dừng hẳn, không thử lại
+          if (e?.code === "PREVIEW_EXPIRED") {
+            if (!cancelled) { setError(e.message || "Hết thời gian xem thử — nâng gói để xem tiếp."); setBuffering(false); }
+            return;
+          }
           // hết hạn mà xin lại lỗi -> thử lại sau 20s (mạng chập chờn)
           if (!cancelled) rotateTimer = setTimeout(scheduleRotate, 20000);
         }

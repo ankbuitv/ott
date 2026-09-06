@@ -7,8 +7,10 @@ android {
         applicationId "com.chrtvplay.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0.0-beta"
+        // CI truyền -PCI_VERSION_CODE / -PCI_VERSION_NAME (xem .github/workflows/build-android.yml)
+        // để mỗi bản build tăng số version — máy Android mới cho "cập nhật đè" bản cũ.
+        versionCode (project.hasProperty('CI_VERSION_CODE') ? project.property('CI_VERSION_CODE').toInteger() : 1)
+        versionName (project.findProperty('CI_VERSION_NAME') ?: "1.0.0-beta")
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

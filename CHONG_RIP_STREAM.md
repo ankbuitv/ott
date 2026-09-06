@@ -1,5 +1,15 @@
 # 🛡 CHỐNG RIP LINK M3U8 — vì sao tool vẫn lấy được và đã vá thế nào
 
+> **⚠️ CẬP NHẬT 2026-09: ĐÃ BỎ PROXY LÀM MẶC ĐỊNH (`STREAM_MODE=direct`).**
+> Nhiều nguồn IPTV (FPT, TV360, VTVgo…) chặn dải IP egress của Cloudflare Workers nên
+> khi stream đi qua `/api/stream/proxy` người xem toàn thấy 403/đứng hình — đủ thứ lớp
+> bảo vệ mà không xem được là vô nghĩa. Giữ lại: `/api/playlist` vẫn CHỈ trả metadata,
+> `/api/stream/token` vẫn kiểm tra đăng nhập + gói cước + xem thử + chống flood phía
+> server, chỉ khác là sau khi kiểm tra xong server **trả thẳng URL gốc** cho client phát
+> trực tiếp (nguồn thấy IP người xem, không bị chặn). Muốn bật lại toàn bộ luồng proxy
+> bên dưới (giấu link gốc khỏi DevTools): set biến môi trường `STREAM_MODE=proxy` cho
+> Worker — client tự động chuyển sang `proxy_url`, không cần build lại app.
+
 ## 1. Vì sao “bảo mật đủ thứ” mà tool chuyên nghiệp vẫn lấy được link gốc?
 
 Vì link gốc **được phát công khai ở 3 chỗ**, chẳng cần tool giỏi:

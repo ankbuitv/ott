@@ -59,6 +59,7 @@ function AppContent() {
   const [showLangPicker, setShowLangPicker] = useState(!hasPicked());
   const [showAuth, setShowAuth] = useState(false);
   const [movieToOpen, setMovieToOpen] = useState(null); // phim được chọn từ TopNav search
+  const [shortToOpen, setShortToOpen] = useState(null); // short được chọn từ Home
   const promptLogin = useCallback((msg) => {
     if (msg) addToast(msg, 'info');
     setShowAuth(true);
@@ -490,6 +491,8 @@ function AppContent() {
               epgData={epgData}
               onSelectChannel={handleSelectChannel}
               onSelectMovie={(m) => { setMovieToOpen(m); setActiveTab('movies'); }}
+              startId={shortToOpen}
+              onStartHandled={() => setShortToOpen(null)}
             />
           ) : showSettings ? (
             <SettingsPage onClose={() => setShowSettings(false)} />
@@ -514,6 +517,7 @@ function AppContent() {
                   setSearchQuery={setSearchQuery}
                   isLoading={isLoading}
                   onSelectMovie={(m) => { setMovieToOpen(m); goTab('movies'); }}
+                  onOpenShort={(id) => { setShortToOpen(id); goTab('shorts'); }}
                   onGoTab={goTab}
                 />
             </>

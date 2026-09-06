@@ -135,7 +135,7 @@ function ShortPlayer({ short, active, muted, onToggleMute }) {
   );
 }
 
-export default function ShortsScreen() {
+export default function ShortsScreen({ startId = null, onStartHandled = null } = {}) {
   const { t } = useI18n();
   const [shorts, setShorts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -151,6 +151,19 @@ export default function ShortsScreen() {
       .catch(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, []);
+
+  // Mở thẳng 1 short (từ trang Home) rồi cuộn tới nó
+  useEffect(() => {
+    if (!startId || shorts.length === 0) return;
+    const idx = shorts.findIndex(s => String(s.id) === String(startId));
+    if (idx > 0 && listRef.current) {
+      try {
+        listRef.current.scrollTop = idx * listRef.current.clientHeight;
+        setActiveIdx(idx);
+      } catch {}
+    }
+    if (onStartHandled) onStartHandled();
+  }, [startId, shorts]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onScroll = useCallback(() => {
     const el = listRef.current;

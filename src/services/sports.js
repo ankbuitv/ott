@@ -5,7 +5,7 @@ const TSB = 'https://www.thesportsdb.com/api/v1/json/3';
 const OLB = 'https://api.openligadb.de';
 
 export const LEAGUES = [
-  { id: 'epl', name: 'Ngoại hạng Anh', short: 'EPL', tsdb: '4328', flag: '🏴󐁧󐁢󐁥󐁮󐁧󐁿' },
+  { id: 'epl', name: 'Ngoại hạng Anh', short: 'EPL', tsdb: '4328', flag: '🇬🇧' },
   { id: 'laliga', name: 'La Liga', short: 'LaLiga', tsdb: '4335', flag: '🇪🇸' },
   { id: 'seriea', name: 'Serie A', short: 'Serie A', tsdb: '4332', flag: '🇮🇹' },
   { id: 'bundesliga', name: 'Bundesliga', short: 'Bundesliga', tsdb: '4331', flag: '🇩🇪', olb: 'bl1' },
@@ -46,13 +46,40 @@ function cached(key, loader) {
   return loader().then(d => { memCache.set(key, { at: Date.now(), data: d }); return d; });
 }
 
-// Lịch + kết quả + BXH 1 giải
+// Lịch (5 tháng tới) + kết quả + BXH 1 giải
 export function fetchLeague(league) {
   const season = currentSeason();
   return cached(`league_${league.id}_${season}`, async () => {
-    const [next, past, table] = await Promise.all([
-      getJSON(`${TSB}/eventsnextleague.php?id=${league.tsdb}`).then(d => d.events || []).catch(() => []),
-      getJSON(`${TSB}/eventspastleague.php?id=${league.tsdb}`).then(d => d.events || []).catch(() => []),
+    // Lịch cả mùa → lọc 150 ngày tới (5 tháng), đã đá → kết quả
+    const seasonEvts = await (async () => {
+      try {
+        const d = await getJSON(`${TSB}/eventsseason.php?id=${league.tsdb}&s=${season}`);
+        return Array.isArray(d.events) ? d.events : [];
+      } catch { return []; }
+    })();
+    const tsOf = (ev) => {
+      try {
+        if (ev.strTimestamp) { const d = new Date(/z$/i.test(ev.strTimestamp) ? ev.strTimestamp : ev.strTimestamp + 'Z'); if (!isNaN(d.getTime())) return d.getTime(); }
+        if (ev.dateEvent) { const d = new Date(`${ev.dateEvent}T${ev.strTime || '00:00:00'}`); if (!isNaN(d.getTime())) return d.getTime(); }
+      } catch {}
+      return 0;
+    };
+    const now = Date.now();
+    const horizon = now + 150 * 24 * 3600 * 1000; // 5 tháng
+    let next = [], past = [];
+    if (seasonEvts.length) {
+      const withTs = seasonEvts.map(ev => ({ ev, ts: tsOf(ev) })).filter(x => x.ts > 0);
+      next = withTs.filter(x => x.ts >= now - 3 * 3600 * 1000 && x.ts <= horizon).sort((a, b) => a.ts - b.ts).slice(0, 30).map(x => x.ev);
+      past = withTs.filter(x => x.ts < now - 3 * 3600 * 1000).sort((a, b) => b.ts - a.ts).slice(0, 15).map(x => x.ev);
+    } else {
+      // Fallback endpoint cũ khi eventsseason lỗi
+      const [n2, p2] = await Promise.all([
+        getJSON(`${TSB}/eventsnextleague.php?id=${league.tsdb}`).then(d => d.events || []).catch(() => []),
+        getJSON(`${TSB}/eventspastleague.php?id=${league.tsdb}`).then(d => d.events || []).catch(() => []),
+      ]);
+      next = n2; past = p2;
+    }
+    const [table] = await Promise.all([
       // BXH: thử TheSportsDB trước, lỗi thì OpenLigaDB (Bundesliga)
       (async () => {
         if (!league.cup) {

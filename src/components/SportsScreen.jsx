@@ -421,50 +421,56 @@ export default function SportsScreen({ channels = [], onSelectChannel }) {
           </section>
         )}
 
-        {/* 2. Lịch sắp tới */}
-        <section>
-          <div className="flex items-center gap-2.5 mb-3.5">
-            <span className="w-9 h-9 rounded-xl bg-sky-500/15 border border-sky-500/30 flex items-center justify-center">
-              <CalendarDays className="w-4 h-4 text-sky-400" />
-            </span>
-            <h2 className="text-[19px] font-extrabold tracking-tight">{t('sports.fixtures')}</h2>
-            <span className="text-[11px] text-stone-500 font-bold flex items-center gap-1.5">
-              {league.logo ? <img src={league.logo} alt="" className="w-4 h-4 object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : league.flag} {league.name}
-            </span>
-          </div>
-          {loading ? (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-[132px] rounded-2xl bg-white/[0.04] animate-pulse" />)}
-            </div>
-          ) : data.next.length === 0 ? (
-            <p className="text-[12px] text-stone-600 italic bg-white/[0.02] border border-white/[0.05] rounded-2xl px-4 py-6 text-center">{t('sports.no_data')}</p>
-          ) : (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {data.next.slice(0, 9).map(ev => <MatchCard key={ev.idEvent} ev={ev} showScore={false} onClick={() => setSelMatch(ev)} />)}
-            </div>
-          )}
-        </section>
-
-        {/* 3. Kết quả */}
-        <section>
-          <div className="flex items-center gap-2.5 mb-3.5">
-            <span className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center">
-              <Trophy className="w-4 h-4 text-emerald-400" />
-            </span>
-            <h2 className="text-[19px] font-extrabold tracking-tight">{t('sports.results')}</h2>
-          </div>
-          {loading ? (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-[132px] rounded-2xl bg-white/[0.04] animate-pulse" />)}
-            </div>
-          ) : data.past.length === 0 ? (
-            <p className="text-[12px] text-stone-600 italic bg-white/[0.02] border border-white/[0.05] rounded-2xl px-4 py-6 text-center">{t('sports.no_data')}</p>
-          ) : (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {data.past.slice(0, 9).map(ev => <MatchCard key={ev.idEvent} ev={ev} showScore={true} onClick={() => setSelMatch(ev)} />)}
-            </div>
-          )}
-        </section>
+        {/* 2–3. Cúp đã đá xong: kết quả lên trước. Có lịch thì lịch trước. */}
+        {(() => {
+          const showPastFirst = !loading && data.next.length === 0 && data.past.length > 0;
+          const fixtures = (
+            <section key="fx">
+              <div className="flex items-center gap-2.5 mb-3.5">
+                <span className="w-9 h-9 rounded-xl bg-sky-500/15 border border-sky-500/30 flex items-center justify-center">
+                  <CalendarDays className="w-4 h-4 text-sky-400" />
+                </span>
+                <h2 className="text-[19px] font-extrabold tracking-tight">{t('sports.fixtures')}</h2>
+                <span className="text-[11px] text-stone-500 font-bold flex items-center gap-1.5">
+                  {league.logo ? <img src={league.logo} alt="" className="w-4 h-4 object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : league.flag} {league.name}
+                </span>
+              </div>
+              {loading ? (
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-[132px] rounded-2xl bg-white/[0.04] animate-pulse" />)}
+                </div>
+              ) : data.next.length === 0 ? (
+                <p className="text-[12px] text-stone-600 italic bg-white/[0.02] border border-white/[0.05] rounded-2xl px-4 py-6 text-center">{t('sports.no_data')}</p>
+              ) : (
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {data.next.slice(0, 9).map(ev => <MatchCard key={ev.idEvent} ev={ev} showScore={false} onClick={() => setSelMatch(ev)} />)}
+                </div>
+              )}
+            </section>
+          );
+          const results = (
+            <section key="rs">
+              <div className="flex items-center gap-2.5 mb-3.5">
+                <span className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center">
+                  <Trophy className="w-4 h-4 text-emerald-400" />
+                </span>
+                <h2 className="text-[19px] font-extrabold tracking-tight">{t('sports.results')}</h2>
+              </div>
+              {loading ? (
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {Array.from({ length: 6 }).map((_, i) => <div key={i} className="h-[132px] rounded-2xl bg-white/[0.04] animate-pulse" />)}
+                </div>
+              ) : data.past.length === 0 ? (
+                <p className="text-[12px] text-stone-600 italic bg-white/[0.02] border border-white/[0.05] rounded-2xl px-4 py-6 text-center">{t('sports.no_data')}</p>
+              ) : (
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {data.past.slice(0, 12).map(ev => <MatchCard key={ev.idEvent} ev={ev} showScore={true} onClick={() => setSelMatch(ev)} />)}
+                </div>
+              )}
+            </section>
+          );
+          return showPastFirst ? <>{results}{fixtures}</> : <>{fixtures}{results}</>;
+        })()}
 
         {/* 4. Bảng xếp hạng */}
         {data.table.length > 0 && (

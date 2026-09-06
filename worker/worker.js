@@ -132,7 +132,7 @@ const SECURITY_HEADERS = {
     "font-src 'self' https://fonts.gstatic.com data:",
     "img-src 'self' https: data: blob: media:",
     "media-src 'self' blob: data: media:",
-    "connect-src 'self' blob: data: https://epg.io.vn https://lichphatsong.io.vn https://epg.pm",
+    "connect-src 'self' blob: data: https://epg.io.vn https://lichphatsong.io.vn https://epg.pm https://www.thesportsdb.com https://r2.thesportsdb.com https://site.api.espn.com https://a.espncdn.com",
     "worker-src 'self' blob:",
     "manifest-src 'self'",
     "form-action 'self'",
@@ -593,6 +593,64 @@ async function handleTMDBProxy(request, env) {
     return new Response(text, { status: resp.status, headers: { ...corsHeadersFor(request, env), ...SECURITY_HEADERS, "Content-Type": "application/json", "X-Cache": "MISS" } });
   } catch (e) {
     return json({ error: "TMDB fetch failed: " + (e?.message || e) }, 502, request, env);
+  }
+}
+
+// ========== SPORTS PROXY (TheSportsDB + ESPN — cùng origin, tránh CSP chặn client) ==========
+const TSDB_FILES = new Set([
+  "eventsseason.php", "eventspastleague.php", "eventsnextleague.php",
+  "search_all_seasons.php", "lookuptable.php", "all_leagues.php",
+  "searchevents.php", "eventslast.php", "eventsday.php", "lookupteam.php",
+  "searchteams.php", "lookupevent.php", "lookupleague.php",
+]);
+const ESPN_SOCCER_SLUGS = new Set([
+  "aff.championship", "afc.u20", "afc.u20.championship", "afc.u20asiancup",
+  "fifa.worldu20", "fifa.u20worldcup",
+]);
+
+async function handleSportsTsdb(request, env) {
+  const url = new URL(request.url);
+  const file = String(url.searchParams.get("file") || "").trim();
+  if (!TSDB_FILES.has(file)) return json({ error: "Invalid sports file" }, 400, request, env);
+  const params = new URLSearchParams();
+  for (const [k, v] of url.searchParams.entries()) {
+    if (k === "file") continue;
+    if (!/^[a-zA-Z0-9_]+$/.test(k)) continue;
+    params.set(k, String(v).slice(0, 80));
+  }
+  try {
+    const resp = await fetch(`https://www.thesportsdb.com/api/v1/json/3/${file}?${params}`, {
+      headers: { "User-Agent": "CHRTV-OTT/2.0", accept: "application/json" },
+      signal: AbortSignal.timeout(12000),
+    });
+    const text = await resp.text();
+    return new Response(text, {
+      status: resp.status,
+      headers: { ...corsHeadersFor(request, env), ...SECURITY_HEADERS, "Content-Type": "application/json", "Cache-Control": "public, max-age=60" },
+    });
+  } catch (e) {
+    return json({ error: "Sports fetch failed" }, 502, request, env);
+  }
+}
+
+async function handleSportsEspn(request, env) {
+  const url = new URL(request.url);
+  const league = String(url.searchParams.get("league") || "").trim().toLowerCase();
+  if (!ESPN_SOCCER_SLUGS.has(league)) return json({ error: "Invalid league" }, 400, request, env);
+  const dates = String(url.searchParams.get("dates") || "").replace(/[^0-9-]/g, "").slice(0, 17);
+  const qs = dates ? `?dates=${dates}` : "";
+  try {
+    const resp = await fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/${league}/scoreboard${qs}`, {
+      headers: { "User-Agent": "CHRTV-OTT/2.0", accept: "application/json" },
+      signal: AbortSignal.timeout(12000),
+    });
+    const text = await resp.text();
+    return new Response(text, {
+      status: resp.status,
+      headers: { ...corsHeadersFor(request, env), ...SECURITY_HEADERS, "Content-Type": "application/json", "Cache-Control": "public, max-age=45" },
+    });
+  } catch (e) {
+    return json({ error: "Sports fetch failed" }, 502, request, env);
   }
 }
 
@@ -5246,4 +5304,6 @@ function handleWebSocket(request, env, ctx) {
   });
 
   return new Response(null, { status: 101, webSocket: client });
+}
+ew Response(null, { status: 101, webSocket: client });
 }

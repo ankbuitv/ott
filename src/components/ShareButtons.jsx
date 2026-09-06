@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Share2, Copy, Check, Facebook, MessageCircle } from 'lucide-react';
+import { Share2, Copy, Check, MessageCircle } from 'lucide-react';
 import { useI18n } from '../contexts/I18nContext';
 import { useToast } from '../contexts/ToastContext';
 

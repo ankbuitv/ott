@@ -279,15 +279,6 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
     setTrailerLoading(false);
   }, []);
 
-  const filteredCatalog = useMemo(() => {
-    const base = isKid ? kidSafe : catalog;
-    if (selectedGenre === 'all') return base;
-    const gid = Number(selectedGenre);
-    return base.filter(m => (m.genre_ids || []).includes(gid));
-  }, [catalog, kidSafe, isKid, selectedGenre]);
-
-  const visibleCatalog = filteredCatalog.slice(0, visibleCount);
-
   const isKid = !!currentProfile?.is_child;
   const kidSafe = useMemo(() => {
     if (!isKid) return catalog;
@@ -298,6 +289,15 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
       return g.includes(16) || g.includes(10751) || g.includes(10762) || g.includes(12);
     });
   }, [catalog, isKid]);
+
+  const filteredCatalog = useMemo(() => {
+    const base = isKid ? kidSafe : catalog;
+    if (selectedGenre === 'all') return base;
+    const gid = Number(selectedGenre);
+    return base.filter(m => (m.genre_ids || []).includes(gid));
+  }, [catalog, kidSafe, isKid, selectedGenre]);
+
+  const visibleCatalog = filteredCatalog.slice(0, visibleCount);
 
   // Lưới cố định: mobile 2 cột, tablet 3, desktop/TV 6 cột (1 hàng 6 phim)
   const gridCls = device.isMobile

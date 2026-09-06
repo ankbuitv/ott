@@ -1,14 +1,16 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import { Play, Heart, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Radio, SearchX } from 'lucide-react';
 import { findEpgForChannel } from '../utils/epgMatch';
-import { parseEpgDate } from '../utils/dateUtils';
+import { parseEpgDate, calculateProgramProgress } from '../utils/dateUtils';
 import { useI18n } from '../contexts/I18nContext';
 import LiveStrip from './LiveStrip';
 
 /**
- * TRANG CHỦ (kiểu mytv 2026-09):
- *  - Hero carousel tự xoay (kênh đang phát, dots, nút cam)
- *  - Thanh thể loại chbar (gạch cam, nền solid — không blur)
- *  - Hàng kênh dạng hrow ngang (card 16:9, pill LIVE, hover scale)
+ * TRANG CHỦ CHRTV PLAY:
+ *  - Dải đang trực tiếp + Hero carousel tự xoay
+ *  - Lọc thể loại dạng pill
+ *  - Danh sách kênh dạng LƯỚI (grid) theo nhóm, có Xem thêm/Thu gọn
+ *  - Tìm kiếm lọc ngay trên trang chủ
  */
 const SLIDE_GRADS = [
   'linear-gradient(100deg,#160d05 0%,#3a1508 40%,#7a2f0e 78%,#c8571d 100%)',
@@ -17,29 +19,58 @@ const SLIDE_GRADS = [
   'linear-gradient(100deg,#0a1f0c 0%,#14421c 45%,#2e7d32 80%,#66bb6a 100%)',
 ];
 
-// ===== Card kênh (mytv hcard) — component riêng để không remount khi hero xoay =====
-const ChannelArt = React.memo(function ChannelArt({ ch, onSelect, epgNowTitle, isFav, liveLabel }) {
+const PAGE_SIZE = 12;
+
+// ===== Thẻ kênh dạng lưới =====
+const ChannelGridCard = React.memo(function ChannelGridCard({ ch, epg, onSelect, onToggleFavorite, isFav, liveLabel }) {
+  const progress = epg?.now ? calculateProgramProgress(epg.now.start, epg.now.stop) : 0;
   return (
     <button
       onClick={() => onSelect && onSelect(ch)}
-      className="mytv-card shrink-0 rounded-xl border border-[#1f1f24] bg-[#17171a] overflow-hidden cursor-pointer text-left"
-      style={{ width: 224, scrollSnapAlign: 'start' }}
+      className="group relative rounded-2xl bg-[#15161b] border border-white/[0.06] hover:border-[#f36f21]/50 overflow-hidden text-left transition-all duration-200 hover:-translate-y-1 hover:shadow-xl hover:shadow-[#f36f21]/10"
     >
-      <div className="relative aspect-video flex items-center justify-center overflow-hidden">
-        <div className="absolute inset-0 opacity-20" style={{ background: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(255,255,255,.05) 10px, rgba(255,255,255,.05) 20px)' }}></div>
+      <div className="relative aspect-video flex items-center justify-center bg-[#0c0d11] overflow-hidden">
+        <div className="absolute inset-0 opacity-30" style={{ background: 'radial-gradient(circle at 50% 120%, rgba(243,111,33,.25), transparent 60%)' }}></div>
         {ch.logo ? (
-          <img src={ch.logo} alt="" loading="lazy" className="w-16 h-16 object-contain relative z-10" onError={e => { e.target.style.display = 'none'; }} />
+          <img src={ch.logo} alt="" loading="lazy" className="w-16 h-16 md:w-20 md:h-20 object-contain relative z-10 drop-shadow-lg transition-transform duration-200 group-hover:scale-110" onError={e => { e.target.style.display = 'none'; }} />
         ) : (
-          <span className="font-black italic tracking-tighter text-white/40 relative z-10 text-3xl">{(ch.name || '?').slice(0, 3)}</span>
+          <span className="font-black italic tracking-tighter text-white/30 relative z-10 text-4xl">{(ch.name || '?').slice(0, 3)}</span>
         )}
-        <span className="absolute bottom-2 left-2 bg-black/65 text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1.5">
-          <span className="eq" style={{ transform: 'scale(.7)', transformOrigin: 'left bottom' }}><i></i><i></i><i></i></span> {liveLabel}
+        {/* Nút play hiện khi hover */}
+        <span className="absolute inset-0 z-10 flex items-center justify-center bg-black/45 opacity-0 group-hover:opacity-100 transition-opacity">
+          <span className="w-12 h-12 rounded-full bg-[#f36f21] flex items-center justify-center shadow-lg shadow-[#f36f21]/40 scale-90 group-hover:scale-100 transition-transform">
+            <Play className="w-5 h-5 text-white fill-current ml-0.5" />
+          </span>
         </span>
-        {isFav && <span className="absolute top-2 right-2 text-[#f36f21] text-xs font-black">♥</span>}
+        <span className="absolute top-2 left-2 z-20 bg-black/70 backdrop-blur px-2 py-1 rounded-lg text-[9px] font-black tracking-wider text-[#ff9a3d] flex items-center gap-1">
+          <span className="eq" style={{ transform: 'scale(.65)', transformOrigin: 'left bottom' }}><i></i><i></i><i></i></span> {liveLabel}
+        </span>
+        {onToggleFavorite && (
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(e) => { e.stopPropagation(); onToggleFavorite(ch.channel_id); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); onToggleFavorite(ch.channel_id); } }}
+            className="absolute top-2 right-2 z-20 p-1.5 rounded-full bg-black/60 backdrop-blur hover:bg-black/80 transition-colors"
+            title="Yêu thích"
+          >
+            <Heart className={`w-3.5 h-3.5 ${isFav ? 'fill-[#f36f21] text-[#f36f21]' : 'text-slate-400'}`} />
+          </span>
+        )}
+        {/* Tiến độ chương trình đang phát */}
+        {epg?.now && progress > 0 && (
+          <span className="absolute bottom-0 inset-x-0 z-20 h-1 bg-white/10">
+            <span className="block h-full bg-gradient-to-r from-[#ff9a3d] to-[#f36f21]" style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}></span>
+          </span>
+        )}
       </div>
-      <div className="px-2.5 py-2">
-        <h4 className="text-[12.5px] font-bold text-[#eee] truncate">{ch.name}</h4>
-        <p className="text-[11px] text-[#9b9ba3] truncate">{epgNowTitle || ch.group_title}</p>
+      <div className="px-3 py-2.5">
+        <h4 className="text-[13px] font-bold text-white truncate group-hover:text-[#ffb37a] transition-colors">{ch.name}</h4>
+        <p className="text-[11px] text-stone-400 truncate mt-0.5">
+          {epg?.now ? (
+            <>{fmtTime(epg.now.start)} · {epg.now.title}</>
+          ) : (ch.group_title || '')}
+        </p>
       </div>
     </button>
   );
@@ -61,6 +92,8 @@ export default function HomePage({
 }) {
   const { t } = useI18n();
   const [heroIdx, setHeroIdx] = useState(0);
+  const [expanded, setExpanded] = useState({});
+  const searching = !!(searchQuery && searchQuery.trim());
 
   const getEpgNow = useCallback((ch) => {
     if (!epgData?.programmes || !ch) return null;
@@ -107,155 +140,227 @@ export default function HomePage({
     [groupedChannels]
   );
 
+  const isAllCategory = (cat) => !cat || cat === 'all' || cat === 'Tất Cả' || cat === 'All' || cat === t('movies.genre.all');
+
   const filteredGroups = useMemo(() => {
-    if (selectedCategory && selectedCategory !== 'all') {
-      return groupedChannels[selectedCategory] ? { [selectedCategory]: groupedChannels[selectedCategory] } : {};
-    }
-    return allGroups;
-  }, [groupedChannels, selectedCategory, allGroups]);
+    if (isAllCategory(selectedCategory)) return allGroups;
+    return groupedChannels[selectedCategory] ? { [selectedCategory]: groupedChannels[selectedCategory] } : {};
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupedChannels, selectedCategory, allGroups, t]);
+
+  // Tìm kiếm: lọc phẳng theo tên trên toàn bộ kênh (kết hợp thể loại đang chọn)
+  const searchResults = useMemo(() => {
+    if (!searching) return [];
+    const q = searchQuery.trim().toLowerCase();
+    return (channels || [])
+      .filter(ch => (ch.name || '').toLowerCase().includes(q))
+      .filter(ch => isAllCategory(selectedCategory) || ch.group_title === selectedCategory)
+      .slice(0, 60);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channels, searchQuery, selectedCategory]);
 
   const recentChannels = useMemo(() => {
     if (!watchHistory?.length) return [];
-    const ids = watchHistory.slice(0, 8).map(h => h.channel_id);
+    const ids = watchHistory.slice(0, 12).map(h => h.channel_id);
     return (channels || []).filter(ch => ids.includes(ch.channel_id));
   }, [channels, watchHistory]);
 
   const favSet = useMemo(() => new Set(favorites || []), [favorites]);
 
+  const toggleExpand = (g) => setExpanded(prev => ({ ...prev, [g]: !prev[g] }));
+
   return (
-    <div className="bg-[#0b0b0d] text-white pb-10">
+    <div className="text-white pb-12">
       {/* ===== DẢI ĐANG TRỰC TIẾP ===== */}
       <LiveStrip channels={channels} epgData={epgData} onSelect={onSelectChannel} />
-      {/* ===== HERO CAROUSEL (mytv) ===== */}
-      {heroCh && (
-        <section className="relative mx-3 md:mx-5 mt-3 rounded-2xl overflow-hidden anim-fade-up" style={{ height: 'min(56vh, 460px)', minHeight: 340 }}>
+
+      {/* ===== HERO CAROUSEL ===== */}
+      {!searching && heroCh && (
+        <section className="relative mx-3 md:mx-5 mt-3 rounded-3xl overflow-hidden anim-fade-up border border-white/[0.06]" style={{ height: 'min(52vh, 430px)', minHeight: 320 }}>
           <div
-            className="absolute inset-0 transition-opacity duration-700"
+            key={heroIdx}
+            className="absolute inset-0 anim-fade-up"
             style={{ background: SLIDE_GRADS[heroIdx % SLIDE_GRADS.length] }}
           ></div>
           <div className="absolute inset-0" style={{
-            background: 'linear-gradient(90deg, rgba(0,0,0,.94) 0%, rgba(0,0,0,.72) 34%, rgba(0,0,0,.25) 62%, rgba(0,0,0,.12) 100%), linear-gradient(0deg, rgba(11,11,13,.9) 0%, transparent 32%)',
+            background: 'linear-gradient(90deg, rgba(0,0,0,.92) 0%, rgba(0,0,0,.68) 36%, rgba(0,0,0,.22) 62%, rgba(0,0,0,.1) 100%), linear-gradient(0deg, rgba(11,11,13,.85) 0%, transparent 30%)',
           }}></div>
 
-          {/* Logo kênh lớn — float nhẹ */}
+          {/* Logo kênh lớn */}
           {heroCh.logo && (
             <div className="absolute right-[6%] top-1/2 -translate-y-1/2 anim-floaty hidden sm:block">
-              <div className="w-40 h-40 md:w-52 md:h-52 rounded-3xl bg-white/95 shadow-2xl flex items-center justify-center p-6">
+              <div className="w-40 h-40 md:w-52 md:h-52 rounded-[2rem] bg-white/[.97] shadow-2xl flex items-center justify-center p-6 ring-1 ring-white/40">
                 <img src={heroCh.logo} alt={heroCh.name} className="w-full h-full object-contain" onError={e => { e.target.style.display = 'none'; }} />
               </div>
             </div>
           )}
 
-          <div className="absolute inset-y-0 left-0 z-10 flex flex-col justify-center px-6 md:px-12" style={{ width: 'min(560px, 78%)' }}>
-            <div className="text-[clamp(22px,3vw,34px)] font-black italic text-white/85 mb-3 drop-shadow-lg">
-              {fmtTime(heroEpg?.now?.start) || 'LIVE'}
-            </div>
-            <div className="flex items-center gap-2.5 mb-4">
-              <span className="flex items-center gap-1.5 text-[12px] text-[#cfcfd6]">
-                <span className="eq"><i></i><i></i><i></i></span>
+          <div className="absolute inset-y-0 left-0 z-10 flex flex-col justify-center px-6 md:px-12" style={{ width: 'min(580px, 80%)' }}>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="flex items-center gap-1.5 text-[11px] font-black tracking-widest text-white bg-[#f36f21] px-2.5 py-1 rounded-full shadow-lg shadow-[#f36f21]/40">
+                <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
                 {t('app.live_now')}
               </span>
-              {heroEpg?.now && (
-                <span className="border border-white/60 rounded px-1.5 py-0.5 text-[10px] font-black text-white/80">{(heroCh.group_title || 'TV').slice(0, 1)}</span>
+              {heroCh.group_title && (
+                <span className="text-[11px] font-bold text-white/70 border border-white/25 px-2.5 py-1 rounded-full">{heroCh.group_title}</span>
               )}
             </div>
-            <h1 className="title-art text-[clamp(30px,4.4vw,52px)] font-black leading-[1.02] mb-4">{heroCh.name}</h1>
+            <h1 className="text-[clamp(28px,4.2vw,48px)] font-black leading-[1.05] mb-3 drop-shadow-xl">{heroCh.name}</h1>
             {heroEpg?.now && (
               <>
-                <span className="self-start bg-gradient-to-r from-[#ff9a3d] to-[#f36f21] text-white font-black italic text-[13px] md:text-[15px] px-3.5 py-1.5 rounded-lg mb-4">
-                  {heroEpg.now.title}
-                </span>
-                <p className="text-[13px] md:text-[14px] text-[#e4e4e8] leading-relaxed max-w-[440px] mb-6 line-clamp-2">
-                  {heroEpg.now.desc || heroCh.group_title}
-                </p>
+                <div className="self-start max-w-full bg-white/10 backdrop-blur-md border border-white/15 rounded-2xl px-4 py-2.5 mb-5">
+                  <p className="text-[13px] md:text-[15px] font-bold text-white truncate">{heroEpg.now.title}</p>
+                  <p className="text-[11px] text-white/60 mt-0.5">{fmtTime(heroEpg.now.start)} - {fmtTime(heroEpg.now.stop)}</p>
+                </div>
               </>
             )}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <button
                 onClick={() => onSelectChannel && onSelectChannel(heroCh)}
-                className="btn-orange flex items-center gap-2.5 text-white font-extrabold text-[15px] px-7 py-3 rounded-xl"
+                className="btn-orange flex items-center gap-2 text-white font-extrabold text-[15px] px-7 py-3 rounded-2xl shadow-xl shadow-[#f36f21]/30 hover:brightness-110 active:scale-95 transition-all"
               >
-                ▶ {t('app.watch_now')}
+                <Play className="w-4 h-4 fill-current" /> {t('app.watch_now')}
               </button>
               <button
                 onClick={() => onToggleFavorite && onToggleFavorite(heroCh.channel_id)}
-                className="flex items-center gap-2 bg-[#2c2c30]/88 hover:bg-[#3c3c42]/90 text-white font-bold text-[14px] px-6 py-3 rounded-xl border border-white/10 transition"
+                className="flex items-center gap-2 bg-white/10 hover:bg-white/15 backdrop-blur text-white font-bold text-[14px] px-6 py-3 rounded-2xl border border-white/15 transition-all active:scale-95"
               >
-                {favSet.has(heroCh.channel_id) ? '♥' : '＋'} {t('app.favorites')}
+                <Heart className={`w-4 h-4 ${favSet.has(heroCh.channel_id) ? 'fill-[#f36f21] text-[#f36f21]' : ''}`} />
+                {favSet.has(heroCh.channel_id) ? 'Đã thích' : t('app.favorites')}
               </button>
             </div>
           </div>
 
-          {/* Dots */}
+          {/* Mũi tên chuyển slide */}
           {heroChannels.length > 1 && (
-            <div className="absolute right-5 bottom-4 z-20 flex gap-2">
-              {heroChannels.map((_, i) => (
-                <button
-                  key={i}
-                  onClick={() => setHeroIdx(i)}
-                  aria-label={`slide ${i + 1}`}
-                  className="h-[7px] rounded-md transition-all duration-300"
-                  style={{ width: i === heroIdx ? 22 : 7, background: i === heroIdx ? '#f36f21' : 'rgba(255,255,255,.35)' }}
-                />
-              ))}
-            </div>
+            <>
+              <button onClick={() => setHeroIdx((heroIdx - 1 + heroChannels.length) % heroChannels.length)} className="absolute left-3 top-1/2 -translate-y-1/2 z-20 p-2 rounded-full bg-black/40 hover:bg-black/70 text-white transition-all" aria-label="Trước">
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              <button onClick={() => setHeroIdx((heroIdx + 1) % heroChannels.length)} className="absolute right-3 top-1/2 -translate-y-1/2 z-20 p-2 rounded-full bg-black/40 hover:bg-black/70 text-white transition-all" aria-label="Sau">
+                <ChevronRight className="w-5 h-5" />
+              </button>
+              <div className="absolute right-5 bottom-4 z-20 flex items-center gap-2">
+                <span className="text-[10px] font-bold text-white/60 mr-1">{heroIdx + 1}/{heroChannels.length}</span>
+                {heroChannels.map((_, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setHeroIdx(i)}
+                    aria-label={`slide ${i + 1}`}
+                    className="h-[7px] rounded-full transition-all duration-300"
+                    style={{ width: i === heroIdx ? 24 : 7, background: i === heroIdx ? '#f36f21' : 'rgba(255,255,255,.35)' }}
+                  />
+                ))}
+              </div>
+            </>
           )}
         </section>
       )}
 
-      {/* ===== THANH THỂ LOẠI (chbar, nền solid — không blur) ===== */}
-      <div className="sticky top-0 z-30 topbar-mytv">
-        <div className="max-w-[1400px] mx-auto px-5 md:px-8">
-          <div className="flex items-center gap-6 overflow-x-auto scrollbar-none">
-            {categories.slice(0, 12).map(cat => (
+      {/* ===== LỌC THỂ LOẠI (pill) ===== */}
+      <div className="sticky top-0 z-30 bg-[#0b0b0d]/90 backdrop-blur-md border-b border-white/[0.06] mt-4">
+        <div className="max-w-[1400px] mx-auto px-5 md:px-8 py-3 flex items-center gap-2 overflow-x-auto scrollbar-none">
+          {(categories || []).map(cat => {
+            const active = selectedCategory === cat;
+            const label = (cat === 'Tất Cả' || cat === 'All') ? t('movies.genre.all') : cat;
+            return (
               <button
                 key={cat}
                 onClick={() => setSelectedCategory(cat)}
-                className={`chbar-btn text-[13.5px] ${selectedCategory === cat ? 'on' : ''}`}
+                className={`shrink-0 px-4 py-2 rounded-full text-[13px] font-bold transition-all active:scale-95 ${
+                  active
+                    ? 'bg-gradient-to-r from-[#ff8a2a] to-[#f36f21] text-white shadow-lg shadow-[#f36f21]/30'
+                    : 'bg-white/[0.06] text-stone-300 hover:bg-white/[0.12] hover:text-white'
+                }`}
               >
-                {cat === 'Tất Cả' || cat === 'All' ? t('movies.genre.all') : cat}
+                {label}
               </button>
-            ))}
-          </div>
+            );
+          })}
         </div>
       </div>
 
-      <div className="max-w-[1400px] mx-auto px-5 md:px-8 pt-4 space-y-10">
-        {/* ===== DÀNH CHO BẠN (lịch sử xem) ===== */}
-        {recentChannels.length > 0 && (
+      <div className="max-w-[1400px] mx-auto px-5 md:px-8 pt-6 space-y-10">
+        {/* ===== KẾT QUẢ TÌM KIẾM ===== */}
+        {searching && (
           <section className="anim-fade-up">
-            <h2 className="text-[21px] font-extrabold tracking-tight mb-4">{t('home.picked_for_you')}</h2>
-            <div className="flex gap-3.5 overflow-x-auto scrollbar-none pb-2" style={{ scrollSnapType: 'x proximity' }}>
+            <div className="flex items-end justify-between mb-4">
+              <div>
+                <p className="text-[10px] text-[#ff9a3d] font-black uppercase tracking-widest mb-1">Tìm kiếm</p>
+                <h2 className="text-[20px] font-extrabold tracking-tight">"{searchQuery.trim()}" — {searchResults.length} kênh</h2>
+              </div>
+            </div>
+            {searchResults.length === 0 ? (
+              <div className="text-center py-14 bg-white/[0.02] rounded-3xl border border-white/[0.05]">
+                <SearchX className="w-10 h-10 text-stone-600 mx-auto mb-3" />
+                <p className="text-sm text-stone-400">Không tìm thấy kênh nào khớp.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3.5">
+                {searchResults.map(ch => (
+                  <ChannelGridCard key={ch.channel_id} ch={ch} epg={getEpgNow(ch)} onSelect={onSelectChannel} onToggleFavorite={onToggleFavorite} isFav={favSet.has(ch.channel_id)} liveLabel={t('player.live')} />
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* ===== DÀNH CHO BẠN (xem gần đây) ===== */}
+        {!searching && recentChannels.length > 0 && (
+          <section className="anim-fade-up">
+            <div className="flex items-end justify-between mb-4">
+              <div>
+                <p className="text-[10px] text-[#ff9a3d] font-black uppercase tracking-widest mb-1">Tiếp tục xem</p>
+                <h2 className="text-[20px] font-extrabold tracking-tight">{t('home.picked_for_you')}</h2>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3.5">
               {recentChannels.map(ch => (
-                <ChannelArt key={ch.channel_id} ch={ch} onSelect={onSelectChannel} epgNowTitle={getEpgNow(ch)?.now?.title} isFav={favSet.has(ch.channel_id)} liveLabel={t('player.live')} />
+                <ChannelGridCard key={ch.channel_id} ch={ch} epg={getEpgNow(ch)} onSelect={onSelectChannel} onToggleFavorite={onToggleFavorite} isFav={favSet.has(ch.channel_id)} liveLabel={t('player.live')} />
               ))}
             </div>
           </section>
         )}
 
-        {/* ===== NHÓM KÊNH (hrow) ===== */}
-        {Object.entries(filteredGroups).map(([groupName, groupChannels], gi) => (
-          <section key={groupName} className="anim-fade-up" style={{ animationDelay: `${Math.min(gi, 4) * 60}ms` }}>
-            <div className="flex items-end justify-between mb-4">
-              <div>
-                <p className="text-[10px] text-[#ff9a3d] font-black uppercase tracking-widest mb-0.5">📺</p>
-                <h2 className="text-[21px] font-extrabold tracking-tight">{groupName}</h2>
+        {/* ===== NHÓM KÊNH (lưới) ===== */}
+        {!searching && Object.entries(filteredGroups).map(([groupName, groupChannels], gi) => {
+          const isOpen = !!expanded[groupName];
+          const visible = isOpen ? groupChannels : groupChannels.slice(0, PAGE_SIZE);
+          return (
+            <section key={groupName} className="anim-fade-up" style={{ animationDelay: `${Math.min(gi, 4) * 60}ms` }}>
+              <div className="flex items-end justify-between mb-4">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-9 h-9 rounded-xl bg-[#f36f21]/15 border border-[#f36f21]/25 flex items-center justify-center">
+                    <Radio className="w-4 h-4 text-[#ff9a3d]" />
+                  </span>
+                  <div>
+                    <h2 className="text-[20px] font-extrabold tracking-tight leading-tight">{groupName}</h2>
+                    <p className="text-[11px] text-stone-500">{groupChannels.length} {t('home.channels')}</p>
+                  </div>
+                </div>
+                {groupChannels.length > PAGE_SIZE && (
+                  <button
+                    onClick={() => toggleExpand(groupName)}
+                    className="flex items-center gap-1 px-3.5 py-2 rounded-full bg-white/[0.06] hover:bg-white/[0.12] text-[12px] font-bold text-stone-200 transition-all active:scale-95"
+                  >
+                    {isOpen ? <>Thu gọn <ChevronUp className="w-3.5 h-3.5" /></> : <>Xem thêm ({groupChannels.length - PAGE_SIZE}) <ChevronDown className="w-3.5 h-3.5" /></>}
+                  </button>
+                )}
               </div>
-              <span className="text-[11px] text-[#9b9ba3]">{groupChannels.length} {t('home.channels')}</span>
-            </div>
-            <div className="flex gap-3.5 overflow-x-auto scrollbar-none pb-2" style={{ scrollSnapType: 'x proximity' }}>
-              {groupChannels.map(ch => (
-                <ChannelArt key={ch.channel_id} ch={ch} onSelect={onSelectChannel} epgNowTitle={getEpgNow(ch)?.now?.title} isFav={favSet.has(ch.channel_id)} liveLabel={t('player.live')} />
-              ))}
-            </div>
-          </section>
-        ))}
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3.5">
+                {visible.map(ch => (
+                  <ChannelGridCard key={ch.channel_id} ch={ch} epg={getEpgNow(ch)} onSelect={onSelectChannel} onToggleFavorite={onToggleFavorite} isFav={favSet.has(ch.channel_id)} liveLabel={t('player.live')} />
+                ))}
+              </div>
+            </section>
+          );
+        })}
 
         {/* Rỗng */}
-        {!isLoading && Object.keys(filteredGroups).length === 0 && (
-          <div className="text-center py-16">
-            <p className="text-4xl mb-3">📺</p>
-            <p className="text-sm text-[#9b9ba3]">{t('app.loading')}</p>
+        {!searching && !isLoading && Object.keys(filteredGroups).length === 0 && (
+          <div className="text-center py-16 bg-white/[0.02] rounded-3xl border border-white/[0.05]">
+            <Radio className="w-10 h-10 text-stone-600 mx-auto mb-3" />
+            <p className="text-sm text-stone-400">Chưa có kênh nào trong mục này.</p>
           </div>
         )}
       </div>

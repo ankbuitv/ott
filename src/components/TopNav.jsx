@@ -32,6 +32,7 @@ function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, s
   const [mobileSearch, setMobileSearch] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
   const [apkOpen, setApkOpen] = useState(false);
+  const apkRef = useRef(null);
   const userRef = useRef(null);
   const searchInputRef = useRef(null);
   const planMeta = planByCode(effectivePlan);
@@ -97,6 +98,7 @@ function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, s
       if (notifRef.current && !notifRef.current.contains(e.target)) setNotifOpen(false);
       if (langRef.current && !langRef.current.contains(e.target)) setLangOpen(false);
       if (userRef.current && !userRef.current.contains(e.target)) setUserOpen(false);
+      if (apkRef.current && !apkRef.current.contains(e.target)) setApkOpen(false);
     };
     window.addEventListener('mousedown', h);
     return () => window.removeEventListener('mousedown', h);
@@ -239,7 +241,7 @@ function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, s
           <Search className="w-5 h-5" />
         </button>
         <div className="relative" ref={langRef}>
-          <button onClick={() => setLangOpen((o) => !o)} className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 transition" title={t('settings.choose_lang')} aria-label={t('settings.choose_lang')}><Globe className="w-4 h-4 text-stone-300" /><span className="text-base leading-none">{curLang?.flag || '🌐'}</span><span className="hidden lg:inline text-[11px] font-bold text-stone-300 uppercase">{lang}</span></button>
+          <button onClick={() => { setLangOpen((o) => !o); setApkOpen(false); setNotifOpen(false); setUserOpen(false); }} className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 transition" title={t('settings.choose_lang')} aria-label={t('settings.choose_lang')}><Globe className="w-4 h-4 text-stone-300" /><span className="text-base leading-none">{curLang?.flag || '🌐'}</span><span className="hidden lg:inline text-[11px] font-bold text-stone-300 uppercase">{lang}</span></button>
           {langOpen && (
             <div className="absolute right-0 top-full mt-2 w-56 max-w-[80vw] bg-[#141419] border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50 anim-pop-fast">
               <div className="px-4 py-2.5 border-b border-white/5 text-xs font-bold">{t('settings.choose_lang')}</div>
@@ -256,7 +258,7 @@ function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, s
           )}
         </div>
         <div className="relative" ref={notifRef}>
-          <button onClick={() => { setNotifOpen((o) => !o); if (!notifOpen) setTimeout(markAllRead, 1500); }} className="relative p-2 hover:bg-white/10 rounded-xl transition" title={t('nav.notifications')}>
+          <button onClick={() => { setNotifOpen((o) => !o); setApkOpen(false); setLangOpen(false); setUserOpen(false); if (!notifOpen) setTimeout(markAllRead, 1500); }} className="relative p-2 hover:bg-white/10 rounded-xl transition" title={t('nav.notifications')}>
             {unreadCount > 0 ? <BellRing className="w-5 h-5 text-amber-400" /> : <Bell className="w-5 h-5" />}
             {unreadCount > 0 && <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-[#f36f21] text-white text-[9px] font-bold flex items-center justify-center">{unreadCount > 9 ? '9+' : unreadCount}</span>}
           </button>
@@ -288,15 +290,18 @@ function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, s
             </div>
           )}
         </div>
-        <button
-          type="button"
-          onClick={() => setApkOpen(true)}
-          className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-[11px] font-bold text-stone-200 transition"
-          title={t('nav.download_app')}
-        >
-          <Smartphone className="w-4 h-4 text-[#ff9a3d]" />
-          <span className="hidden lg:inline">{t('nav.download_app')}</span>
-        </button>
+        <div className="relative" ref={apkRef}>
+          <button
+            type="button"
+            onClick={() => { setApkOpen((o) => !o); setNotifOpen(false); setLangOpen(false); setUserOpen(false); }}
+            className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-[11px] font-bold text-stone-200 transition"
+            title={t('nav.download_app')}
+          >
+            <Smartphone className="w-4 h-4 text-[#ff9a3d]" />
+            <span className="hidden lg:inline">{t('nav.download_app')}</span>
+          </button>
+          {apkOpen && <DownloadAppModal />}
+        </div>
         <button
           onClick={() => setActiveTab && setActiveTab('plans')}
           className={`hidden md:flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-black transition ${hasPaidPlan ? 'bg-white/5 hover:bg-white/10 text-amber-200 border border-amber-400/30' : 'grad-brand text-white shadow-lg shadow-[#f36f21]/25'}`}
@@ -306,7 +311,7 @@ function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, s
         </button>
         {isAuthenticated && currentProfile ? (
           <div className="relative" ref={userRef}>
-            <button onClick={() => setUserOpen((o) => !o)} className="flex items-center gap-2 pl-1 pr-1.5 py-1 rounded-xl hover:bg-white/10 transition" title={currentProfile.name}>
+            <button onClick={() => { setUserOpen((o) => !o); setApkOpen(false); setNotifOpen(false); setLangOpen(false); }} className="flex items-center gap-2 pl-1 pr-1.5 py-1 rounded-xl hover:bg-white/10 transition" title={currentProfile.name}>
               <div className={`relative w-9 h-9 rounded-full bg-gradient-to-br from-amber-500 to-[#f36f21] flex items-center justify-center font-bold text-white text-sm ${effectivePlan === 'signature' ? 'ring-2 ring-amber-300' : 'ring-1 ring-white/20'}`}>
                 {currentProfile.name[0].toUpperCase()}
               </div>

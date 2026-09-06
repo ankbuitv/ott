@@ -55,6 +55,9 @@ export const submitPredict = (p) => post('/api/predictions', p);
 
 // ---- Gift / thanh toán / quảng cáo ----
 export const redeemGift = (code) => post('/api/gifts/redeem', { code });
+// Tặng gói quà kênh cho bạn bè: tạo mã quà (1 lần dùng, khoá tên người nhận nếu có)
+export const createGift = (g) => post('/api/gifts/create', g);
+export const fetchMyGifts = () => get('/api/gifts/mine').catch(() => ({ sent: [], received: [] }));
 export const fetchPayConfig = () => get('/api/payments/config').catch(() => ({ config: null, plans: [] }));
 export const createPayOrder = (plan) => post('/api/payments/order', { plan });
 export const claimPayOrder = (order_code) => post('/api/payments/claim', { order_code });

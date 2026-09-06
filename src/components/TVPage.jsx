@@ -33,9 +33,10 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
       try { if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; } } catch {}
       try { if (shakaRef.current) { shakaRef.current.destroy(); shakaRef.current = null; } } catch {}
     };
-    // Xoay token phát trước khi hết hạn (URL proxy TTL ngắn)
+    // Xoay URL phát trước khi hết hạn (phiên xem thử / URL proxy TTL ngắn;
+    // URL direct thông thường rotate_at = 0 -> thoát ngay)
     const scheduleRotate = () => {
-      if (!proxied || !channel) return;
+      if (!channel) return;
       const at = getRotateAtMs(channel.channel_id);
       if (!at) return;
       if (rotateTimer) clearTimeout(rotateTimer);
@@ -47,7 +48,13 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
           if (hlsRef.current) hlsRef.current.loadSource(fresh);
           else if (shakaRef.current) await shakaRef.current.load(fresh);
           scheduleRotate();
-        } catch { if (!cancelled) rotateTimer = setTimeout(scheduleRotate, 20000); }
+        } catch (e) {
+          if (e?.code === "PREVIEW_EXPIRED") {
+            if (!cancelled) { setError(e.message || "Hết thời gian xem thử — nâng gói để xem tiếp."); setBuffering(false); }
+            return;
+          }
+          if (!cancelled) rotateTimer = setTimeout(scheduleRotate, 20000);
+        }
       }, Math.max(15000, at - Date.now()));
     };
     const loadShaka = async () => {
@@ -61,7 +68,14 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
             if (filter) player.getNetworkingEngine()?.registerRequestFilter(filter);
           } catch {}
           player.configure({
-            streaming: { rebufferingGoal: 2, bufferingGoal: 12, lowLatencyMode: true },
+            // Buffer đậm + tắt low-latency — hết đứng hình trên nguồn dao động mạnh
+            streaming: {
+              rebufferingGoal: 6,
+              bufferingGoal: 30,
+              bufferBehind: 60,
+              lowLatencyMode: false,
+              retryParameters: { maxAttempts: 6, baseDelay: 800, timeout: 15000 },
+            },
             abr: { enabled: true },
             manifest: { retryParameters: { maxAttempts: 3, baseDelay: 1000 } },
           });
@@ -105,8 +119,17 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
         if (isHls && Hls.isSupported()) {
           const hls = new Hls({
             enableWorker: true,
-            lowLatencyMode: true,
-            backBufferLength: 30,
+            lowLatencyMode: false, // nguồn thường (non-LL-HLS): LL mode gây đứng hình
+            backBufferLength: 60,
+            maxBufferLength: 30,   // đệm 30s (mặc định 18s mỏng quá -> lag)
+            maxMaxBufferLength: 120,
+            maxBufferSize: 60 * 1000 * 1000,
+            liveSyncDurationCount: 3,
+            abrEwmaDefaultEstimate: 800000,
+            fragLoadingMaxRetry: 6,
+            levelLoadingMaxRetry: 4,
+            manifestLoadingMaxRetry: 4,
+            fragLoadingMaxRetryTimeout: 8000,
             xhrSetup: (xhr, url) => {
               if (!isProxiedStreamUrl(url)) return;
               const h = applyStreamClientHeaders({}, channel);

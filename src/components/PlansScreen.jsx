@@ -5,6 +5,7 @@ import { useToast } from '../contexts/ToastContext';
 import { PLANS, activatePlan, fetchPlan, fetchPlanList, refreshPlanRanks, SUPPORT_EMAIL } from '../services/plans';
 import { useI18n } from '../contexts/I18nContext';
 import PayModal from './PayModal';
+import GiftModal from './GiftModal';
 import { redeemGift } from '../services/social';
 
 function fmtPrice(p, lang) {
@@ -28,7 +29,7 @@ function planArt(p) {
 }
 
 // ===== MÀN HÌNH MUA GÓI — giá & gói do admin quản lý (API), fallback gói cứng =====
-export default function PlansScreen() {
+export default function PlansScreen({ initialCode = '' }) {
   const { user, setAuth, token } = useAuth();
   const { t, lang } = useI18n();
   const { addToast } = useToast();
@@ -37,8 +38,9 @@ export default function PlansScreen() {
   const [plans, setPlans] = useState(PLANS);
   const [serverInfo, setServerInfo] = useState(null);
   const [payPlan, setPayPlan] = useState(null);
-  const [giftCode, setGiftCode] = useState('');
+  const [giftCode, setGiftCode] = useState(String(initialCode || '').toUpperCase().slice(0, 32));
   const [giftBusy, setGiftBusy] = useState(false);
+  const [showGiftModal, setShowGiftModal] = useState(false);
 
   useEffect(() => {
     let on = true;
@@ -253,6 +255,12 @@ export default function PlansScreen() {
               {t('gift.redeem')}
             </button>
           </div>
+          <button
+            onClick={() => setShowGiftModal(true)}
+            className="w-full mt-2.5 py-2.5 rounded-xl border border-fuchsia-500/40 bg-fuchsia-500/10 hover:bg-fuchsia-500/20 text-fuchsia-300 text-[12.5px] font-black flex items-center justify-center gap-1.5 active:scale-[0.99]"
+          >
+            <Gift className="w-3.5 h-3.5" />{t('gift.give_title')} <ChevronRight className="w-3.5 h-3.5" />
+          </button>
         </div>
 
         <p className="max-w-[820px] mx-auto text-center text-[12px] text-stone-500 leading-relaxed mt-8">
@@ -271,6 +279,9 @@ export default function PlansScreen() {
           onClose={() => setPayPlan(null)}
           onPaid={(code) => { setCurrent(code); setPayPlan(null); }}
         />
+      )}
+      {showGiftModal && (
+        <GiftModal onClose={() => setShowGiftModal(false)} />
       )}
     </div>
   );

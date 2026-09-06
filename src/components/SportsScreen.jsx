@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Trophy, CalendarDays, ListOrdered, Clapperboard, Play, Radio, X, ChevronRight } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Trophy, CalendarDays, ListOrdered, Clapperboard, Play, Radio, X, ChevronRight, RefreshCw, Zap } from 'lucide-react';
 import { useI18n } from '../contexts/I18nContext';
-import { LEAGUES, fetchLeague, fetchSportsIndex, fetchSportsVideos, parseVideoUrl } from '../services/sports';
+import { LEAGUES, fetchLeague, fetchLatestScoresAll, fetchSportsIndex, fetchSportsVideos, parseVideoUrl } from '../services/sports';
+import ScrollRow from './ScrollRow';
 import RacingSection from './RacingSection';
 import MatchDetailModal from './MatchDetailModal';
 
@@ -24,6 +25,13 @@ function isLive(ev) {
 }
 function isPostponed(ev) {
   return ev.strPostponed === 'yes' || /postpon|cancel/i.test(String(ev.strStatus || ''));
+}
+function fmtHM(ts) {
+  try {
+    const d = new Date(ts);
+    const p = (n) => String(n).padStart(2, '0');
+    return `${p(d.getHours())}:${p(d.getMinutes())}`;
+  } catch { return ''; }
 }
 
 function TeamBadge({ src, name, size = 'w-8 h-8' }) {
@@ -94,14 +102,37 @@ export default function SportsScreen({ channels = [], onSelectChannel }) {
   const [showExplorer, setShowExplorer] = useState(false);
   const [sportsIdx, setSportsIdx] = useState(null);
   const [explorerSport, setExplorerSport] = useState('');
+  // TỈ SỐ MỚI NHẤT MỌI GIẢI (đang đá + FT) — dải đầu trang, tự cập nhật 60s/lần
+  const [latest, setLatest] = useState([]);
+  // Tự cập nhật kết quả + BXH: thời điểm dữ liệu mới nhất & nút làm mới tay
+  const [updatedAt, setUpdatedAt] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshRef = useRef(null);
 
   const league = (custom && custom.id === leagueId) ? custom : (LEAGUES.find(l => l.id === leagueId) || LEAGUES[0]);
 
   useEffect(() => {
     let on = true;
     setLoading(true);
-    fetchLeague(league).then(d => { if (on) { setData(d); setLoading(false); } }).catch(() => { if (on) setLoading(false); });
-    return () => { on = false; };
+    const load = (fresh) => {
+      if (fresh) setRefreshing(true);
+      fetchLeague(league, { fresh })
+        .then(d => { if (on) { setData(d); setLoading(false); setUpdatedAt(Date.now()); } })
+        .catch(() => { if (on) setLoading(false); })
+        .finally(() => { if (on) setRefreshing(false); });
+    };
+    refreshRef.current = () => load(true);
+    load(false);
+    // TỰ CẬP NHẬT: mỗi 60s (khi tab đang mở) lấy kết quả + BXH MỚI NHẤT từ API
+    // (fresh = bỏ cache), quay lại tab sau >30s cũng tự làm mới luôn.
+    const iv = setInterval(() => {
+      if (on && document.visibilityState === 'visible') load(true);
+    }, 60000);
+    const onVis = () => {
+      if (on && document.visibilityState === 'visible' && Date.now() - updatedAt > 30000) load(true);
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => { on = false; clearInterval(iv); document.removeEventListener('visibilitychange', onVis); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leagueId]);
 
@@ -134,6 +165,17 @@ export default function SportsScreen({ channels = [], onSelectChannel }) {
     return () => { on = false; };
   }, []);
 
+  // Dải tỉ số mọi giải: tự cập nhật mỗi 60s khi tab đang mở
+  useEffect(() => {
+    let on = true;
+    const load = () => fetchLatestScoresAll(14).then(l => { if (on) setLatest(l || []); }).catch(() => {});
+    load();
+    const iv = setInterval(() => { if (document.visibilityState === 'visible') load(); }, 60000);
+    const onVis = () => { if (document.visibilityState === 'visible') load(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => { on = false; clearInterval(iv); document.removeEventListener('visibilitychange', onVis); };
+  }, []);
+
   const sportChannels = useMemo(() => {
     return (channels || []).filter(ch => SPORT_RE.test(`${ch.channel_id || ''} ${ch.name || ''} ${ch.group_title || ''}`));
   }, [channels]);
@@ -150,6 +192,25 @@ export default function SportsScreen({ channels = [], onSelectChannel }) {
           <div>
             <h1 className="text-[24px] font-black tracking-tight leading-none">{t('sports.title')}</h1>
             <p className="text-[11px] text-stone-500 mt-1">{t('sports.sub')}</p>
+          </div>
+          {/* Trạng thái tự cập nhật + nút làm mới tay */}
+          <div className="ml-auto flex items-center gap-2">
+            {sportTab === 'football' && (
+              <>
+                <span className="hidden sm:flex items-center gap-1.5 text-[10px] font-bold text-stone-500">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  {t('sports.auto')}{updatedAt ? ` · ${fmtHM(updatedAt)}` : ''}
+                </span>
+                <button
+                  onClick={() => refreshRef.current && refreshRef.current()}
+                  disabled={refreshing}
+                  title={t('sports.refresh')}
+                  className="w-8 h-8 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 flex items-center justify-center disabled:opacity-50 active:scale-95"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-stone-300 ${refreshing ? 'animate-spin' : ''}`} />
+                </button>
+              </>
+            )}
           </div>
         </div>
         {/* Tab môn thể thao: Bóng đá | Đua xe */}
@@ -270,6 +331,52 @@ export default function SportsScreen({ channels = [], onSelectChannel }) {
         </div>
       ) : (
       <div className="max-w-[1400px] mx-auto px-5 md:px-8 space-y-9">
+        {/* 0. TỈ SỐ MỚI NHẤT — MỌI GIẢI, tự cập nhật 60s/lần */}
+        {latest.length > 0 && (
+          <section>
+            <div className="flex items-center gap-2.5 mb-3.5">
+              <span className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center">
+                <Zap className="w-4 h-4 text-emerald-400" />
+              </span>
+              <h2 className="text-[19px] font-extrabold tracking-tight">{t('home.scores')}</h2>
+              <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>{t('sports.auto')}
+              </span>
+            </div>
+            <ScrollRow>
+              {latest.map(s => (
+                <button
+                  key={`${s.league?.id}-${s.ev?.idEvent}`}
+                  onClick={() => setSelMatch(s.ev)}
+                  className={`group shrink-0 w-[210px] snap-start rounded-2xl border p-2.5 text-left transition-all hover:-translate-y-0.5 ${s.live ? 'bg-[#f36f21]/10 border-[#f36f21]/50' : 'bg-white/[0.03] border-white/[0.07] hover:border-[#f36f21]/50'}`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[9px] font-black text-stone-400">{s.league?.flag} {s.league?.short}</span>
+                    {s.live ? (
+                      <span className="px-1.5 py-0.5 text-[8px] font-black rounded-full grad-brand text-white flex items-center gap-1">
+                        <span className="w-1 h-1 rounded-full bg-white animate-pulse"></span>{String(s.ev?.strStatus || 'LIVE').toUpperCase()}
+                      </span>
+                    ) : (
+                      <span className="px-1.5 py-0.5 text-[8px] font-black rounded-full bg-white/10 text-stone-400">FT</span>
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    {[
+                      { name: s.ev?.strHomeTeam, badge: s.ev?.strHomeTeamBadge, score: s.ev?.intHomeScore },
+                      { name: s.ev?.strAwayTeam, badge: s.ev?.strAwayTeamBadge, score: s.ev?.intAwayScore },
+                    ].map((tm, i) => (
+                      <div key={i} className="flex items-center gap-1.5">
+                        <TeamBadge src={tm.badge} name={tm.name} size="w-6 h-6" />
+                        <span className="flex-1 min-w-0 text-[11.5px] font-bold text-slate-200 truncate">{tm.name}</span>
+                        <span className={`text-[13px] font-black tabular-nums ${s.live ? 'text-[#ffb37a]' : 'text-white'}`}>{tm.score ?? '-'}</span>
+                      </div>
+                    ))}
+                  </div>
+                </button>
+              ))}
+            </ScrollRow>
+          </section>
+        )}
         {/* 1. Kênh thể thao */}
         {sportChannels.length > 0 && (
           <section>
@@ -280,7 +387,7 @@ export default function SportsScreen({ channels = [], onSelectChannel }) {
               <h2 className="text-[19px] font-extrabold tracking-tight">{t('sports.channels')}</h2>
               <span className="text-[11px] text-stone-500 font-bold">{sportChannels.length}</span>
             </div>
-            <div className="flex gap-3 overflow-x-auto scrollbar-none pb-2 snap-x">
+            <ScrollRow>
               {sportChannels.map(ch => (
                 <button
                   key={ch.channel_id}
@@ -303,7 +410,7 @@ export default function SportsScreen({ channels = [], onSelectChannel }) {
                   </span>
                 </button>
               ))}
-            </div>
+            </ScrollRow>
           </section>
         )}
 

@@ -73,26 +73,36 @@ Soi log `build-android.yml` ra 4 lỗi cộng dồn:
 
 ### Đã sửa
 
-- `android/app/build.gradle`: thêm `signingConfigs.release` đọc keystore từ biến môi trường, **không có keystore thì rơi về debug key** để APK luôn cài được; `versionCode 2` / `versionName 1.1.0`. → *đã push*
-- `ci/build-android.yml`: workflow viết lại đủ `npm ci` → JDK 21 → SDK 36/build-tools 36 → **keytool tự sinh keystore** → `assembleRelease` + `assembleDebug` + `bundleRelease`, artifact đổi tên đẹp `CHRTV-PLAY-release.apk`, thêm trigger cho nhánh `arena/**`. → *đã push, nhưng nằm ở thư mục `ci/`*
+- `android/app/build.gradle`: thêm `signingConfigs.release` đọc keystore từ biến môi trường, **không có keystore thì rơi về debug key** để APK luôn cài được; `versionCode`/`versionName` nhận override từ CI (`-PCI_VERSION_CODE`, `-PCI_VERSION_NAME`) để mỗi bản build tự tăng version.
+- `.github/workflows/build-android.yml`: workflow viết lại HOÀN CHỈNH (file cũ bị cắt cụt giữa dòng nên Action không bao giờ chạy — đó là lý do "không thấy file APK ở đâu"): `npm ci` → build web → `cap sync` → JDK 21 → SDK 36/build-tools 36 → keystore (secret > cache > tự sinh + cache giữ chữ ký ổn định) → `assembleRelease` → **artifact + TỰ ĐĂNG LÊN GITHUB RELEASE** (tag `latest`).
 
-### Bước bro bấm (2 phút)
+### Kích hoạt workflow (ĐÚNG 1 BƯỚC — bot không có quyền sửa file trong `.github/workflows/`)
 
-Token của bot **không có quyền `workflows`** nên mình không được phép ghi đè file trong `.github/workflows/` (GitHub trả 403 cả khi push lẫn khi gọi API). Nên:
+Token của Arena **thiếu quyền `workflows`** nên không push được file `.github/workflows/build-android.yml`
+(GitHub trả 403 cả git lẫn API). Workflow mới đã nằm sẵn trong repo ở **`ci/build-android.yml`**. Chọn 1 trong 2:
 
-1. Mở: <https://github.com/ankbuitv/ott/edit/arena/01a0759f-ott/.github/workflows/build-android.yml>
-2. Bôi đen xoá hết, **dán nguyên nội dung file `ci/build-android.yml`** trong repo.
-3. Commit thẳng vào nhánh `arena/01a0759f-ott`.
-4. Vào tab **Actions** → run "Build Android APK (CHRTV)" → chờ ~8–12 phút.
-5. Kéo xuống mục **Artifacts** → tải **`chrtv-apk`** (trong đó có `CHRTV-PLAY-release.apk` và bản `debug`).
+- **Cách 1 (30 giây):** mở <https://github.com/ankbuitv/ott/edit/arena/01a075fc-ott/.github/workflows/build-android.yml>,
+  bôi đen xoá hết, dán nguyên nội dung **`ci/build-android.yml`** ([bản raw](https://github.com/ankbuitv/ott/blob/arena/01a075fc-ott/ci/build-android.yml)),
+  commit thẳng vào nhánh `arena/01a075fc-ott`.
+- **Cách 2:** reconnect GitHub trong Arena có quyền `workflows` rồi bảo agent push nốt commit cuối (đang chờ sẵn trong nhánh local).
 
-> Cách khác nếu bro thích: vào **Settings → GitHub Apps → Arena** cấp quyền `workflows`, nhắn mình một tiếng là mình push thẳng, khỏi copy-paste.
+> Làm xong bước này là MỌI lần push vào `main` tự build + tự đăng Release, không cần đụng gì thêm.
+
+### Tải APK (không cần bấm gì thêm)
+
+Workflow chạy tự động mỗi khi push vào `main` (hoặc chạy tay ở tab **Actions → Build Android APK (CHRTV) → Run workflow**). Xong bản build:
+
+1. Mở repo → **Releases** → bản **"CHRTV PL▷Y Android APK (mới nhất)"** (tag `latest`).
+2. Tải `CHRTV-PLAY-<phiên bản>.apk` — luôn là bản mới nhất, link không đổi nên chia sẻ 1 link là đủ.
+3. Bản build trên nhánh khác (`arena/**`, PR) chỉ nằm trong **Artifacts** của run (giữ 30 ngày), không đăng Release.
+
+> Muốn bật/tắt việc đăng Release khi chạy tay: input `publish` trong **Run workflow** (mặc định bật).
 
 ### Lưu ý khi cài
 
 - Android sẽ hỏi *"Cài ứng dụng không rõ nguồn gốc"* → cho phép trình duyệt/File manager.
-- CI đang **tự sinh keystore mỗi lần build** ⇒ chữ ký khác nhau giữa các bản → muốn cài bản mới phải **gỡ bản cũ** trước.
-  Muốn cập nhật đè lên (giữ dữ liệu, sau này lên Play Store được) thì tạo keystore cố định rồi lưu vào repo secret:
+- Chữ ký APK: nếu chưa set secret `ANDROID_KEYSTORE_BASE64`, CI **tự sinh keystore và cache lại theo key cố định** → các bản build sau dùng CHUNG một chữ ký, cài đè trực tiếp không cần gỡ bản cũ.
+  Muốn tự quản chữ ký hoàn toàn (an toàn hơn, dùng luôn cho Play Store) thì tạo keystore cố định rồi lưu vào repo secret:
 
   ```bash
   keytool -genkeypair -v -keystore chrtv-release.jks -alias chrtv \
@@ -102,7 +112,7 @@ Token của bot **không có quyền `workflows`** nên mình không được ph
   base64 -w0 chrtv-release.jks       # copy chuỗi này
   ```
 
-  GitHub → Settings → Secrets → Actions → thêm `ANDROID_KEYSTORE_BASE64` (+ nếu đổi mật khẩu thì sửa 3 biến `CHRTV_KEYSTORE_PASSWORD`, `CHRTV_KEY_ALIAS`, `CHRTV_KEY_PASSWORD` trong workflow).
+  GitHub → Settings → Secrets → Actions → thêm `ANDROID_KEYSTORE_BASE64` (+ nếu đổi mật khẩu thì thêm `CHRTV_KEYSTORE_PASSWORD`, `CHRTV_KEY_ALIAS`, `CHRTV_KEY_PASSWORD`).
   **Giữ kỹ file `.jks` này** — mất là không update app cũ được nữa.
 - App trỏ về domain production trong `capacitor.config.json`; đổi domain thì sửa file đó rồi build lại.
 - Manifest đã có sẵn cả `LAUNCHER` lẫn `LEANBACK_LAUNCHER` nên APK này **cài lên Android TV box chạy luôn**.

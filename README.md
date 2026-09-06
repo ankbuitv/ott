@@ -18,6 +18,9 @@ CHRTV là hệ thống ứng dụng xem truyền hình IPTV chuyên nghiệp, ca
 - **Xem thử 5 phút**: gói Standard bấm được mọi kênh nhưng chỉ xem 5 phút/giờ ngoài gói; hết thì còn kênh TH.
 - **Đang hot**: bảng xếp hạng kênh theo 15 phút gần nhất (`/api/stats/trending`).
 - **Mạng yếu / 4G**: tự hạ độ phân giải và báo cho người xem, tắt/bật trong Cài đặt.
+- **Hiệu năng (fix lag 2026-09)**: EPG đánh chỉ mục 1 lần thay vì quét toàn bộ mỗi lần tra (web hết đơ khi mở player/Toast); player đệm 30s + tắt low-latency (hết đứng hình), tự thử lại khi mạng chập chờn.
+- **Thể thao**: lịch thi đấu + **tỉ số tự cập nhật mỗi 60 giây** (trận đang đá lên đầu, nhãn LIVE), **BXH luôn lấy bảng mới nhất** từ API (TheSportsDB/OpenLigaDB) khi tab đang mở, F1 & motorsport.
+- **🎁 Tặng gói quà kênh cho bạn bè**: Gói cước → *Tặng gói cho bạn bè* — chọn gói + số ngày (+ tên đăng nhập bạn bè để khoá mã chỉ họ nhận được, kèm lời nhắn) → nhận mã `CHRTV-XXXX-XXXX-XXXX` + link chia sẻ `?gift=CODE` (bạn mở link vào thẳng trang nhận quà). API: `/api/gifts/create` · `/api/gifts/mine` · `/api/gifts/redeem`.
 - **Đổi mật khẩu ngay trong app**: Cài đặt → *Đổi mật khẩu* (đo độ mạnh, hiện/ẩn, tuỳ chọn “đăng xuất các thiết bị khác” — thu hồi phiên thật sự vì server đối chiếu bảng `sessions`).
 - **Xác minh email bắt buộc khi đăng ký**: gửi mã 6 số qua Brevo, chưa xác minh không đăng nhập được (UI có nút gửi lại mã + cooldown); khi Worker chưa cấu hình `BREVO_API_KEY` thì rơi về `devCode` hiển thị ngay trên màn hình xác minh.
 
@@ -28,7 +31,7 @@ CHRTV là hệ thống ứng dụng xem truyền hình IPTV chuyên nghiệp, ca
 
 ### 3. Mobile / TV Native App & CI/CD
 - **CapacitorJS**: Đóng gói ứng dụng Native cho Mobile APK và Android TV APK (hỗ trợ Leanback Launcher).
-- **GitHub Actions**: Tự động build APK Debug artifact khi push mã nguồn.
+- **GitHub Actions**: push vào `main` → tự build **APK release có chữ ký** (`npm ci` → vite build → cap sync → JDK 21 + SDK 36 → gradle assembleRelease) → **tự đăng lên GitHub Release** (tag `latest`, kèm checksum SHA-256) — vào repo → *Releases* để tải. Keystore: ưu tiên secret `ANDROID_KEYSTORE_BASE64`, chưa có thì CI tự sinh + cache để chữ ký ổn định giữa các bản (cài đè không cần gỡ). Chi tiết: `TAI_APK.md`.
 
 ---
 
@@ -38,7 +41,7 @@ CHRTV là hệ thống ứng dụng xem truyền hình IPTV chuyên nghiệp, ca
 - **Link EPG XML gốc**: `https://epg.io.vn/epgc.xml`
 - **Link Stream Backup (Fallback)**: `http://bore.pub:30113/hls/index.m3u8`
 - **Logo CHRTV chính thức**: `https://i.ibb.co/HDmcxzMK/Gemini-Generated-Image-v7i9yav7i9yav7i9-removebg-preview.png`
-- **Bảo vệ luồng (chống rip m3u8)**: `/api/playlist` CHỈ trả metadata (không còn `stream_url`), mọi file `.m3u/.m3u8/.mpd` static bị chặn 404, client phát qua `/api/stream/token` → `/api/stream/proxy` (token AES-GCM bind user + IP/UA, manifest TTL 300s tự xoay, segment token riêng cho từng URI, VOD 4h). Copy link sang tool/máy khác = 403. Chi tiết: `CHONG_RIP_STREAM.md`.
+- **Bảo vệ luồng (chống rip m3u8)**: `/api/playlist` CHỈ trả metadata (không có `stream_url`), mọi file `.m3u/.m3u8/.mpd` static bị chặn 404, client phải gọi `/api/stream/token` (JWT) — server kiểm tra đăng nhập + gói cước + quota xem thử rồi mới trả URL phát. **Từ 2026-09: phát TRỰC TIẾP URL gốc (bỏ proxy làm mặc định)** vì nhiều nguồn IPTV chặn dải IP Cloudflare Workers nên phát qua proxy toàn bị 403; bật lại chế độ proxy (giấu link, token AES-GCM bind IP/UA, xoay TTL ngắn) bằng biến `STREAM_MODE=proxy`. Chi tiết: `CHONG_RIP_STREAM.md`.
 - **Gói cước (tạm free)**: 5 bậc Standard → Signature, kích hoạt qua `/user/plan/activate`; hỗ trợ qua email support@ankb.qzz.io (không dùng SĐT).
 
 ---

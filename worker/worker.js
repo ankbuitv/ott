@@ -830,7 +830,7 @@ const SCHEMA_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_comments_target ON comments(target, status, id)`,
   `CREATE TABLE IF NOT EXISTS fan_groups (id INTEGER PRIMARY KEY AUTOINCREMENT, target TEXT UNIQUE NOT NULL, name TEXT NOT NULL, created_by INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS fan_members (group_id INTEGER NOT NULL, user_id INTEGER NOT NULL, name TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(group_id, user_id))`,
-  `CREATE TABLE IF NOT EXISTS gift_codes (code TEXT PRIMARY KEY, plan TEXT DEFAULT 'signature', days INTEGER DEFAULT 30, max_uses INTEGER DEFAULT 1, used INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1, note TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS gift_codes (code TEXT PRIMARY KEY, plan TEXT DEFAULT 'signature', days INTEGER DEFAULT 30, max_uses INTEGER DEFAULT 1, used INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1, note TEXT DEFAULT '', created_by INTEGER DEFAULT 0, to_username TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS gift_redemptions (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL, user_id INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS user_plans (user_id INTEGER PRIMARY KEY, plan TEXT DEFAULT 'standard', expires_at INTEGER DEFAULT 0, updated_at INTEGER DEFAULT 0)`,
   `CREATE TABLE IF NOT EXISTS payments (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, username TEXT DEFAULT '', plan TEXT NOT NULL, amount INTEGER DEFAULT 0, order_code TEXT UNIQUE NOT NULL, status TEXT DEFAULT 'pending', payload TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, paid_at DATETIME DEFAULT NULL)`,
@@ -911,6 +911,15 @@ async function ensureSchema(env) {
       "ALTER TABLE users ADD COLUMN totp_secret TEXT DEFAULT ''",
       "ALTER TABLE users ADD COLUMN totp_enabled INTEGER DEFAULT 0",
       "ALTER TABLE users ADD COLUMN plan TEXT DEFAULT ''",
+    ]) {
+      try { await env.DB.prepare(stmt).run(); } catch (e) { /* cột đã có — bỏ qua */ }
+    }
+    // MIGRATION: gift_codes — tính năng TẶNG GÓI CHO BẠN (user -> user):
+    // created_by = người tặng, to_username = tên đăng nhập người nhận (rỗng = ai có mã cũng dùng được)
+    for (const stmt of [
+      "ALTER TABLE gift_codes ADD COLUMN created_by INTEGER DEFAULT 0",
+      "ALTER TABLE gift_codes ADD COLUMN to_username TEXT DEFAULT ''",
+      "CREATE INDEX IF NOT EXISTS idx_gift_codes_creator ON gift_codes(created_by)",
     ]) {
       try { await env.DB.prepare(stmt).run(); } catch (e) { /* cột đã có — bỏ qua */ }
     }
@@ -1041,6 +1050,8 @@ async function handleAPI(path, request, env, ctx) {
   if (path === "/api/comments") return await handleComments(request, env);
   if (path === "/api/fan-groups") return await handleFanGroups(request, env);
   if (path === "/api/gifts/redeem") return await handleGiftRedeem(request, env);
+  if (path === "/api/gifts/create") return await handleGiftCreate(request, env);
+  if (path === "/api/gifts/mine") return await handleGiftMine(request, env);
   if (path === "/api/payments/config" || path === "/api/payments/order" || path === "/api/payments/claim" || path === "/api/payments/sepay-webhook") return await handlePayments(path, request, env);
   if (path === "/api/ads") return await handleAds(request, env);
   if (path === "/api/ads/preroll") return await handleAdPreroll(request, env);
@@ -1125,6 +1136,19 @@ async function fetchWithUAFallback(url, baseInit, env, preferredUA, timeoutMs) {
 
 function streamUrlIsPublic(env) {
   return String((env && env.PUBLIC_STREAM_URL) || "") === "1";
+}
+
+// ========== CHẾ ĐỘ PHÁT LUỒNG: DIRECT (mặc định) vs PROXY ==========
+// Vì sao bỏ proxy làm mặc định: hầu hết nguồn IPTV (FPT, TV360, VTVgo…) chặn
+// dải IP egress của Cloudflare Workers nên khi stream đi qua /api/stream/proxy
+// người xem chỉ thấy lỗi 403/451 hoặc đứng hình. Chế độ DIRECT: client vẫn PHẢI
+// gọi /api/stream/token (đăng nhập, gói cước, xem thử 5 phút, chống flood đều
+// kiểm tra phía server như trước) nhưng server trả THẲNG URL gốc để client phát
+// trực tiếp — nguồn thấy IP của người xem nên không bị chặn.
+// Muốn bật lại proxy (giấu link gốc khỏi DevTools): set biến STREAM_MODE=proxy.
+function streamProxyEnabled(env) {
+  const v = String((env && env.STREAM_MODE) || "").trim().toLowerCase();
+  return v === "proxy" || v === "1" || v === "on" || v === "true";
 }
 function publicChannel(ch, env) {
   const out = {
@@ -2086,6 +2110,37 @@ async function handleStreamToken(request, env) {
     previewInfo = st;
   }
 
+  // 3b) CHẾ ĐỘ DIRECT (mặc định): trả thẳng URL gốc sau khi đã qua mọi lớp
+  //     kiểm tra ở trên. Nguồn stream thấy IP của người xem (không phải IP
+  //     Cloudflare) nên hết bị chặn. Xem thử vẫn trừ quota 60s/lần xin và
+  //     client quay lại xin URL mới mỗi phút -> hết 5 phút là chặn như cũ.
+  if (!streamProxyEnabled(env)) {
+    const nowD = Math.floor(Date.now() / 1000);
+    let previewOutD = null;
+    let rotateAtD = 0;
+    if (previewInfo) {
+      const chunkD = Math.min(60, previewInfo.remaining);
+      const keyD = await viewerKey(request, env, auth);
+      await consumePreview(env, keyD, chunkD);
+      previewOutD = {
+        total: previewInfo.total,
+        used: Math.min(previewInfo.total, previewInfo.used + chunkD),
+        remaining: Math.max(0, previewInfo.remaining - chunkD),
+        resets_in: previewInfo.resets_in,
+      };
+      // phiên xem thử: xoay mỗi chunk để server kiểm soát quota
+      rotateAtD = nowD + Math.max(15, chunkD);
+    }
+    return json({
+      success: true,
+      direct: true,
+      url: targetUrl,
+      exp: nowD + 3600,
+      rotate_at: rotateAtD, // 0 = URL gốc không hết hạn, không cần xoay
+      ...(previewOutD ? { preview: previewOutD } : {}),
+    }, 200, request, env);
+  }
+
   // 4) Cấp playback token: HMAC, TTL 60s, bind (stream + user + sid)
   const now = Math.floor(Date.now() / 1000);
   let base;
@@ -2131,6 +2186,14 @@ async function handleStreamToken(request, env) {
 }
 
 async function handleStreamProxy(request, env) {
+  // Đã BỎ proxy theo mặc định (STREAM_MODE=proxy để bật lại) — token endpoint
+  // trả URL gốc trực tiếp nên endpoint này không còn được dùng ở chế độ direct.
+  if (!streamProxyEnabled(env)) {
+    return streamErr({
+      error: "PROXY_DISABLED",
+      message: "Proxy phát đã tắt. Client phát trực tiếp URL từ /api/stream/token.",
+    }, 410, request, env);
+  }
   const blocked = streamToolBlocked(request);
   if (blocked) return streamErr({ error: "Client bị chặn", reason: blocked }, 403, request, env);
 
@@ -4772,6 +4835,92 @@ async function activatePlan(env, userId, plan, days) {
 }
 
 // ========== GIFT CODE ==========
+// Sinh mã quà ngẫu nhiên dễ đọc (bỏ I/O/0/1 chống đọc nhầm): CHRTV-XXXX-XXXX-XXXX
+function randomGiftCode() {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const pick = (n) => {
+    const a = new Uint32Array(n);
+    crypto.getRandomValues(a);
+    return Array.from(a, (x) => alphabet[x % alphabet.length]).join("");
+  };
+  return `CHRTV-${pick(4)}-${pick(4)}-${pick(4)}`;
+}
+
+// TẶNG GÓI QUÀ KÊNH CHO BẠN BÈ: user tự tạo mã quà gói cước rồi gửi mã/link
+// cho bạn. Nếu ghi tên đăng nhập người nhận thì CHỈ tài khoản đó dùng được mã.
+async function handleGiftCreate(request, env) {
+  if (!hasDB(env)) return dbUnavailable();
+  await ensureSchema(env);
+  if (request.method !== "POST") return json({ error: "Not found" }, 404, request, env);
+  const auth = await getAuth(request, env);
+  if (!auth || !auth.user) return json({ error: "LOGIN_REQUIRED", message: "Đăng nhập để tặng quà." }, 401, request, env);
+  // chống spam tạo mã: tối đa 10 quà/giờ mỗi tài khoản
+  try {
+    const rl = await rateLimitCheck(env, "giftmk:u:" + auth.user.id, 10, 3600);
+    if (!rl.allowed) return json({ error: "Bạn tạo quà hơi nhanh — thử lại sau ít phút.", code: "RATE_LIMITED" }, 429, request, env);
+  } catch {}
+  const b = await request.json().catch(() => ({}));
+  const plan = String(b.plan || "").toLowerCase();
+  if (!["signature", "elite", "ultimate", "recreational", "standard"].includes(plan)) {
+    return json({ error: "Gói không hợp lệ", code: "BAD_PLAN" }, 400, request, env);
+  }
+  const days = Math.max(1, Math.min(3650, parseInt(b.days) || 30));
+  const toRaw = String(b.to || b.to_username || "").trim().slice(0, 40);
+  const note = String(b.note || "").trim().slice(0, 200);
+  let toUsername = "";
+  if (toRaw) {
+    const { results } = await env.DB.prepare("SELECT username FROM users WHERE username = ? COLLATE NOCASE LIMIT 1").bind(toRaw).all();
+    if (!results || !results.length) {
+      return json({ error: `Không tìm thấy tài khoản "${toRaw}" — kiểm tra lại tên đăng nhập của bạn bè.`, code: "USER_NOT_FOUND" }, 404, request, env);
+    }
+    toUsername = results[0].username;
+    if (toUsername.toLowerCase() === String(auth.user.username || "").toLowerCase()) {
+      return json({ error: "Không thể tặng cho chính mình.", code: "SELF_GIFT" }, 400, request, env);
+    }
+  }
+  // sinh mã không trùng (thử tối đa 5 lần)
+  let code = randomGiftCode();
+  for (let i = 0; i < 5; i++) {
+    const { results } = await env.DB.prepare("SELECT code FROM gift_codes WHERE code = ?").bind(code).all();
+    if (!results || !results.length) break;
+    code = randomGiftCode();
+  }
+  await env.DB.prepare(
+    "INSERT INTO gift_codes (code, plan, days, max_uses, used, is_active, note, created_by, to_username) VALUES (?, ?, ?, 1, 0, 1, ?, ?, ?)"
+  ).bind(code, plan, days, note, auth.user.id, toUsername).run();
+  try { await logAudit(env, auth.user.id, "gift.user_create", { code, plan, days, to: toUsername }); } catch {}
+  return json({ success: true, code, plan, days, to_username: toUsername, note, max_uses: 1 }, 201, request, env);
+}
+
+// Danh sách quà TÔI ĐÃ TẶNG + quà bạn bè tặng TÔI (chờ nhận)
+async function handleGiftMine(request, env) {
+  if (!hasDB(env)) return dbUnavailable();
+  await ensureSchema(env);
+  if (request.method !== "GET") return json({ error: "Not found" }, 404, request, env);
+  const auth = await getAuth(request, env);
+  if (!auth || !auth.user) return json({ error: "LOGIN_REQUIRED" }, 401, request, env);
+  const out = { sent: [], received: [] };
+  const shape = (g) => ({
+    code: g.code, plan: g.plan, days: g.days, note: g.note || "",
+    to_username: g.to_username || "", used: g.used, max_uses: g.max_uses,
+    is_active: !!g.is_active, created_at: g.created_at,
+    status: g.used >= g.max_uses ? "redeemed" : (g.is_active ? "pending" : "disabled"),
+  });
+  try {
+    const { results } = await env.DB.prepare(
+      "SELECT code, plan, days, note, to_username, used, max_uses, is_active, created_at FROM gift_codes WHERE created_by = ? ORDER BY created_at DESC LIMIT 100"
+    ).bind(auth.user.id).all();
+    out.sent = (results || []).map(shape);
+  } catch {}
+  try {
+    const { results } = await env.DB.prepare(
+      "SELECT code, plan, days, note, to_username, used, max_uses, is_active, created_at FROM gift_codes WHERE to_username = ? COLLATE NOCASE ORDER BY created_at DESC LIMIT 100"
+    ).bind(auth.user.username || "").all();
+    out.received = (results || []).map(shape);
+  } catch {}
+  return json({ success: true, ...out }, 200, request, env);
+}
+
 async function handleGiftRedeem(request, env) {
   if (!hasDB(env)) return dbUnavailable();
   await ensureSchema(env);
@@ -4788,6 +4937,10 @@ async function handleGiftRedeem(request, env) {
   const { results } = await env.DB.prepare("SELECT * FROM gift_codes WHERE code = ?").bind(code).all();
   const g = results[0];
   if (!g || !g.is_active) return json({ error: "Mã không tồn tại hoặc đã tắt" }, 404, request, env);
+  // Quà tặng CÀI TÊN người nhận (tính năng tặng gói cho bạn): chỉ tài khoản đó dùng được
+  if (g.to_username && String(g.to_username).toLowerCase() !== String(auth.user.username || "").toLowerCase()) {
+    return json({ error: "Mã này được tặng riêng cho người khác", code: "NOT_YOURS" }, 403, request, env);
+  }
   if (g.used >= g.max_uses) return json({ error: "Mã đã hết lượt dùng" }, 410, request, env);
   const { results: mine } = await env.DB.prepare("SELECT id FROM gift_redemptions WHERE code = ? AND user_id = ?").bind(code, auth.user.id).all();
   if (mine.length) return json({ error: "Bạn đã dùng mã này rồi" }, 409, request, env);

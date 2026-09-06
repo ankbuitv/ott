@@ -151,6 +151,9 @@ export async function getLocalTV(region) {
 export async function getMovieDetails(id) {
   return tmdbFetch(`/movie/${id}`);
 }
+export async function getTvDetails(id) {
+  return tmdbFetch(`/tv/${id}`);
+}
 export async function getMovieTrailer(id, mediaType = 'movie') {
   const kind = mediaType === 'tv' ? 'tv' : 'movie';
   const d = await tmdbFetch(`/${kind}/${id}/videos`);

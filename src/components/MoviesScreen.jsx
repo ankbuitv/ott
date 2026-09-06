@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Search, Star, Play, X, Info, Calendar, Clock, Tv, Film, SlidersHorizontal, TrendingUp, Heart, History, Plus, Check, Crown } from 'lucide-react';
-import { MovieAPI, imgPath, bgPath, COUNTRY_INFO, countryInfoOf, REGION_LIST, setTMDBRegion, getUpcoming, getMovieGenres, getTMDBKey, setTMDBKey, isDefaultTMDBKey, getCredits, getPerson, getPersonCredits, getRecommendations, getCollection, getMovieDetails } from '../services/tmdb';
-import { getMovieHistory, recordMovieWatch, isWatched, toggleWatchlistLocal, fetchWatchlist } from '../services/movieList';
+import { Search, Star, Play, X, Info, Calendar, Clock, Tv, Film, SlidersHorizontal, TrendingUp, Heart, History, Plus, Check, Crown, Mic, Share2, CalendarClock } from 'lucide-react';
+import { MovieAPI, imgPath, bgPath, COUNTRY_INFO, countryInfoOf, REGION_LIST, setTMDBRegion, getUpcoming, getMovieGenres, getTMDBKey, setTMDBKey, isDefaultTMDBKey, getCredits, getPerson, getPersonCredits, getRecommendations, getCollection, getMovieDetails, getTvDetails, discoverMovies } from '../services/tmdb';
+import { getMovieHistory, recordMovieWatch, recordMovieProgress, fmtWatchSec, isWatched, toggleWatchlistLocal, fetchWatchlist } from '../services/movieList';
+import { listenOnce, voiceSupported } from '../services/voice';
+import ShareMovieModal, { movieDeepId } from './ShareMovieModal';
+import UpcomingModal from './UpcomingModal';
+import CommentsBox from './CommentsBox';
+import FanGroupBox from './FanGroupBox';
+import AdSlot from './AdSlot';
 import { resolveCountry, currentCountry, setManualCountry } from '../services/geo';
 import MoviePlayerModal from './MoviePlayerModal';
 import { useDevice } from '../contexts/DeviceContext';
@@ -85,6 +91,11 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
   const [movieHistory, setMovieHistory] = useState(() => getMovieHistory());
   const [myList, setMyList] = useState([]);
   const [heroTrailer, setHeroTrailer] = useState(null);
+  const [shareMovie, setShareMovie] = useState(null);
+  const [upcomingOpen, setUpcomingOpen] = useState(false);
+  const [forYou, setForYou] = useState({ base: null, items: [] });
+  const [cartoons, setCartoons] = useState([]);
+  const [listening, setListening] = useState(false);
 
   useEffect(() => { fetchWatchlist().then((l) => setMyList(l)).catch(() => {}); }, []);
 
@@ -99,7 +110,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
     if (currentProfile?.is_child) addToast(t('toast.kid_blocked'), 'info');
   }, [currentProfile]);
 
-  // Mở phim được chọn từ thanh tìm kiếm trên TopNav
+  // Mở phim được chọn từ thanh tìm kiếm trên TopNav / deep link (?movie=tv-123)
   useEffect(() => {
     if (openMovie) {
       openDetail(openMovie);
@@ -107,6 +118,20 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openMovie]);
+
+  // Vì bạn đã xem... (gợi ý theo phim xem gần nhất) + Hoạt hình
+  useEffect(() => {
+    const base = movieHistory[0];
+    if (base?.id) {
+      getRecommendations(base.id, base.media_type === 'tv' ? 'tv' : 'movie')
+        .then((r) => setForYou({ base, items: (r.results || []).filter((m) => m.poster_path).slice(0, 12) }))
+        .catch(() => {});
+    } else setForYou({ base: null, items: [] });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [movieHistory.length]);
+  useEffect(() => {
+    discoverMovies({ with_genres: '16', sort_by: 'popularity.desc' }).then((r) => setCartoons((r.results || []).filter((m) => m.poster_path).slice(0, 18))).catch(() => {});
+  }, [country]);
 
   // Chốt quốc gia theo IP thật qua /api/geo (Cloudflare gắn request.cf.country)
   // → khác với phỏng đoán timezone thì fetch lại toàn bộ khối phim theo region mới
@@ -202,6 +227,15 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
   }, [search, catalog, searchNonce]);
 
   // Lưu TMDB API key người dùng dán vào (lưu localStorage, dùng ngay)
+  const voiceSearch = async () => {
+    if (!voiceSupported()) { addToast(t('voice.unsupported'), 'error'); return; }
+    setListening(true);
+    try {
+      const txt = await listenOnce({ lang: 'vi-VN', timeout: 9000 });
+      if (txt) { setSearch(txt); addToast(`🎙️ ${txt}`, 'info'); }
+    } finally { setListening(false); }
+  };
+
   const saveTMDBKey = async () => {
     const k = keyInput.trim();
     if (!k) { setKeyMsg({ ok: false, text: t('mv.key_empty') }); return; }
@@ -223,35 +257,47 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
 
   const openDetail = useCallback(async (movie) => {
     if (!movie || !movie.id) return;
+    const type = movie.media_type === 'tv' ? 'tv' : 'movie';
     setSelected(movie);
     setTrailer(null);
     setTrailerLoading(true);
+    // Deep link / gợi ý chỉ có id -> nạp đầy đủ chi tiết
+    if (!movie.overview) {
+      try {
+        const full = type === 'tv' ? await getTvDetails(movie.id) : await getMovieDetails(movie.id);
+        if (full?.id) {
+          const merged = { ...full, id: full.id, media_type: type, title: full.title || full.name, name: full.name || full.title, genre_ids: (full.genres || []).map((g) => g.id) };
+          setSelected(merged);
+          movie = merged;
+        }
+      } catch (e) {}
+    }
     try {
-      const t = await MovieAPI.trailer(movie.id);
+      const t = await MovieAPI.trailer(movie);
       setTrailer(t);
     } catch (e) {}
     setTrailerLoading(false);
   }, []);
 
   const filteredCatalog = useMemo(() => {
-    if (selectedGenre === 'all') return catalog;
+    const base = isKid ? kidSafe : catalog;
+    if (selectedGenre === 'all') return base;
     const gid = Number(selectedGenre);
-    return catalog.filter(m => (m.genre_ids || []).includes(gid));
-  }, [catalog, selectedGenre]);
+    return base.filter(m => (m.genre_ids || []).includes(gid));
+  }, [catalog, kidSafe, isKid, selectedGenre]);
 
   const visibleCatalog = filteredCatalog.slice(0, visibleCount);
 
-  if (currentProfile?.is_child) {
-    return (
-      <div className="h-full flex items-center justify-center p-8 text-center">
-        <div>
-          <div className="text-6xl mb-3">🔒</div>
-          <h2 className="text-2xl font-black mb-2">{t('mv.restricted')}</h2>
-          <p className="text-sm text-stone-400">{t('mv.kid_blocked')}</p>
-        </div>
-      </div>
-    );
-  }
+  const isKid = !!currentProfile?.is_child;
+  const kidSafe = useMemo(() => {
+    if (!isKid) return catalog;
+    // Bé: chỉ hoạt hình/gia đình, loại kinh dị/tội phạm
+    return catalog.filter((m) => {
+      const g = m.genre_ids || [];
+      if (g.includes(27) || g.includes(80) || g.includes(53)) return false;
+      return g.includes(16) || g.includes(10751) || g.includes(10762) || g.includes(12);
+    });
+  }, [catalog, isKid]);
 
   // Lưới cố định: mobile 2 cột, tablet 3, desktop/TV 6 cột (1 hàng 6 phim)
   const gridCls = device.isMobile
@@ -309,7 +355,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
               </div>
               <div className="flex items-center gap-3">
                 <button
-                  onClick={() => { if (ensureAuthed()) setPlayMovie(hero); }}
+                  onClick={() => { if (!ensureAuthed()) return; recordMovieWatch(hero); setPlayMovie(hero); }}
                   className="flex items-center gap-2 bg-white text-black px-7 py-3 rounded-xl font-bold text-sm hover:bg-stone-200 transition shadow-xl shadow-white/10"
                 >
                   <Play className="w-5 h-5 fill-current" /> {t('movies.btn.play')}
@@ -381,6 +427,11 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
         </section>
       )}
 
+      {/* QC */}
+      {!search.trim() && (
+        <div className="px-6 md:px-8 mt-4"><div className="max-w-7xl mx-auto"><AdSlot slot="movies" /></div></div>
+      )}
+
       {/* Search bar — sticky */}
       <div className="sticky top-0 z-30 topbar-mytv px-6 md:px-8 py-3">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center gap-3">
@@ -390,8 +441,15 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
             <input
               type="text" value={search} onChange={e => setSearch(e.target.value)}
               placeholder={t('movies.search.placeholder')}
-              className="w-full pl-10 pr-3 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-[#f36f21] focus:bg-white/10 transition"
+              className="w-full pl-10 pr-11 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder:text-stone-500 focus:outline-none focus:border-[#f36f21] focus:bg-white/10 transition"
             />
+            <button
+              onClick={voiceSearch}
+              title={t('voice.search')}
+              className={`absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center transition-all ${listening ? 'bg-red-500 text-white animate-pulse' : 'bg-white/5 text-stone-400 hover:text-white hover:bg-white/10'}`}
+            >
+              <Mic className="w-4 h-4" />
+            </button>
             {searching && (
               <div className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-[#f36f21] border-t-transparent rounded-full animate-spin"></div>
             )}
@@ -532,9 +590,13 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
         </div>
       ) : (
         <div className="pb-20 space-y-10 pt-6">
-          {/* Tiếp tục xem phim (local) */}
+          {/* Tiếp tục xem phim (giờ xem + tập đang dở) */}
           {movieHistory.length > 0 && (
-            <MovieRow title={`⏪ ${t('mv.continue')}`} items={movieHistory} gridCls={gridCls} onClick={openDetail} loading={false} />
+            <MovieRow title={`⏪ ${t('mv.continue')}`} items={movieHistory} gridCls={gridCls} onClick={openDetail} loading={false} showProgress />
+          )}
+          {/* Vì bạn đã xem... */}
+          {forYou.items.length > 0 && (
+            <MovieRow title={`✨ ${t('mv.for_you', { name: forYou.base?.title || '' })}`} items={forYou.items} gridCls={gridCls} onClick={openDetail} loading={false} />
           )}
           {/* Danh sách của tôi (My List) */}
           {myList.length > 0 && (
@@ -548,6 +610,18 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
             title={tvLocal ? t('movies.row.local_tv', { country: `${countryInfo.flag} ${countryInfo.name}` }) : t('movies.row.popular_tv')}
             items={rows.popularTV} gridCls={gridCls} onClick={openDetail} loading={loading}
           />
+          {/* Hoạt hình */}
+          {cartoons.length > 0 && (
+            <MovieRow title={`🎨 ${t('mv.cartoons')}`} items={cartoons} gridCls={gridCls} onClick={openDetail} loading={false} />
+          )}
+          {/* Lịch chiếu sắp tới */}
+          {rows.upcoming.length > 0 && (
+            <section className="px-6 md:px-8">
+              <button onClick={() => setUpcomingOpen(true)} className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl bg-sky-500/10 border border-sky-500/30 text-sky-300 text-[13px] font-bold hover:bg-sky-500/20 transition-all active:scale-[0.99]">
+                <CalendarClock className="w-4 h-4" />{t('upcoming.open')} ({rows.upcoming.length})
+              </button>
+            </section>
+          )}
 
           {/* Full catalog */}
           <section className="px-6 md:px-8">
@@ -597,12 +671,16 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
           movie={selected}
           trailer={trailer}
           trailerLoading={trailerLoading}
+          genres={genres}
           onClose={() => setSelected(null)}
           onPlay={() => { if (!ensureAuthed()) return; recordMovieWatch(selected); setPlayMovie(selected); }}
-          onMovieChange={(m) => { setSelected(m); }}
+          onMovieChange={(m) => { openDetail(m); }}
           onListChanged={refreshMovieLists}
+          onShare={(m) => setShareMovie(m)}
         />
       )}
+      {shareMovie && <ShareMovieModal movie={shareMovie} onClose={() => setShareMovie(null)} />}
+      {upcomingOpen && <UpcomingModal items={rows.upcoming} onClose={() => setUpcomingOpen(false)} onSelect={(m) => { setUpcomingOpen(false); openDetail(m); }} />}
 
       {/* Full-screen third-party player */}
       {playMovie && <MoviePlayerModal movie={playMovie} onClose={() => { setPlayMovie(null); refreshMovieLists(); }} />}
@@ -610,7 +688,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
   );
 }
 
-function MovieRow({ title, items, gridCls = 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6', onClick, loading }) {
+function MovieRow({ title, items, gridCls = 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6', onClick, loading, showProgress }) {
   return (
     <section className="px-6 md:px-8">
       <h3 className="text-base md:text-xl font-bold mb-3 tracking-tight">{title}</h3>
@@ -618,19 +696,32 @@ function MovieRow({ title, items, gridCls = 'grid-cols-2 sm:grid-cols-3 md:grid-
         {loading
           ? Array.from({ length: 12 }).map((_, i) => <MovieSkeleton key={i} />)
           : items.filter(m => m.poster_path).slice(0, 12).map(m => (
-              <MovieCard key={`${m.media_type}-${m.id}`} movie={m} onClick={onClick} />
+              <MovieCard key={`${m.media_type}-${m.id}`} movie={m} onClick={onClick} showProgress={showProgress} />
             ))}
       </div>
     </section>
   );
 }
 
-function MovieCard({ movie, onClick }) {
+function MovieCard({ movie, onClick, showProgress }) {
   const { t } = useI18n();
   const rating = movie.vote_average || 0;
+  // Trailer tự phát khi rê chuột (desktop): đợi 900ms rồi tải
+  const [hoverKey, setHoverKey] = React.useState(null);
+  const hoverTimer = React.useRef(null);
+  const onEnter = () => {
+    if (window.matchMedia?.('(hover: none)').matches) return;
+    hoverTimer.current = setTimeout(() => {
+      MovieAPI.trailer(movie).then((v) => { if (v?.key) setHoverKey(v.key); }).catch(() => {});
+    }, 900);
+  };
+  const onLeave = () => { clearTimeout(hoverTimer.current); setHoverKey(null); };
+  React.useEffect(() => () => clearTimeout(hoverTimer.current), []);
   return (
     <button
       onClick={() => onClick(movie)}
+      onMouseEnter={onEnter}
+      onMouseLeave={onLeave}
       className="group relative aspect-[2/3] rounded-xl overflow-hidden bg-stone-900 border border-white/5 transition-all duration-300 hover:scale-[1.04] hover:z-10 hover:border-[#f36f21]/40 hover:shadow-2xl hover:shadow-[#f36f21]/20"
     >
       <img
@@ -640,6 +731,24 @@ function MovieCard({ movie, onClick }) {
         loading="lazy"
         onError={e => { e.target.style.display = 'none'; }}
       />
+      {hoverKey && (
+        <span className="absolute inset-0 pointer-events-none">
+          <iframe
+            src={`https://www.youtube.com/embed/${hoverKey}?autoplay=1&mute=1&controls=0&modestbranding=1&rel=0&playsinline=1`}
+            className="w-full h-full"
+            allow="autoplay; encrypted-media"
+            title="preview"
+          />
+        </span>
+      )}
+      {showProgress && (movie.watchSec || 0) > 0 && (
+        <span className="absolute bottom-0 inset-x-0 px-2 py-1 bg-gradient-to-t from-black to-transparent text-left">
+          <span className="text-[9px] font-bold text-emerald-300">⏪ {t('mv.watched_for', { d: fmtWatchSec(movie.watchSec) })}{movie.episode ? ` · T${movie.episode}` : ''}</span>
+          <span className="block h-1 mt-0.5 rounded-full bg-white/20 overflow-hidden">
+            <span className="block h-full rounded-full bg-emerald-400" style={{ width: `${Math.min(100, Math.round((movie.watchSec / 5400) * 100))}%` }} />
+          </span>
+        </span>
+      )}
       {/* Rating badge */}
       {rating > 0 && (
         <span className="absolute top-2 right-2 flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-black/70 backdrop-blur text-[10px] font-bold text-amber-400">
@@ -665,7 +774,7 @@ function MovieCard({ movie, onClick }) {
   );
 }
 
-function MovieDetailModal({ movie, trailer, trailerLoading, onClose, onPlay, onMovieChange, onListChanged }) {
+function MovieDetailModal({ movie, trailer, trailerLoading, genres = [], onClose, onPlay, onMovieChange, onListChanged, onShare }) {
   const { t } = useI18n();
   const [inList, setInList] = useState(() => isWatched(movie));
   const [cast, setCast] = useState([]);
@@ -731,6 +840,16 @@ function MovieDetailModal({ movie, trailer, trailerLoading, onClose, onPlay, onM
                 {movie.media_type === 'tv' && <span className="flex items-center gap-1"><Tv className="w-3 h-3" /> TV Show</span>}
               </div>
               <p className="text-sm text-stone-300 leading-relaxed">{movie.overview}</p>
+              {/* Tag thể loại */}
+              {(movie.genre_ids || []).length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-2.5">
+                  {(movie.genre_ids || []).map((gid) => {
+                    const g = genres.find((x) => x.id === gid);
+                    if (!g) return null;
+                    return <span key={gid} className="px-2 py-0.5 rounded-full bg-white/[0.07] border border-white/10 text-[10px] font-bold text-stone-300">#{g.name}</span>;
+                  })}
+                </div>
+              )}
             </div>
           </div>
 
@@ -750,6 +869,13 @@ function MovieDetailModal({ movie, trailer, trailerLoading, onClose, onPlay, onM
               >
                 {inList ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
                 {inList ? t('mv.following') : 'My List'}
+              </button>
+              <button
+                onClick={() => onShare && onShare(movie)}
+                className="px-4 py-3 font-bold rounded-xl flex items-center gap-2 border bg-white/5 text-stone-300 border-white/10 hover:bg-white/10 transition"
+                title={t('share.share')}
+              >
+                <Share2 className="w-4 h-4" />
               </button>
             </div>
             {!trailer && !trailerLoading && (
@@ -797,6 +923,10 @@ function MovieDetailModal({ movie, trailer, trailerLoading, onClose, onPlay, onM
               </div>
             </div>
           )}
+
+          {/* Nhóm fan + Bình luận */}
+          <FanGroupBox target={movieDeepId(movie)} name={movie.title || movie.name} />
+          <CommentsBox target={movieDeepId(movie)} />
 
           {/* Recommendations */}
           {recs.length > 0 && (

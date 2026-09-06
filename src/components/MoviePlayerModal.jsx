@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { X, RefreshCw, ExternalLink, AlertTriangle, ChevronLeft, ChevronRight, Play, Shield, ShieldOff, SkipForward, Sparkles } from 'lucide-react';
 import { buildEmbedSources, openExternalSearch } from '../services/embeds';
+import { recordMovieProgress, getMovieProgress, fmtWatchSec } from '../services/movieList';
+import { sendBeat } from '../services/social';
+import { useProfile } from '../contexts/ProfileContext';
+import { recordProfileWatch } from '../services/kids';
 
 /**
  * CHRTV - Trình phát phim (multi-server embed)
@@ -25,8 +29,11 @@ const SANDBOX_PERMS = 'allow-scripts allow-same-origin allow-forms allow-present
 
 export default function MoviePlayerModal({ movie, onClose }) {
   const isTV = movie?.media_type === 'tv';
-  const [season, setSeason] = useState(1);
-  const [episode, setEpisode] = useState(1);
+  // Tiếp tục xem: nhớ đúng mùa/tập lần trước
+  const [season, setSeason] = useState(() => getMovieProgress(movie)?.season || 1);
+  const [episode, setEpisode] = useState(() => getMovieProgress(movie)?.episode || 1);
+  const [resumed] = useState(() => getMovieProgress(movie));
+  const { currentProfile } = useProfile();
   const [sourceIdx, setSourceIdx] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -72,6 +79,26 @@ export default function MoviePlayerModal({ movie, onClose }) {
     setReloadKey(k => k + 1);
   }, []);
 
+  // Cộng dồn giờ xem phim (30s/lần) + heartbeat server (BXH/fan/dashboard)
+  const watchRef = useRef({ season, episode });
+  watchRef.current = { season, episode };
+  useEffect(() => {
+    if (!movie?.id) return undefined;
+    sendBeat({ kind: 'movie', ref_id: `${movie.media_type === 'tv' ? 'tv' : 'movie'}-${movie.id}`, ref_name: movie.title || movie.name || '', seconds: 0, viewed: true });
+    const iv = setInterval(() => {
+      const { season: se, episode: ep } = watchRef.current;
+      recordMovieProgress(movie, { sec: 30, season: isTV ? se : 0, episode: isTV ? ep : 0 });
+      sendBeat({ kind: 'movie', ref_id: `${movie.media_type === 'tv' ? 'tv' : 'movie'}-${movie.id}`, ref_name: movie.title || movie.name || '', seconds: 30 });
+      recordProfileWatch(currentProfile?.id || 'guest', 30, movie.title || movie.name || '');
+    }, 30000);
+    return () => {
+      clearInterval(iv);
+      const { season: se, episode: ep } = watchRef.current;
+      recordMovieProgress(movie, { sec: 15, season: isTV ? se : 0, episode: isTV ? ep : 0 });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [movie?.id]);
+
   // ESC đóng
   useEffect(() => {
     const h = (e) => { if (e.key === 'Escape') onClose(); };
@@ -116,6 +143,7 @@ export default function MoviePlayerModal({ movie, onClose }) {
             <p className="text-[10px] text-stone-500 truncate">
               {isTV ? `TV Show · Tập ${episode} - Mùa ${season}` : 'Phim'}
               {' · '}{current?.name || 'nguồn'}
+              {(resumed?.watchSec || 0) > 60 && <span className="text-emerald-400"> · ⏪ đã xem {fmtWatchSec(resumed.watchSec)}</span>}
             </p>
           </div>
         </div>

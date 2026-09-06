@@ -14,14 +14,14 @@ export default function LanguagePicker({ onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[200] bg-gradient-to-br from-black via-[#0f1014] to-black flex items-center justify-center p-4 overflow-auto">
+    <div className="fixed inset-0 z-[200] bg-gradient-to-br from-black via-[#0f1014] to-black flex items-center justify-center p-4 overflow-auto modal-backdrop">
       {/* Background decoration */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-20 -left-20 w-72 h-72 bg-[#f36f21]/10 rounded-full blur-3xl" />
         <div className="absolute -bottom-20 -right-20 w-96 h-96 bg-amber-500/5 rounded-full blur-3xl" />
       </div>
 
-      <div className="relative w-full max-w-2xl bg-[#17181d] border border-white/10 rounded-3xl shadow-2xl overflow-hidden">
+      <div className="relative w-full max-w-2xl bg-[#17181d] border border-white/10 rounded-3xl shadow-2xl shadow-cyan-500/10 overflow-hidden modal-panel">
         {/* Header */}
         <div className="bg-gradient-to-r from-[#f36f21] to-[#8a3a10] p-8 text-center">
           <Globe className="w-12 h-12 mx-auto text-white mb-3" />
@@ -40,9 +40,9 @@ export default function LanguagePicker({ onClose }) {
           </div>
         </div>
 
-        {/* Grid 5 ngôn ngữ */}
+        {/* Grid 15 ngôn ngữ — cuộn khi dài */}
         <div className="px-6 pb-6">
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 max-h-[46vh] overflow-y-auto pr-1">
             {languages.map(l => {
               const isSelected = selected === l.code;
               const isDetected = detectedLang === l.code;

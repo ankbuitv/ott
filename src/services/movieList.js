@@ -60,7 +60,13 @@ export function getMovieHistory() {
   try { return JSON.parse(localStorage.getItem(HIST_KEY) || '[]'); } catch { return []; }
 }
 export function recordMovieWatch(movie) {
+  recordMovieProgress(movie, {});
+}
+// Tiếp tục xem: cộng dồn số giây đã xem + nhớ tập/mùa (TV) + server phát
+// (player là iframe bên thứ 3 nên không tua đúng giây — mở lại phim + đúng tập)
+export function recordMovieProgress(movie, { sec = 0, season = 0, episode = 0 } = {}) {
   if (!movie?.id || !movie.poster_path) return;
+  const prev = getMovieHistory().find((m) => mkey(m) === mkey(movie)) || {};
   let hist = getMovieHistory().filter((m) => mkey(m) !== mkey(movie));
   hist.unshift({
     media_type: movie.media_type === 'tv' ? 'tv' : 'movie',
@@ -68,10 +74,24 @@ export function recordMovieWatch(movie) {
     title: movie.title || movie.name || '',
     poster_path: movie.poster_path || '',
     vote_average: movie.vote_average || 0,
+    watchSec: (prev.watchSec || 0) + Math.max(0, sec || 0),
+    season: season || prev.season || 0,
+    episode: episode || prev.episode || 0,
     at: Date.now(),
   });
   hist = hist.slice(0, 20);
   try { localStorage.setItem(HIST_KEY, JSON.stringify(hist)); } catch {}
+}
+export function getMovieProgress(movie) {
+  if (!movie?.id) return null;
+  return getMovieHistory().find((m) => mkey(m) === mkey(movie)) || null;
+}
+export function fmtWatchSec(sec) {
+  const s = Math.max(0, Math.round(sec || 0));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}′`;
+  return `${Math.floor(m / 60)}h${m % 60 ? `${m % 60}′` : ''}`;
 }
 export function clearMovieHistory() {
   try { localStorage.removeItem(HIST_KEY); } catch {}

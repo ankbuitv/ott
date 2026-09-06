@@ -1,11 +1,15 @@
+@import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800;900&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* ===== CHRTV × MYTV THEME (2026-09) ===== */
+/* ===== CHRTV PLAY THEME — CYAN + CAM GRADIENT (2026-09) ===== */
 :root {
   --orange: #f36f21;
   --orange2: #ff9a3d;
+  --cyan: #22d3ee;
+  --cyan-deep: #0891b2;
+  --grad-brand: linear-gradient(135deg, #22d3ee 0%, #38bdf8 22%, #818cf8 48%, #fb923c 76%, #f36f21 100%);
   --bg: #0b0b0d;
   --bg2: #131316;
   --card: #1b1b1f;
@@ -16,8 +20,10 @@
 @layer base {
   body {
     background-color: #0b0b0d;
+    background-image: radial-gradient(900px 320px at 12% -5%, rgba(243,111,33,.07), transparent 70%), radial-gradient(800px 300px at 88% -5%, rgba(34,211,238,.06), transparent 70%);
+    background-attachment: fixed;
     color: #f2f2f2;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: 'Be Vietnam Pro', 'Inter', system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
@@ -27,14 +33,14 @@
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #2c2c32; border-radius: 8px; }
-::-webkit-scrollbar-thumb:hover { background: var(--orange); }
+::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, var(--cyan), var(--orange)); }
 
 /* TV Remote Focus (cam orange) */
 .tv-focused {
   outline: none !important;
   border-color: var(--orange) !important;
   background-color: rgba(243, 111, 33, 0.15) !important;
-  box-shadow: 0 0 12px rgba(243, 111, 33, 0.4) !important;
+  box-shadow: 0 0 12px rgba(243, 111, 33, 0.4), 0 0 24px rgba(34, 211, 238, 0.28) !important;
   transform: scale(1.03);
   transition: all 0.15s ease-out;
   z-index: 30;
@@ -98,17 +104,17 @@
   display: inline-flex; gap: 2px; align-items: flex-end; height: 12px;
 }
 .eq i {
-  width: 3px; background: #e53935; border-radius: 1px;
+  width: 3px; background: var(--cyan); border-radius: 1px;
   animation: eqBar 1s infinite ease-in-out;
 }
-.eq i:nth-child(1) { height: 6px; }
-.eq i:nth-child(2) { height: 12px; animation-delay: .2s; }
-.eq i:nth-child(3) { height: 8px; animation-delay: .4s; }
+.eq i:nth-child(1) { height: 6px; background: #22d3ee; }
+.eq i:nth-child(2) { height: 12px; animation-delay: .2s; background: #818cf8; }
+.eq i:nth-child(3) { height: 8px; animation-delay: .4s; background: #fb923c; }
 
 /* Tiêu đề hero kiểu mytv: chữ nghiêng đậm + gradient cam */
 .title-art {
   font-style: italic;
-  background: linear-gradient(180deg, #fff 30%, #ffd9a8 75%, #ff9a3d 100%);
+  background: linear-gradient(180deg, #fff 25%, #a5f3fc 55%, #fdba74 82%, #f36f21 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -117,11 +123,12 @@
 
 /* Nút cam mytv */
 .btn-orange {
-  background: linear-gradient(135deg, var(--orange2), var(--orange));
-  box-shadow: 0 6px 20px rgba(243, 111, 33, 0.4);
-  transition: filter .18s, transform .18s;
+  background: linear-gradient(135deg, #ffb020 0%, var(--orange) 55%, #d94f12 100%);
+  box-shadow: 0 6px 22px rgba(243, 111, 33, 0.45), 0 0 0 1px rgba(34, 211, 238, 0.28), 0 0 18px rgba(34, 211, 238, 0.18);
+  transition: filter .18s, transform .18s, box-shadow .18s;
 }
-.btn-orange:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.btn-orange:hover { filter: brightness(1.07); transform: translateY(-1px); box-shadow: 0 10px 28px rgba(243, 111, 33, 0.5), 0 0 0 1px rgba(34, 211, 238, 0.45), 0 0 26px rgba(34, 211, 238, 0.3); }
+.btn-orange:active { transform: translateY(0) scale(.97); }
 
 /* Card mytv: hover nâng + scale nhẹ */
 .mytv-card {
@@ -164,16 +171,18 @@ input[type="range"]::-webkit-slider-thumb {
   background: var(--orange);
   cursor: pointer;
   border: 2px solid #fff;
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.25);
 }
 input[type="range"]::-moz-range-thumb {
   width: 12px; height: 12px; border-radius: 50%;
   background: var(--orange);
   cursor: pointer;
   border: 2px solid #fff;
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.25);
 }
 
 /* Selection */
-::selection { background-color: rgba(243, 111, 33, 0.35); color: #fff; }
+::selection { background: linear-gradient(90deg, rgba(34, 211, 238, 0.55), rgba(243, 111, 33, 0.55)); color: #fff; }
 
 /* Safe area for mobile */
 .safe-area-bottom { padding-bottom: env(safe-area-inset-bottom, 0); }
@@ -195,3 +204,105 @@ input[type="range"]::-moz-range-thumb {
 @keyframes shimmer {
   100% { transform: translateX(100%); }
 }
+
+/* ===== BRAND GRADIENT CYAN → CAM ===== */
+.grad-brand { background: var(--grad-brand); }
+.text-grad {
+  background: var(--grad-brand);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.anim-grad { background-size: 220% 220%; animation: gradientShift 7s ease infinite; }
+@keyframes gradientShift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+/* ===== POPUP & MOTION (2026-09) ===== */
+@keyframes popIn {
+  0% { opacity: 0; transform: scale(.82) translateY(18px); }
+  60% { opacity: 1; transform: scale(1.03) translateY(-2px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes slideUpIn {
+  from { opacity: 0; transform: translateY(48px) scale(.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes zoomFade {
+  from { opacity: 0; transform: scale(1.06); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes glowPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.45), 0 0 22px rgba(243, 111, 33, 0.25); }
+  50% { box-shadow: 0 0 0 7px rgba(34, 211, 238, 0), 0 0 38px rgba(243, 111, 33, 0.5); }
+}
+@keyframes floatY {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+@keyframes tickerX {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.anim-pop { animation: popIn .38s cubic-bezier(.22,1.25,.36,1) both; }
+.anim-pop-fast { animation: popIn .26s cubic-bezier(.22,1.25,.36,1) both; }
+.anim-slide-up { animation: slideUpIn .35s cubic-bezier(.22,.9,.3,1) both; }
+.anim-zoom-fade { animation: zoomFade .5s ease both; }
+.anim-glow { animation: glowPulse 2.4s ease-in-out infinite; }
+.anim-float { animation: floatY 3.5s ease-in-out infinite; }
+/* Chuẩn cho mọi modal/popup: nền tối blur + hộp thoại nảy lên */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 120;
+  background: rgba(2,2,4,.74);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 1rem; overflow-y: auto;
+  animation: fadeIn .25s ease both;
+}
+.modal-panel {
+  position: relative;
+  background: linear-gradient(180deg, #191a22 0%, #101116 100%);
+  border: 1px solid rgba(255,255,255,.11);
+  border-radius: 1.4rem;
+  box-shadow: 0 30px 80px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.07);
+  animation: popIn .36s cubic-bezier(.22,1.25,.36,1) both;
+  max-height: 92vh;
+}
+/* Tia quét khung QR */
+@keyframes scanY { 0%, 100% { transform: translateY(4px); opacity: 1; } 50% { transform: translateY(196px); opacity: .55; } }
+.anim-scan { animation: scanY 2.2s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
+
+/* ===== COLOR THEMES (chọn trong Cài đặt) ===== */
+body[data-theme="ocean"] {
+  --orange: #0ea5e9;
+  --orange2: #22d3ee;
+  --cyan: #a5f3fc;
+  --cyan-deep: #0369a1;
+  --grad-brand: linear-gradient(135deg, #22d3ee 0%, #0ea5e9 40%, #2563eb 75%, #1e3a8a 100%);
+}
+body[data-theme="fire"] {
+  --orange: #f97316;
+  --orange2: #fdba74;
+  --cyan: #fbbf24;
+  --cyan-deep: #b45309;
+  --grad-brand: linear-gradient(135deg, #fde047 0%, #fb923c 40%, #f36f21 75%, #be123c 100%);
+}
+/* ===== TV MODE: chữ to, focus rõ cho TV/box ===== */
+html.tvmode { font-size: 112.5%; }
+html.tvmode .tv-focused {
+  transform: scale(1.06);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.8), 0 0 26px rgba(243, 111, 33, 0.55) !important;
+}
+
+/* Equalizer bars (radio mode) */
+@keyframes eqBounce { 0%, 100% { transform: scaleY(0.4); } 50% { transform: scaleY(1); } }
+.anim-eq { transform-origin: bottom; animation: eqBounce 0.9s ease-in-out infinite; }

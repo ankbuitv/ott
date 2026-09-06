@@ -1,8 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import { Search, X, Clock, Radio, Play } from 'lucide-react';
 import { formatTimeHHMM, parseEpgDate } from '../utils/dateUtils';
+import { useI18n } from '../contexts/I18nContext';
 
 export default function SearchEPG({ epgData, channels, onPlayCatchup, onSelectChannel }) {
+  const { t } = useI18n();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
 
@@ -25,16 +27,16 @@ export default function SearchEPG({ epgData, channels, onPlayCatchup, onSelectCh
   if (!open) {
     return (
       <button onClick={() => setOpen(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900/60 border border-slate-800/50 rounded-xl text-xs text-slate-400 hover:text-white hover:border-slate-700 transition-all">
-        <Search className="w-3.5 h-3.5" /> Tìm chương trình
+        <Search className="w-3.5 h-3.5" /> {t('epg.search_prog')}
       </button>
     );
   }
 
   return (
-    <div className="bg-[#13151c] border border-slate-800/40 rounded-xl p-3 space-y-2">
+    <div className="bg-[#13151c] border border-slate-800/40 rounded-xl p-3 space-y-2 anim-pop-fast">
       <div className="flex items-center gap-2">
         <Search className="w-4 h-4 text-slate-500 shrink-0" />
-        <input autoFocus type="text" value={query} onChange={e => setQuery(e.target.value)} placeholder="Nhập tên chương trình..." className="flex-1 bg-transparent text-sm text-white placeholder:text-slate-600 focus:outline-none" />
+        <input autoFocus type="text" value={query} onChange={e => setQuery(e.target.value)} placeholder={t('epg.search_ph')} className="flex-1 bg-transparent text-sm text-white placeholder:text-slate-600 focus:outline-none" />
         <button onClick={() => { setOpen(false); setQuery(''); }} className="p-1 hover:bg-slate-800 rounded"><X className="w-4 h-4 text-slate-500" /></button>
       </div>
       {query.trim() && results.length > 0 && (
@@ -67,7 +69,7 @@ export default function SearchEPG({ epgData, channels, onPlayCatchup, onSelectCh
           ))}
         </div>
       )}
-      {query.trim() && results.length === 0 && <p className="text-xs text-slate-600 text-center py-3">Không tìm thấy chương trình</p>}
+      {query.trim() && results.length === 0 && <p className="text-xs text-slate-600 text-center py-3">{t('epg.search_none')}</p>}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import shaka from 'shaka-player';
 import {
   Play, Pause, Volume2, VolumeX, Maximize, Minimize,
@@ -6,7 +6,7 @@ import {
   ChevronUp, ChevronDown, RefreshCw, Signal, Info, X, List,
   Settings, Monitor, Gauge, Wifi, Activity, Hash, Timer,
   Camera, PictureInPicture2 as PiP, Volume1, Captions, AudioLines,
-  Share2, Cast, Airplay, Users, Send, Smile, PartyPopper, Tv
+  Share2, Cast, Airplay, Users, Send, Smile, PartyPopper, Tv, Smartphone, Headphones, Moon, Lock, Flag, BarChart3, Minimize2, Maximize2
 } from 'lucide-react';
 import FocusableWrapper from './FocusableWrapper';
 import { formatTimeHHMM, calculateProgramProgress } from '../utils/dateUtils';
@@ -19,14 +19,22 @@ import {
   joinRoom, leaveRoom, sendPartyChat, sendPartyReaction, sendPartyState, onPartyMessage, PARTY_EMOJIS,
 } from '../services/watchParty';
 import { isProxiedStreamUrl, refreshStreamToken, applyStreamClientHeaders, makeStreamRequestFilter } from '../services/streamGuard';
+import { UA_PRESETS, effectiveUA, getGlobalUA, setChannelUA, setGlobalUA, shortUA } from '../services/userAgent';
+import { sendFeedback } from '../services/feedback';
+import { maskScores } from '../utils/spoiler';
 import { parseEpgDate } from '../utils/dateUtils';
 
-const FALLBACK_STREAM_URL_HTTP = "http://bore.pub:30113/hls/index.m3u8";
-const FALLBACK_STREAM_URL = (typeof window !== 'undefined' && window.location?.protocol === 'https:')
-  ? `/api/proxy?url=${encodeURIComponent("http://bore.pub:30113/hls/index.m3u8")}`
-  : FALLBACK_STREAM_URL_HTTP;
 const VLC_USER_AGENT = "VLC/3.0.21 LibVLC/3.0.21";
 
+
+function HoldToUnlock({ onUnlock }) {
+  const t = React.useRef(null);
+  const [hot, setHot] = React.useState(false);
+  const start = () => { setHot(true); t.current = setTimeout(() => { setHot(false); onUnlock && onUnlock(); }, 1000); };
+  const cancel = () => { setHot(false); if (t.current) clearTimeout(t.current); };
+  React.useEffect(() => () => { if (t.current) clearTimeout(t.current); }, []);
+  return <button onPointerDown={start} onPointerUp={cancel} onPointerLeave={cancel} className={`px-6 py-3 rounded-2xl font-bold text-sm transition-all ${hot ? 'bg-emerald-500 text-white scale-95' : 'bg-white/10 text-white border border-white/20'}`}>Nhấn giữ để mở khoá</button>;
+}
 
 function formatBytes(b) { if (!b) return '0 B'; const k=1024, s=['B','KB','MB','GB']; const i=Math.floor(Math.log(b)/Math.log(k)); return (b/Math.pow(k,i)).toFixed(1)+' '+s[i]; }
 function formatBitrate(bps) { if (!bps) return 'N/A'; if (bps>=1e6) return (bps/1e6).toFixed(1)+' Mbps'; if (bps>=1e3) return (bps/1e3).toFixed(0)+' Kbps'; return bps+' bps'; }
@@ -39,9 +47,12 @@ export default function VideoPlayer({
   epgLookup = null,           // (channelId) => {now, next} - strip "kenh khac dang chieu gi"
   initialPartyRoom = null,    // vao thang phong party tu deep link ?party=
   currentUserName = 'Khach',
+  mini = false,               // mini-player thu nhỏ
+  onMinimize = null, onExpand = null,
 }) {
   const videoRef = useRef(null);
   const containerRef = useRef(null);
+  const channelName = channel?.name || '';
   const shakaPlayerRef = useRef(null);
 
   const [isPlaying, setIsPlaying] = useState(true);
@@ -50,9 +61,15 @@ export default function VideoPlayer({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showOverlay, setShowOverlay] = useState(true);
   const [isBuffering, setIsBuffering] = useState(true);
-  const [isFallbackActive, setIsFallbackActive] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
-  const [activeUrl, setActiveUrl] = useState(streamUrl || FALLBACK_STREAM_URL);
+  const [showErrorPopup, setShowErrorPopup] = useState(false);
+  const [loadToken, setLoadToken] = useState(0);
+  // Lỗi phát -> popup (không tự chuyển dự phòng)
+  const showStreamError = (msg) => { setErrorMessage(msg); setShowErrorPopup(true); setIsBuffering(false); };
+  const showErrorPopupRef = useRef(false); // chống popup trùng khi lỗi fatal dồn dập
+  const clearStreamError = () => { setErrorMessage(null); setShowErrorPopup(false); showErrorPopupRef.current = false; };
+  const retryStream = () => { clearStreamError(); setIsBuffering(true); setLoadToken(x => x + 1); };
+  const [activeUrl, setActiveUrl] = useState(streamUrl || '');
   const streamFilterRef = useRef(null);  // filter xoay token manifest theo kênh/điểm bắt đầu hiện tại
   const tokenRetryRef = useRef(false);   // chỉ tự xoay token lại 1 lần mỗi lần load
   const activeUrlRef = useRef(activeUrl);
@@ -63,6 +80,27 @@ export default function VideoPlayer({
   const [showChannelList, setShowChannelList] = useState(false);
   const [showSleepTimer, setShowSleepTimer] = useState(false);
   const [showVolumeSlider, setShowVolumeSlider] = useState(false);
+  const [showUAMenu, setShowUAMenu] = useState(false);
+  const [uaTick, setUaTick] = useState(0); // ép re-render khi đổi UA
+  const [customUA, setCustomUA] = useState('');
+  const [radioMode, setRadioMode] = useState(false);
+  const [nightMode, setNightMode] = useState(false);
+  const [kidLocked, setKidLocked] = useState(false);
+  const [playRate, setPlayRate] = useState(1);
+  const [showSpeedMenu, setShowSpeedMenu] = useState(false);
+  const [showReport, setShowReport] = useState(false);
+  const [reportMsg, setReportMsg] = useState('');
+  const [reportType, setReportType] = useState('cant_play');
+  const [netInfo, setNetInfo] = useState({ downlink: 0, rtt: 0, type: '' });
+  const [partyTab, setPartyTab] = useState('party'); // 'party' | 'channel'
+  const [showPollForm, setShowPollForm] = useState(false);
+  const [pollDraft, setPollDraft] = useState({ q: '', opts: ['', ''] });
+  const lastPosSave = useRef(0);
+  const uaOverrideRef = useRef('');
+  // UA hiệu lực: override user > '' (server tự dùng UA kênh/VLC)
+  const channelRequiredUA = channel?.user_agent || '';
+  const currentUAOverride = (() => { try { return effectiveUA(channel); } catch { return ''; } })();
+  const displayUA = currentUAOverride || channelRequiredUA || 'VLC/3.0.21 LibVLC/3.0.21';
 
   const [videoStats, setVideoStats] = useState({ resolution: 'N/A', fps: 0, bitrate: 0, bufferLength: 0, codec: 'N/A', width: 0, height: 0, droppedFrames: 0, decodedFrames: 0 });
   const [availableTracks, setAvailableTracks] = useState([]);
@@ -88,6 +126,7 @@ export default function VideoPlayer({
   // Data saver (ep <=480p) — bat trong Settings/quality menu
   const { settings, updateSetting } = useSettings();
   const dataSaver = !!settings.dataSaver;
+  const dataSaverCap = Number(settings.dataSaverCap || 480);
 
   // Watch party + reactions
   const [showParty, setShowParty] = useState(!!initialPartyRoom);
@@ -124,6 +163,11 @@ export default function VideoPlayer({
       setShowQualityMenu(false);
       setShowVolumeSlider(false);
       setShowSleepTimer(false);
+      setShowUAMenu(false);
+      setShowAudioMenu(false);
+      setShowSubtitleMenu(false);
+      setShowSpeedMenu(false);
+      setShowReport(false);
     }, 5000);
   }, []);
 
@@ -193,25 +237,31 @@ export default function VideoPlayer({
     const p = shakaPlayerRef.current;
     if (!p) return;
     try {
-      p.configure({ abr: { maxHeight: dataSaver ? 480 : undefined } });
+      p.configure({ abr: { maxHeight: dataSaver ? dataSaverCap : undefined } });
       // Neu dang phat qua cao -> ha xuong ban ghi phu hop
       const tracks = p.getVariantTracks?.() || [];
       if (dataSaver) {
         const active = tracks.find(t => t.active);
-        if (active && active.height && active.height > 480) {
-          const best = tracks.filter(t => t.height && t.height <= 480).sort((a, b) => b.height - a.height)[0];
+        if (active && active.height && active.height > dataSaverCap) {
+          const best = tracks.filter(t => t.height && t.height <= dataSaverCap).sort((a, b) => b.height - a.height)[0];
           if (best) { p.selectVariantTrack(best); addToast(`Tiết kiệm data: hạ về ${best.height}p`, 'info'); }
         }
       }
     } catch {}
-  }, [dataSaver, addToast]);
+  }, [dataSaver, dataSaverCap, addToast]);
 
-  // ============ WATCH PARTY (D1 + polling) ============
+  // ============ WATCH PARTY + CHAT KÊNH (D1 + polling) ============
+  const channelRoom = channel?.channel_id ? `live:${channel.channel_id}` : '';
+  const activeRoomRef = useRef('');
   // Host: gui trang thai moi khi doi kenh; Guest: nhan state -> tu doi kenh theo host
   useEffect(() => {
-    if (!partyRoom) return undefined;
-    joinRoom(partyRoom, currentUserName, isHost);
+    const room = partyTab === 'channel' ? channelRoom : partyRoom;
+    activeRoomRef.current = room;
+    if (!room) return undefined;
+    setPartyChat([]); setPartyMembers([]);
+    joinRoom(room, currentUserName, partyTab === 'party' && isHost);
     const off = onPartyMessage((msg) => {
+      if (msg.room && activeRoomRef.current && msg.room !== activeRoomRef.current) return;
       if (msg.type === 'presence') {
         setPartyMembers(msg.members || []);
       } else if (msg.type === 'chat') {
@@ -231,20 +281,21 @@ export default function VideoPlayer({
     });
     return () => { off(); leaveRoom(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [partyRoom]);
+  }, [partyRoom, partyTab, channel?.channel_id]);
 
   // Host phat tin hieu khi doi kenh
   useEffect(() => {
-    if (isHost && partyRoom && channel) {
+    if (isHost && partyRoom && partyTab === 'party' && channel) {
       sendPartyState({ channelId: channel.channel_id, channelName: channel.name });
     }
-  }, [isHost, partyRoom, channel?.channel_id]);
+  }, [isHost, partyRoom, partyTab, channel?.channel_id]);
 
   const createParty = () => {
     const code = Math.random().toString(36).slice(2, 7).toUpperCase();
     setPartyRoom(`party:${code}`);
     setIsHost(true);
     setShowParty(true);
+    setPartyTab('party');
     setPartyChat([]);
     // Effect [partyRoom] sẽ gọi joinRoom(room, name, isHost=true)
     addToast(`Đã tạo phòng ${code} — chia sẻ link cho bạn bè!`, 'success');
@@ -255,6 +306,7 @@ export default function VideoPlayer({
     setPartyRoom(room);
     setIsHost(false);
     setShowParty(true);
+    setPartyTab('party');
     setPartyChat([]);
     addToast(`Đã vào phòng ${room.replace('party:', '')}`, 'success');
   };
@@ -267,6 +319,47 @@ export default function VideoPlayer({
     setShowParty(false);
   };
 
+  // Vote nhanh trong party: mã hoá qua chat (không cần API mới)
+  const POLL_PREFIX = '◈POLL:';
+  const VOTE_PREFIX = '◈VOTE:';
+  const polls = useMemo(() => {
+    const map = new Map();
+    for (const c of partyChat) {
+      if (c.sys || !c.text) continue;
+      if (c.text.startsWith(POLL_PREFIX)) {
+        try { const q = JSON.parse(c.text.slice(POLL_PREFIX.length)); if (q && q.id && Array.isArray(q.opts)) map.set(q.id, { ...q, from: c.from, votes: {} }); } catch {}
+      } else if (c.text.startsWith(VOTE_PREFIX)) {
+        const m = c.text.slice(VOTE_PREFIX.length).split(':');
+        const poll = map.get(m[0]);
+        if (poll) poll.votes[c.from] = Number(m[1]) || 0;
+      }
+    }
+    return [...map.values()].slice(-2);
+  }, [partyChat]);
+  const myVotes = useMemo(() => {
+    const v = {};
+    for (const c of partyChat) {
+      if (c.text && c.text.startsWith(VOTE_PREFIX) && c.from === currentUserName) {
+        const m = c.text.slice(VOTE_PREFIX.length).split(':');
+        v[m[0]] = Number(m[1]) || 0;
+      }
+    }
+    return v;
+  }, [partyChat, currentUserName]);
+  const sendPoll = useCallback(() => {
+    const q = pollDraft.q.trim();
+    const opts = pollDraft.opts.map(o => o.trim()).filter(Boolean);
+    if (!q || opts.length < 2) { addToast(t('vp.toast_poll_need'), 'error'); return; }
+    sendPartyChat(POLL_PREFIX + JSON.stringify({ id: Date.now().toString(36), q: q.slice(0, 80), opts: opts.slice(0, 4).map(o => o.slice(0, 30)) }));
+    setPollDraft({ q: '', opts: ['', ''] });
+    setShowPollForm(false);
+    resetOverlayTimer();
+  }, [pollDraft, addToast, resetOverlayTimer]);
+  const votePoll = useCallback((id, idx) => {
+    sendPartyChat(`${VOTE_PREFIX}${id}:${idx}`);
+    resetOverlayTimer();
+  }, [resetOverlayTimer]);
+
   const react = (emoji) => {
     sendPartyReaction(emoji);
     const id = Date.now() + Math.random();
@@ -275,6 +368,16 @@ export default function VideoPlayer({
     resetOverlayTimer();
   };
 
+  const submitReport = useCallback(async () => {
+    try {
+      const repLabels = { cant_play: 'Kênh không phát được', freeze: 'Đứng hình/giật', wrong_epg: 'Sai lịch phát sóng', poor_q: 'Chất lượng quá kém', bad_ua: 'Sai User-Agent', other: 'Khác' };
+      await sendFeedback({ channel_id: channel?.channel_id, message: `[${repLabels[reportType] || reportType}] ${channel?.name || ''}${reportMsg ? ' — ' + reportMsg : ''}`.slice(0, 500), upstreamUA: displayUA, program: epgNow?.title || '' });
+      addToast(t('vp.toast_rep_ok'), 'success');
+      setShowReport(false); setReportMsg('');
+    } catch { addToast(t('vp.toast_rep_fail'), 'error'); }
+    resetOverlayTimer();
+  }, [channel, reportType, reportMsg, displayUA, epgNow, addToast, resetOverlayTimer]);
+
   // ============ SHARE DEEP LINK ============
   const shareChannel = useCallback(async () => {
     const base = window.location.origin + window.location.pathname;
@@ -282,7 +385,7 @@ export default function VideoPlayer({
     if (partyRoom) params.set('party', partyRoom.replace('party:', ''));
     const url = `${base}?${params.toString()}`;
     try {
-      if (navigator.share) await navigator.share({ title: channel?.name || 'CHRTV', url });
+      if (navigator.share) await navigator.share({ title: channel?.name || 'CHRTV PLAY', url });
       else {
         await navigator.clipboard.writeText(url);
         addToast(t('player.copy_link'), 'success');
@@ -305,9 +408,9 @@ export default function VideoPlayer({
   });
 
   const toggleCast = useCallback(async () => {
-    addToast('Đang tìm thiết bị Cast…', 'info');
+    addToast(t('vp.toast_casting'), 'info');
     const ok = await loadCastSdk();
-    if (!ok || !window.cast?.framework) { addToast('Chromecast không khả dụng (cần Chrome)', 'error'); return; }
+    if (!ok || !window.cast?.framework) { addToast(t('vp.toast_cast_na'), 'error'); return; }
     try {
       const context = window.cast.framework.CastContext.getInstance();
       context.setOptions({
@@ -320,12 +423,12 @@ export default function VideoPlayer({
         const mimeType = isMpdUrl(activeUrl) ? 'application/dash+xml' : 'application/x-mpegurl';
         const mediaInfo = new window.chrome.cast.media.MediaInfo(activeUrl, mimeType);
         mediaInfo.metadata = new window.chrome.cast.media.GenericMediaMetadata();
-        mediaInfo.metadata.title = channel?.name || 'CHRTV';
+        mediaInfo.metadata.title = channel?.name || 'CHRTV PLAY';
         const req = new window.chrome.cast.media.LoadRequest(mediaInfo);
         await session.loadMedia(req);
         addToast(`Đang chiếu ${channel?.name || ''} lên TV 📺`, 'success');
       }
-    } catch (e) { addToast('Không kết nối được Cast', 'error'); }
+    } catch (e) { addToast(t('vp.toast_cast_fail'), 'error'); }
     resetOverlayTimer();
   }, [activeUrl, channel, addToast, resetOverlayTimer, isMpdUrl]);
 
@@ -334,7 +437,7 @@ export default function VideoPlayer({
     if (v && v.webkitShowPlaybackTargetPicker) {
       v.webkitShowPlaybackTargetPicker();
     } else {
-      addToast('AirPlay chỉ hỗ trợ trên Safari (iPhone/iPad/Mac)', 'info');
+      addToast(t('vp.toast_airplay'), 'info');
     }
     resetOverlayTimer();
   }, [addToast, resetOverlayTimer]);
@@ -372,14 +475,18 @@ export default function VideoPlayer({
       }
     }
 
-    const targetUrl = streamUrl || FALLBACK_STREAM_URL;
+    const targetUrl = streamUrl || '';
     setActiveUrl(targetUrl);
-    setIsFallbackActive(false);
     setErrorMessage(null);
+    setShowErrorPopup(false);
     setIsBuffering(true);
 
     // === 2. Đặt filter xoay token + header upstream UA cho lần load này ===
-    const channelUa = channel?.user_agent;
+    // Ưu tiên override của user (chọn trong player, lưu localStorage) — fix kênh cần Dalvik
+    let userUaOverride = '';
+    try { userUaOverride = effectiveUA(channel); } catch {}
+    uaOverrideRef.current = userUaOverride;
+    const channelUa = userUaOverride || channel?.user_agent;
     let catchupAt = 0;
     if (isCatchupMode && catchupProgram?.start) {
       try { catchupAt = Math.floor(parseEpgDate(catchupProgram.start).getTime() / 1000); } catch (e) {}
@@ -392,7 +499,8 @@ export default function VideoPlayer({
         ne.clearRequestFilters();
         ne.registerRequestFilter((type, req) => {
           applyStreamClientHeaders(req.headers);
-          if (channelUa) { try { req.headers['X-CHRTV-Upstream-UA'] = channelUa; } catch (e) {} }
+          const liveUa = uaOverrideRef.current || channel?.user_agent || '';
+          if (liveUa) { try { req.headers['X-CHRTV-Upstream-UA'] = liveUa; } catch (e) {} }
           const f = streamFilterRef.current; // delegate xoay token (đọc ref — luôn đúng phiên load)
           if (f) { try { return f(type, req); } catch (e) { return true; } }
           return true;
@@ -410,11 +518,12 @@ export default function VideoPlayer({
         
         // ClearKey t? URL ho?c t? channel (M3U #KODIPROP)
         let clearKey = parseClearKey(url);
-        if (!clearKey && channel?.clearKeyId && channel?.clearKey) {
-          clearKey = {
-            keyId: hexToUint8(channel.clearKeyId),
-            key: hexToUint8(channel.clearKey),
-          };
+        const ckId = channel?.clearKeyId || channel?.clear_key_id;
+        const ckKey = channel?.clearKey || channel?.clear_key;
+        if (!clearKey && ckId && ckKey) {
+          try {
+            clearKey = { keyId: hexToUint8(String(ckId)), key: hexToUint8(String(ckKey)) };
+          } catch {}
         }
         if (clearKey) {
           try { player.configure({ drm: { clearKeys: { [ab2hex(clearKey.keyId)]: ab2hex(clearKey.key) } } }); } catch (e) {}
@@ -428,6 +537,16 @@ export default function VideoPlayer({
         }
 
         await player.load(url);
+        // Xem tiếp: khôi phục vị trí xem dở (catchup)
+        try {
+          const pk = (isCatchupMode && catchupProgram && channel) ? `${channel.channel_id}|${catchupProgram.start}` : '';
+          const saved = pk ? JSON.parse(localStorage.getItem('chrtv_pos') || '{}') : null;
+          if (saved && saved.key === pk && saved.t > 15) {
+            const applySeek = () => { try { if (videoEl.duration && saved.t < videoEl.duration - 20) { videoEl.currentTime = saved.t; addToast(`Xem tiếp từ ${new Date(saved.t * 1000).toISOString().slice(11, 19)}`, 'info'); } } catch {} };
+            if (videoEl.readyState >= 1) applySeek();
+            else videoEl.addEventListener('loadedmetadata', applySeek, { once: true });
+          }
+        } catch {}
         videoEl.play().catch(() => setIsPlaying(false));
         setIsBuffering(false);
         try {
@@ -445,12 +564,12 @@ export default function VideoPlayer({
         // Bị chặn theo gói/đăng nhập — hiện thông báo, KHÔNG tự fallback (tránh lách)
         if (/LOGIN_REQUIRED/.test(errText)) {
           setIsBuffering(false);
-          setErrorMessage('🔒 Kênh này cần đăng nhập để xem — đóng trình phát rồi đăng nhập/đăng ký (miễn phí).');
+          showStreamError(t('vp.err_login'));
           return;
         }
         if (/PLAN_REQUIRED/.test(errText)) {
           setIsBuffering(false);
-          setErrorMessage('💎 Kênh thuộc gói cao hơn — vào mục Mua Gói kích hoạt (tạm miễn phí).');
+          showStreamError(t('vp.err_plan'));
           return;
         }
         // Token hết hạn/bị từ chối → xin token MỚI từ server, load lại đúng 1 lần
@@ -466,28 +585,23 @@ export default function VideoPlayer({
               setActiveUrl(retryUrl);
               await player.load(retryUrl);
               videoEl.play().catch(() => {});
-              setIsBuffering(false); setIsFallbackActive(false); setErrorMessage(null);
+              setIsBuffering(false); setErrorMessage(null); setShowErrorPopup(false);
               return;
             }
           } catch (e) {
-            if (e?.code === 'LOGIN_REQUIRED') setErrorMessage('Cần đăng nhập để xem kênh này');
-            else if (e?.code === 'PLAN_REQUIRED') setErrorMessage('Kênh này thuộc gói cao hơn — vào Mua Gói để xem');
+            if (e?.code === 'LOGIN_REQUIRED') showStreamError(t('vp.err_login_short'));
+            else if (e?.code === 'PLAN_REQUIRED') showStreamError(t('vp.err_plan_short'));
           }
           /* rơi xuống fallback bên dưới */
         }
-        // MPD fails → try fallback HLS (không proxy, proxy không handle MPD segments)
-        const isMpd = isMpdUrl(targetUrl) || channel?.manifest_type === 'mpd';
-        if (isMpd && !targetUrl.includes('bore.pub')) {
-          setIsFallbackActive(true);
-          setErrorMessage("MPD không phát ???c. ?ã chuy?n sang HLS d? phòng.");
-          try { await player.load(FALLBACK_STREAM_URL); videoEl.play().catch(() => {}); setIsBuffering(false); }
-          catch { setErrorMessage("Không th? k?t n?i MPD và c? HLS d? phòng."); setIsBuffering(false); }
-        } else {
-          setIsFallbackActive(true);
-          setErrorMessage("Lu?ng chính gián ?o?n, chuy?n d? phòng...");
-          try { await player.load(FALLBACK_STREAM_URL); videoEl.play().catch(() => {}); setIsBuffering(false); }
-          catch { setErrorMessage("Không th? k?t n?i."); setIsBuffering(false); }
-        }
+        // Kênh lỗi -> popup thân thiện, GIẤU mã kỹ thuật (Shaka error 1002...) — vẫn giữ kênh + nút thử lại
+        let cleanMsg = String(errText || '')
+          .replace(/shaka[^a-z0-9]error[^a-z0-9]*\d+[^]*/gi, '')
+          .replace(/\berror\s*\d+\b[^]*/gi, '')
+          .replace(/\b(1001|1002|1003|2001|3000|4000|5000)\b/g, '')
+          .replace(/\s{2,}/g, ' ').trim();
+        if (/^\d+$/.test(cleanMsg) || /^(network|http|load|failed)[^a-z]*$/i.test(cleanMsg)) cleanMsg = '';
+        showStreamError(t('vp.err_play', { msg: cleanMsg ? cleanMsg.slice(0, 120) : '' }));
       }
     };
 
@@ -515,7 +629,16 @@ export default function VideoPlayer({
       const isTokenIssue =
         /TOKEN_(INVALID|EXPIRED|SID_MISMATCH|USER_MISMATCH|SCOPE)|PLAN_REQUIRED|LOGIN_REQUIRED/.test(code) ||
         [401, 403].includes(httpStatus);
-      if (!isTokenIssue || tokenRetryRef.current) return;
+      if (!isTokenIssue) {
+        // Lỗi fatal giữa chừng (vd mất luồng) -> popup thân thiện, KHÔNG hiện mã Shaka
+        const sev = detail.severity;
+        if ((sev === 2 || sev === '2' || sev === 'CRITICAL') && !showErrorPopupRef.current) {
+          showErrorPopupRef.current = true;
+          showStreamError(t('vp.err_play', { msg: '' }));
+        }
+        return;
+      }
+      if (tokenRetryRef.current) return;
       const u = activeUrlRef.current;
       if (!isProxiedStreamUrl(u)) return;
       tokenRetryRef.current = true;
@@ -531,9 +654,9 @@ export default function VideoPlayer({
         }
       } catch (e2) {
         if (e2 && e2.code === 'LOGIN_REQUIRED') {
-          setErrorMessage('Cần đăng nhập để xem kênh này');
+          showStreamError(t('vp.err_login_short'));
         } else if (e2 && e2.code === 'PLAN_REQUIRED') {
-          setErrorMessage('Kênh này thuộc gói cao hơn — vào Mua Gói để xem');
+          showStreamError(t('vp.err_plan_short'));
         }
       }
     };
@@ -546,7 +669,29 @@ export default function VideoPlayer({
         player.removeEventListener('error', onFatalError);
       }
     };
-  }, [streamUrl, parseClearKey, channel?.clearKeyId, channel?.clearKey, channel?.user_agent, channel?.manifest_type]);
+  }, [streamUrl, loadToken, parseClearKey, channel?.clearKeyId, channel?.clearKey, channel?.clear_key_id, channel?.clear_key, channel?.user_agent, channel?.manifest_type]);
+
+  // Mạng realtime (Network Information API)
+  useEffect(() => {
+    const read = () => { try { const c = navigator.connection; if (c) setNetInfo({ downlink: c.downlink || 0, rtt: c.rtt || 0, type: c.effectiveType || '' }); } catch {} };
+    read();
+    try { navigator.connection?.addEventListener('change', read); } catch {}
+  }, []);
+
+  // Lưu vị trí xem dở (catchup) mỗi 5s
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return undefined;
+    const onTime = () => {
+      if (!isCatchupMode || !catchupProgram || !channel) return;
+      const now = Date.now();
+      if (now - lastPosSave.current < 5000) return;
+      lastPosSave.current = now;
+      try { localStorage.setItem('chrtv_pos', JSON.stringify({ key: `${channel.channel_id}|${catchupProgram.start}`, t: Math.floor(v.currentTime || 0) })); } catch {}
+    };
+    v.addEventListener('timeupdate', onTime);
+    return () => v.removeEventListener('timeupdate', onTime);
+  }, [isCatchupMode, catchupProgram, channel]);
 
   // Real-time stats
   useEffect(() => {
@@ -570,6 +715,14 @@ export default function VideoPlayer({
   }, []);
 
   // Controls
+  const seekBy = useCallback((sec) => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (!isCatchupMode) { addToast && addToast(t('vp.toast_seek_catchup'), 'info'); return; }
+    try { v.currentTime = Math.max(0, Math.min((v.duration || 1e9) - 1, v.currentTime + sec)); } catch {}
+    resetOverlayTimer();
+  }, [isCatchupMode, addToast, resetOverlayTimer]);
+
   const togglePlay = () => {
     if (!videoRef.current) return;
     if (videoRef.current.paused) { videoRef.current.play(); setIsPlaying(true); } else { videoRef.current.pause(); setIsPlaying(false); }
@@ -645,9 +798,9 @@ export default function VideoPlayer({
         addToast && addToast(newState ? 'Đã bật phụ đề' : 'Đã tắt phụ đề', 'info');
       } else if (p.setTextTrackVisibility) {
         // No text tracks available
-        addToast && addToast('Stream không có phụ đề', 'info');
+        addToast && addToast(t('vp.toast_no_sub'), 'info');
       }
-    } catch (e) { addToast && addToast('Stream không hỗ trợ phụ đề', 'info'); }
+    } catch (e) { addToast && addToast(t('vp.toast_sub_na'), 'info'); }
   };
 
   // Screenshot
@@ -666,9 +819,9 @@ export default function VideoPlayer({
         const a = document.createElement('a');
         a.href = url; a.download = `chrtv_${channel?.name || 'screenshot'}_${Date.now()}.png`;
         a.click(); URL.revokeObjectURL(url);
-        addToast && addToast('Đã chụp màn hình', 'success');
+        addToast && addToast(t('vp.toast_shot_ok'), 'success');
       }, 'image/png');
-    } catch (e) { addToast && addToast('Lỗi chụp màn hình', 'error'); }
+    } catch (e) { addToast && addToast(t('vp.toast_shot_fail'), 'error'); }
   }, [channel, addToast]);
 
   // PiP
@@ -678,12 +831,12 @@ export default function VideoPlayer({
       if (!v) return;
       if (document.pictureInPictureElement) {
         await document.exitPictureInPicture();
-        addToast && addToast('Đã tắt PiP', 'info');
+        addToast && addToast(t('vp.toast_pip_off'), 'info');
       } else if (v.requestPictureInPicture) {
         await v.requestPictureInPicture();
-        addToast && addToast('Đã bật Picture-in-Picture', 'info');
+        addToast && addToast(t('vp.toast_pip_on'), 'info');
       }
-    } catch (e) { addToast && addToast('PiP không hỗ trợ', 'error'); }
+    } catch (e) { addToast && addToast(t('vp.toast_pip_na'), 'error'); }
   }, [addToast]);
 
   // External player (Android)
@@ -691,9 +844,9 @@ export default function VideoPlayer({
     const url = activeUrl || streamUrl;
     if (device.os === 'android') {
       window.location.href = `intent://${url}#Intent;package=com.mxtech.videoplayer.ad;type=video;S.end;end`;
-      addToast && addToast('Đang mở bằng MX Player', 'info');
+      addToast && addToast(t('vp.toast_mx'), 'info');
     } else {
-      addToast && addToast('Chỉ hỗ trợ trên Android', 'info');
+      addToast && addToast(t('vp.toast_android'), 'info');
     }
   }, [activeUrl, streamUrl, device, addToast]);
 
@@ -712,6 +865,7 @@ export default function VideoPlayer({
         if (e.key === 'Escape' && e.target.blur) e.target.blur();
         return;
       }
+      if (kidLocked) { e.preventDefault(); return; }
       resetOverlayTimer();
       const key = e.key;
       switch (key) {
@@ -724,13 +878,19 @@ export default function VideoPlayer({
         case 'f': case 'F': toggleFullscreen(); break;
         case 'p': case 'P': togglePiP(); break;
         case 's': case 'S': takeScreenshot(); break;
+        case 'j': case 'J': seekBy(-10); break;
+        case 'l': case 'L': seekBy(10); break;
         case '?': case '/': if (e.shiftKey) { /* open shortcuts */ } break;
         case 'Escape': case 'BackSpace':
-          if (showChannelList) setShowChannelList(false);
+          if (showErrorPopup) setShowErrorPopup(false);
+          else if (showChannelList) setShowChannelList(false);
           else if (showInfo) setShowInfo(false);
           else if (showQualityMenu) setShowQualityMenu(false);
+          else if (showUAMenu) setShowUAMenu(false);
           else if (showSleepTimer) setShowSleepTimer(false);
           else if (showVolumeSlider) setShowVolumeSlider(false);
+          else if (showSpeedMenu) setShowSpeedMenu(false);
+          else if (showReport) setShowReport(false);
           else if (onClose) onClose();
           break;
         default:
@@ -758,7 +918,7 @@ export default function VideoPlayer({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [resetOverlayTimer, onPrevChannel, onNextChannel, onClose, showChannelList, showInfo, showQualityMenu, showSleepTimer, showVolumeSlider, isMuted, addToast, togglePiP, takeScreenshot, allChannels]);
+  }, [resetOverlayTimer, onPrevChannel, onNextChannel, onClose, showChannelList, showInfo, showQualityMenu, showUAMenu, showSleepTimer, showVolumeSlider, isMuted, addToast, togglePiP, takeScreenshot, allChannels, seekBy, kidLocked, showErrorPopup]);
 
   // Touch gestures (mobile)
   useEffect(() => {
@@ -822,6 +982,41 @@ export default function VideoPlayer({
     };
   }, [device, volume, addToast, resetOverlayTimer]);
 
+  // ============ UA UPSTREAM (Dalvik fix) ============
+  // Đổi UA rồi tải lại luồng với token mới — không cần thoát player
+  const reloadWithUA = useCallback(async (ua) => {
+    const clean = String(ua || '').replace(/[\r\n\t]+/g, ' ').trim().slice(0, 300);
+    try { setChannelUA(channel?.channel_id, clean); } catch {}
+    try { uaOverrideRef.current = clean || effectiveUA(channel); } catch { uaOverrideRef.current = clean; }
+    setUaTick((x) => x + 1);
+    setShowUAMenu(false);
+    resetOverlayTimer();
+    const p = shakaPlayerRef.current;
+    if (!p || p.destroyed()) return;
+    setIsBuffering(true);
+    setErrorMessage(null);
+    setShowErrorPopup(false);
+    try {
+      let at = 0;
+      if (isCatchupMode && catchupProgram?.start) {
+        try { at = Math.floor(parseEpgDate(catchupProgram.start).getTime() / 1000); } catch {}
+      }
+      tokenRetryRef.current = false;
+      const fresh = await refreshStreamToken(channel, at);
+      const url = fresh || activeUrlRef.current;
+      if (url) {
+        setActiveUrl(url);
+        await p.load(url);
+        videoRef.current?.play().catch(() => {});
+        addToast(clean ? `Đã đổi UA → ${clean.slice(0, 40)}` : 'Đã về chế độ Tự động (theo kênh)', 'success');
+      }
+    } catch (e) {
+      showStreamError(t('vp.err_ua'));
+    } finally {
+      setIsBuffering(false);
+    }
+  }, [channel, isCatchupMode, catchupProgram, addToast, resetOverlayTimer]);
+
   const nowProgress = epgNow ? calculateProgramProgress(epgNow.start, epgNow.stop) : 0;
   const filteredChannelList = allChannels.filter(ch => !channelListSearch || ch.name.toLowerCase().includes(channelListSearch.toLowerCase()));
 
@@ -836,6 +1031,13 @@ export default function VideoPlayer({
       className="relative w-full h-full bg-black flex items-center justify-center overflow-hidden select-none"
       style={{ cursor: showOverlay ? 'default' : 'none' }}
     >
+      {mini && onExpand && (
+        <div data-mini-drag className="absolute top-0 left-0 right-0 z-50 flex items-center gap-2 px-3 py-2 bg-slate-900/95 border-b border-slate-700/40 cursor-move">
+          <span className="text-sm">📌</span>
+          <span className="text-xs text-slate-200 font-semibold truncate flex-1">{t('vp.mini_label')}: {channelName}</span>
+          <button onClick={onExpand} className="px-2.5 py-1 bg-[#f36f21] hover:bg-[#ff9a3d] text-white text-[11px] font-bold rounded-lg flex items-center gap-1"><Maximize2 className="w-3 h-3" />{t('vp.reopen')}</button>
+        </div>
+      )}
       {/* Main Video */}
       <video ref={videoRef} className="w-full h-full object-contain" playsInline autoPlay />
 
@@ -855,32 +1057,57 @@ export default function VideoPlayer({
         </div>
       )}
 
+      {/* Radio / night layers */}
+      {radioMode && (
+        <div className="absolute inset-0 z-10 bg-gradient-to-br from-slate-900 via-cyan-950 to-slate-900 flex flex-col items-center justify-center pointer-events-none">
+          <HoldToUnlock onUnlock={() => setRadioMode(false)} icon={Headphones} label={t('vp.hold_unhide')} buttonLabel={t('vp.unhide')} hint={t('vp.radio_hint')} />
+          <div className="mt-4 flex items-center gap-1.5 justify-center">
+            {[0, 1, 2, 3, 4, 5, 6].map(i => <div key={i} className="w-1.5 bg-cyan-400/70 rounded-full anim-eq" style={{ height: 16 + (i % 3) * 10, animationDelay: `${i * 0.12}s` }}></div>)}
+          </div>
+          <p className="text-cyan-200/80 text-sm font-semibold mt-3">{channelName}</p>
+        </div>
+      )}
+      {nightMode && <div className="absolute inset-0 z-10 bg-indigo-950/45 pointer-events-none mix-blend-multiply"></div>}
+
       {/* Buffering */}
       {isBuffering && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 z-20">
-          <div className="w-12 h-12 border-[3px] border-[#f36f21] border-t-transparent rounded-full animate-spin"></div>
-          <span className="mt-2 text-xs text-slate-400 font-medium">Đang tải...</span>
+          <div className="w-12 h-12 border-[3px] border-cyan-400 border-t-transparent rounded-full animate-spin"></div>
+          <span className="mt-2 text-xs text-slate-400 font-medium">{t('app.loading')}</span>
         </div>
       )}
 
-      {/* Fallback notice */}
-      {isFallbackActive && (
-        <div className="absolute top-14 right-3 z-30 bg-amber-600/90 text-white px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-lg">
-          <AlertTriangle className="w-3.5 h-3.5 text-yellow-300" />
-          <span className="text-[10px] font-medium">Luồng dự phòng</span>
-        </div>
-      )}
-
-      {errorMessage && (
-        <div className="absolute top-14 left-3 z-30 bg-[#f36f21]/90 text-white px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-lg max-w-[280px]">
-          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-          <span className="text-[10px] font-medium">{errorMessage}</span>
+      {/* Popup báo lỗi phát */}
+      {showErrorPopup && (
+        <div className="absolute inset-0 z-[70] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-panel w-full max-w-sm p-6 text-center">
+            <div className="w-16 h-16 mx-auto rounded-full bg-[#f36f21]/15 border border-[#f36f21]/40 flex items-center justify-center mb-4">
+              <AlertTriangle className="w-8 h-8 text-[#ff9a3d]" />
+            </div>
+            <h3 className="text-lg font-black text-white mb-1">{t('vp.err_title')}</h3>
+            <p className="text-[13px] font-bold text-[#ffb37a] mb-2 truncate">{channelName}</p>
+            <p className="text-xs text-stone-400 leading-relaxed mb-5 break-words">{errorMessage || t('vp.err_play', { msg: '' })}</p>
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={retryStream} className="py-2.5 btn-orange text-white text-[13px] font-bold rounded-2xl flex items-center justify-center gap-1.5">
+                <RefreshCw className="w-4 h-4" /> {t('vp.err_retry')}
+              </button>
+              <button onClick={() => { setShowErrorPopup(false); setShowReport(true); resetOverlayTimer(); }} className="py-2.5 bg-amber-600/90 hover:bg-amber-600 text-white text-[13px] font-bold rounded-2xl flex items-center justify-center gap-1.5">
+                <Flag className="w-4 h-4" /> {t('vp.report')}
+              </button>
+              <button onClick={() => { setShowErrorPopup(false); setShowChannelList(true); resetOverlayTimer(); }} className="py-2.5 bg-white/10 hover:bg-white/15 text-white text-[13px] font-bold rounded-2xl">
+                {t('vp.err_other')}
+              </button>
+              <button onClick={() => { setShowErrorPopup(false); onClose && onClose(); }} className="py-2.5 bg-white/10 hover:bg-white/15 text-stone-300 text-[13px] font-bold rounded-2xl">
+                {t('common.close')}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
       {/* Channel Quick-Switch OSD */}
       {quickSwitch && (
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 bg-black/80 backdrop-blur-sm rounded-2xl px-6 py-4 flex items-center gap-4 shadow-2xl border border-slate-700/40">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 bg-black/80 backdrop-blur-sm rounded-2xl px-6 py-4 flex items-center gap-4 shadow-2xl anim-pop-fast border border-slate-700/40">
           {quickSwitch.logo && <img src={quickSwitch.logo} alt="" className="w-14 h-14 object-contain rounded-xl" onError={e => e.target.style.display='none'} />}
           <div>
             <div className="text-sm font-bold text-white">{quickSwitch.name}</div>
@@ -889,8 +1116,20 @@ export default function VideoPlayer({
         </div>
       )}
 
+      {/* Kid lock */}
+      {kidLocked && (
+        <div className="absolute inset-0 z-[60] bg-black/60 backdrop-blur-[1px] flex items-center justify-center" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
+          <div className="text-center px-6">
+            <div className="text-5xl mb-3">🔒</div>
+            <p className="text-white font-bold mb-1">{t('vp.locked')}</p>
+            <p className="text-slate-400 text-xs mb-4">{t('vp.locked_sub')}</p>
+            <HoldToUnlock onUnlock={() => setKidLocked(false)} icon={Lock} label={t('vp.hold_unlock')} buttonLabel={t('vp.unlock')} />
+          </div>
+        </div>
+      )}
+
       {/* Overlay UI */}
-      <div className={`absolute inset-0 z-10 transition-opacity duration-300 pointer-events-none ${showOverlay ? 'opacity-100' : 'opacity-0'}`}>
+      <div className={`absolute inset-0 z-10 transition-opacity duration-300 pointer-events-none ${showOverlay && !kidLocked ? 'opacity-100' : 'opacity-0'}`}>
 
         {/* Top Header */}
         <div className="absolute top-0 left-0 right-0 px-3 py-2.5 overlay-gradient-top flex items-center justify-between pointer-events-auto">
@@ -922,10 +1161,10 @@ export default function VideoPlayer({
             <button onClick={(e) => { e.stopPropagation(); setShowAudioMenu(prev=>!prev); setShowQualityMenu(false); setShowSubtitleMenu(false); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${showAudioMenu ? 'bg-blue-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`} title="Audio">
               <AudioLines className="w-3.5 h-3.5" />
             </button>
-            <button onClick={shareChannel} className="p-1.5 rounded-full bg-black/50 text-slate-300 hover:bg-black/70 transition-all" title="Chia sẻ kênh (deep link)">
+            <button onClick={shareChannel} className="p-1.5 rounded-full bg-black/50 text-slate-300 hover:bg-black/70 transition-all" title={t('vp.share')}>
               <Share2 className="w-3.5 h-3.5" />
             </button>
-            <button onClick={toggleCast} className="p-1.5 rounded-full bg-black/50 text-slate-300 hover:bg-black/70 transition-all hidden md:block" title="Chiếu lên Chromecast">
+            <button onClick={toggleCast} className="p-1.5 rounded-full bg-black/50 text-slate-300 hover:bg-black/70 transition-all hidden md:block" title={t('vp.cast')}>
               <Cast className="w-3.5 h-3.5" />
             </button>
             {hasAirPlay && (
@@ -936,14 +1175,35 @@ export default function VideoPlayer({
             <button onClick={() => { setShowParty(prev => !prev); setShowEpgStrip(false); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${showParty ? 'bg-purple-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`} title={t('player.watching_together')}>
               <Users className="w-3.5 h-3.5" />
             </button>
-            <button onClick={() => { setShowEpgStrip(prev => !prev); setShowParty(false); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${showEpgStrip ? 'bg-blue-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`} title="Kênh khác đang chiếu gì">
+            <button onClick={() => { setShowEpgStrip(prev => !prev); setShowParty(false); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${showEpgStrip ? 'bg-blue-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`} title={t('vp.epgstrip')}>
               <Tv className="w-3.5 h-3.5" />
             </button>
+            <button onClick={(e) => { e.stopPropagation(); setRadioMode(v => !v); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${radioMode ? 'bg-cyan-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`} title={t('vp.radio')}>
+              <Headphones className="w-3.5 h-3.5" />
+            </button>
+            <button onClick={(e) => { e.stopPropagation(); setNightMode(v => !v); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${nightMode ? 'bg-indigo-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`} title={t('vp.night')}>
+              <Moon className="w-3.5 h-3.5" />
+            </button>
+            <button onClick={(e) => { e.stopPropagation(); setKidLocked(true); resetOverlayTimer(); }} className="p-1.5 rounded-full bg-black/50 text-slate-300 hover:bg-black/70 transition-all" title={t('vp.kidlock')}>
+              <Lock className="w-3.5 h-3.5" />
+            </button>
+            <button onClick={(e) => { e.stopPropagation(); setShowReport(v => !v); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${showReport ? 'bg-amber-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`} title={t('vp.report')}>
+              <Flag className="w-3.5 h-3.5" />
+            </button>
+            {onMinimize && !mini && (
+              <button onClick={(e) => { e.stopPropagation(); onMinimize(); }} className="p-1.5 rounded-full bg-black/50 text-slate-300 hover:bg-black/70 transition-all" title={t('vp.mini')}>
+                <Minimize2 className="w-3.5 h-3.5" />
+              </button>
+            )}
             <button onClick={(e) => { e.stopPropagation(); if (textTracks.length > 1) { setShowSubtitleMenu(prev => !prev); setShowAudioMenu(false); setShowQualityMenu(false); } else { toggleSubtitles(); } resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${showSubtitleMenu ? 'bg-blue-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`} title={t('player.subtitles')}>
               <Captions className="w-3.5 h-3.5" />
             </button>
             <button onClick={(e) => { e.stopPropagation(); setShowQualityMenu(prev=>!prev); setShowAudioMenu(false); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${showQualityMenu ? 'bg-blue-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`}>
               <Settings className="w-3.5 h-3.5" />
+            </button>
+            <button onClick={(e) => { e.stopPropagation(); setShowUAMenu(prev=>!prev); setShowQualityMenu(false); setShowAudioMenu(false); setShowSubtitleMenu(false); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all flex items-center gap-1 ${showUAMenu || currentUAOverride ? 'bg-emerald-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`} title={`User-Agent upstream: ${displayUA} (bấm để đổi — nhiều kênh cần Dalvik)`}>
+              <Smartphone className="w-3.5 h-3.5" />
+              <span className="text-[8px] font-bold hidden lg:inline max-w-[64px] truncate">{shortUA(displayUA)}</span>
             </button>
             <button onClick={(e) => { e.stopPropagation(); setShowInfo(prev=>!prev); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${showInfo ? 'bg-blue-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`}>
               <Info className="w-3.5 h-3.5" />
@@ -965,7 +1225,7 @@ export default function VideoPlayer({
 
         {/* Info Panel */}
         {showInfo && (
-          <div className="absolute top-12 left-3 z-20 w-64 bg-black/85 backdrop-blur-md rounded-xl border border-slate-700/40 p-3 pointer-events-auto shadow-2xl">
+          <div className="absolute top-12 left-3 z-20 w-64 bg-black/85 backdrop-blur-md rounded-xl border border-slate-700/40 p-3 pointer-events-auto shadow-2xl anim-pop-fast">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1.5 text-[10px] font-semibold text-blue-400 uppercase tracking-wider">
                 <Monitor className="w-3 h-3" /> {t('player.stats')}
@@ -979,6 +1239,8 @@ export default function VideoPlayer({
                 { icon: Activity, label: 'FPS', value: videoStats.fps || 'N/A' },
                 { icon: Wifi, label: 'Buffer', value: `${videoStats.bufferLength}s` },
                 { icon: Hash, label: t('player.dropped'), value: videoStats.droppedFrames, color: videoStats.droppedFrames > 0 ? 'text-[#ff9a3d]' : 'text-emerald-400' },
+                { icon: Wifi, label: t('vp.net'), value: netInfo.downlink ? `${netInfo.downlink} Mb/s${netInfo.type ? ` (${netInfo.type})` : ''}` : 'N/A' },
+                { icon: Activity, label: 'RTT', value: netInfo.rtt ? `${netInfo.rtt} ms` : 'N/A' },
               ].map(({ icon: Ic, label, value, color }) => (
                 <div key={label} className="flex items-center justify-between text-[11px]">
                   <span className="text-slate-500 flex items-center gap-1"><Ic className="w-3 h-3" /> {label}</span>
@@ -987,7 +1249,9 @@ export default function VideoPlayer({
               ))}
               <div className="border-t border-slate-700/40 pt-2 mt-1">
                 <div className="text-[9px] text-slate-600 mb-0.5">Server</div>
-                <div className="text-[9px] text-slate-400 font-mono">CHRTV · {channel?.group_title || ''}</div>
+                <div className="text-[9px] text-slate-400 font-mono">CHRTV PLAY · {channel?.group_title || ''}</div>
+                <div className="text-[9px] text-slate-600 mt-1 mb-0.5">User-Agent upstream</div>
+                <div className="text-[9px] text-emerald-300 font-mono break-all" title={displayUA}>{displayUA.length > 42 ? displayUA.slice(0, 42) + '…' : displayUA}</div>
               </div>
             </div>
           </div>
@@ -995,7 +1259,7 @@ export default function VideoPlayer({
 
         {/* Quality Menu */}
         {showQualityMenu && (
-          <div className="absolute top-12 right-3 z-20 w-56 bg-black/85 backdrop-blur-md rounded-xl border border-slate-700/40 p-2 pointer-events-auto shadow-2xl">
+          <div className="absolute top-12 right-3 z-20 w-56 bg-black/85 backdrop-blur-md rounded-xl border border-slate-700/40 p-2 pointer-events-auto shadow-2xl anim-pop-fast">
             <div className="flex items-center justify-between mb-1.5">
               <div className="flex items-center gap-1.5 text-[10px] font-semibold text-blue-400 uppercase tracking-wider"><Settings className="w-3 h-3" /> {t('player.quality')}</div>
               <button onClick={() => setShowQualityMenu(false)} className="p-0.5 rounded hover:bg-slate-700/50"><X className="w-3 h-3 text-slate-400" /></button>
@@ -1005,11 +1269,20 @@ export default function VideoPlayer({
                 <div className="font-medium">{t('player.auto_quality')}</div>
                 <div className="text-[9px] opacity-70">ADB chọn phù hợp</div>
               </button>
+              {/* Tốc độ phát (xem lại) */}
+              <div className="px-2.5 py-1.5">
+                <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('vp.speed')}</div>
+                <div className="flex items-center gap-1">
+                  {[0.5, 0.75, 1, 1.25, 1.5, 2].map(r => (
+                    <button key={r} onClick={() => { if (!isCatchupMode) { addToast(t('vp.toast_speed_catchup'), 'info'); } else { try { videoRef.current.playbackRate = r; } catch {} setPlayRate(r); } resetOverlayTimer(); }} className={`flex-1 py-1 rounded-md text-[10px] font-bold transition-all ${playRate === r ? 'bg-[#f36f21] text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>{r}x</button>
+                  ))}
+                </div>
+              </div>
               {/* Data saver */}
               <button onClick={() => { updateSetting('dataSaver', !dataSaver); resetOverlayTimer(); }} className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] transition-all flex items-center justify-between ${dataSaver ? 'bg-emerald-600/20 text-emerald-300' : 'text-slate-300 hover:bg-slate-800'}`}>
                 <div>
                   <div className="font-medium">🌱 Tiết kiệm data</div>
-                  <div className="text-[9px] opacity-70">{dataSaver ? 'Đang giới hạn ≤ 480p' : 'Giới hạn độ phân giải ≤ 480p'}</div>
+                  <div className="text-[9px] opacity-70">{dataSaver ? `Đang giới hạn ≤ ${dataSaverCap}p` : `Giới hạn độ phân giải ≤ ${dataSaverCap}p`}</div>
                 </div>
                 <span className={`w-7 h-4 rounded-full relative transition-all shrink-0 ${dataSaver ? 'bg-emerald-500' : 'bg-slate-600'}`}>
                   <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${dataSaver ? 'left-3.5' : 'left-0.5'}`}></span>
@@ -1026,9 +1299,48 @@ export default function VideoPlayer({
           </div>
         )}
 
+        {/* UA Menu (chọn User-Agent upstream — fix kênh cần Dalvik) */}
+        {showUAMenu && (
+          <div className="absolute top-12 right-3 z-20 w-72 bg-black/85 backdrop-blur-md rounded-xl border border-slate-700/40 p-2 pointer-events-auto shadow-2xl anim-pop-fast">
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="flex items-center gap-1.5 text-[10px] font-semibold text-emerald-400 uppercase tracking-wider"><Smartphone className="w-3 h-3" /> User-Agent luồng</div>
+              <button onClick={() => setShowUAMenu(false)} className="p-0.5 rounded hover:bg-slate-700/50"><X className="w-3 h-3 text-slate-400" /></button>
+            </div>
+            <div className="px-2 pb-1.5 text-[9px] text-slate-500 leading-snug">
+              Kênh lỗi 403 / không tải được? Thử <b className="text-slate-300">Dalvik/2.1.0</b>. Đổi xong tự tải lại luồng.
+              {channelRequiredUA && (<div className="mt-1 text-slate-400">Kênh yêu cầu: <span className="font-mono text-emerald-300">{channelRequiredUA.slice(0, 48)}{channelRequiredUA.length > 48 ? '…' : ''}</span></div>)}
+            </div>
+            <div className="space-y-0.5 max-h-60 overflow-y-auto">
+              {UA_PRESETS.map((preset) => {
+                const active = (currentUAOverride || '') === preset.ua;
+                return (
+                  <button key={preset.id} onClick={() => reloadWithUA(preset.ua)} className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] transition-all ${active ? 'bg-emerald-600 text-white font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}>
+                    <div className="font-medium flex items-center justify-between">{preset.label}{active && <span className="text-[9px]">● đang dùng</span>}</div>
+                    <div className="text-[9px] opacity-70">{preset.hint}</div>
+                  </button>
+                );
+              })}
+              <div className="pt-1.5 mt-1 border-t border-slate-700/40">
+                <div className="text-[9px] text-slate-500 px-2.5 mb-1">Hoặc nhập UA tùy chỉnh cho kênh này:</div>
+                <div className="flex items-center gap-1.5 px-2.5 pb-1">
+                  <input
+                    value={customUA}
+                    onChange={(e) => setCustomUA(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && customUA.trim()) { reloadWithUA(customUA.trim()); setCustomUA(''); } }}
+                    placeholder="VD: Dalvik/2.1.0 (Linux; U; Android 12; ...)"
+                    className="flex-1 px-2 py-1.5 bg-slate-800/60 border border-slate-700/40 rounded-lg text-[10px] text-white placeholder:text-slate-600 focus:outline-none focus:border-emerald-500/60"
+                  />
+                  <button onClick={() => { if (customUA.trim()) { reloadWithUA(customUA.trim()); setCustomUA(''); } }} className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold rounded-lg">Dùng</button>
+                </div>
+                {(() => { let g = ''; try { g = getGlobalUA(); } catch {} return g ? (<button onClick={() => { try { setGlobalUA(''); } catch {} setUaTick((x) => x + 1); addToast(t('vp.toast_ua_cleared'), 'info'); }} className="w-full text-center text-[9px] text-slate-500 hover:text-slate-300 py-1">UA toàn cục đang dùng: {g.slice(0, 32)}… (bấm để xoá)</button>) : null; })()}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Audio Menu */}
         {showAudioMenu && (
-          <div className="absolute top-12 right-3 z-20 w-48 bg-black/85 backdrop-blur-md rounded-xl border border-slate-700/40 p-2 pointer-events-auto shadow-2xl">
+          <div className="absolute top-12 right-3 z-20 w-48 bg-black/85 backdrop-blur-md rounded-xl border border-slate-700/40 p-2 pointer-events-auto shadow-2xl anim-pop-fast">
             <div className="flex items-center justify-between mb-1.5">
               <div className="flex items-center gap-1.5 text-[10px] font-semibold text-blue-400 uppercase tracking-wider"><AudioLines className="w-3 h-3" /> {t('player.language')}</div>
               <button onClick={() => setShowAudioMenu(false)} className="p-0.5 rounded hover:bg-slate-700/50"><X className="w-3 h-3 text-slate-400" /></button>
@@ -1046,7 +1358,7 @@ export default function VideoPlayer({
 
         {/* Subtitle Language Menu */}
         {showSubtitleMenu && (
-          <div className="absolute top-12 right-3 z-20 w-48 bg-black/85 backdrop-blur-md rounded-xl border border-slate-700/40 p-2 pointer-events-auto shadow-2xl">
+          <div className="absolute top-12 right-3 z-20 w-48 bg-black/85 backdrop-blur-md rounded-xl border border-slate-700/40 p-2 pointer-events-auto shadow-2xl anim-pop-fast">
             <div className="flex items-center justify-between mb-1.5">
               <div className="flex items-center gap-1.5 text-[10px] font-semibold text-blue-400 uppercase tracking-wider"><Captions className="w-3 h-3" /> {t('player.subtitles')}</div>
               <button onClick={() => setShowSubtitleMenu(false)} className="p-0.5 rounded hover:bg-slate-700/50"><X className="w-3 h-3 text-slate-400" /></button>
@@ -1067,9 +1379,9 @@ export default function VideoPlayer({
 
         {/* EPG strip: kênh khác đang chiếu gì */}
         {showEpgStrip && (
-          <div className="absolute top-12 left-3 z-20 w-80 max-h-[70%] bg-black/90 backdrop-blur-md rounded-xl border border-slate-700/40 flex flex-col pointer-events-auto shadow-2xl">
+          <div className="absolute top-12 left-3 z-20 w-80 max-h-[70%] bg-black/90 backdrop-blur-md rounded-xl border border-slate-700/40 flex flex-col pointer-events-auto shadow-2xl anim-pop-fast">
             <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700/40">
-              <div className="flex items-center gap-1.5 text-[10px] font-semibold text-blue-400 uppercase tracking-wider"><Tv className="w-3 h-3" /> Đang chiếu lúc này</div>
+              <div className="flex items-center gap-1.5 text-[10px] font-semibold text-blue-400 uppercase tracking-wider"><Tv className="w-3 h-3" /> {t('vp.now_on')}</div>
               <button onClick={() => setShowEpgStrip(false)} className="p-0.5 rounded hover:bg-slate-700/50"><X className="w-3 h-3 text-slate-400" /></button>
             </div>
             <div className="flex-1 overflow-y-auto px-1.5 py-1.5 space-y-0.5">
@@ -1080,7 +1392,7 @@ export default function VideoPlayer({
                     <img src={ch.logo || ''} alt="" className="w-7 h-7 object-contain rounded bg-slate-900/60 p-0.5 shrink-0" onError={e => { e.target.style.display = 'none'; }} />
                     <div className="min-w-0 flex-1">
                       <div className="text-[11px] font-semibold text-slate-200 truncate">{ch.name}</div>
-                      <div className="text-[9px] text-slate-500 truncate">{epg?.now ? `${formatTimeHHMM(epg.now.start)} · ${epg.now.title}` : 'Chưa có EPG'}</div>
+                      <div className="text-[9px] text-slate-500 truncate">{epg?.now ? `${formatTimeHHMM(epg.now.start)} · ${maskScores(epg.now.title)}` : t('vp.no_epg')}</div>
                     </div>
                   </button>
                 );
@@ -1091,13 +1403,16 @@ export default function VideoPlayer({
 
         {/* Watch Party panel */}
         {showParty && (
-          <div className="absolute top-12 right-3 bottom-24 z-20 w-80 bg-black/90 backdrop-blur-md rounded-xl border border-purple-700/40 flex flex-col pointer-events-auto shadow-2xl">
+          <div className="absolute top-12 right-3 bottom-24 z-20 w-80 bg-black/90 backdrop-blur-md rounded-xl border border-purple-700/40 flex flex-col pointer-events-auto shadow-2xl anim-pop-fast">
             <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700/40">
-              <div className="flex items-center gap-1.5 text-[10px] font-semibold text-purple-400 uppercase tracking-wider"><PartyPopper className="w-3 h-3" /> Xem chung {partyRoom && `· Phòng ${partyRoom.replace('party:', '')}`}</div>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setPartyTab('party')} className={`px-2.5 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1 ${partyTab === 'party' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'}`}><PartyPopper className="w-3 h-3" /> {t('vp.party')}{partyRoom ? ` ${partyRoom.replace('party:', '')}` : ''}</button>
+                <button onClick={() => setPartyTab('channel')} className={`px-2.5 py-1 rounded-lg text-[10px] font-bold ${partyTab === 'channel' ? 'bg-cyan-600 text-white' : 'text-slate-400 hover:text-white'}`}>💬 {t('vp.chat_ch')}</button>
+              </div>
               <button onClick={() => setShowParty(false)} className="p-0.5 rounded hover:bg-slate-700/50"><X className="w-3 h-3 text-slate-400" /></button>
             </div>
 
-            {!partyRoom ? (
+            {partyTab === 'party' && !partyRoom ? (
               <div className="flex-1 flex flex-col items-center justify-center gap-3 p-4 text-center">
                 <Users className="w-10 h-10 text-purple-400/60" />
                 <p className="text-[11px] text-slate-400">Tạo phòng để xem cùng bạn bè — cùng kênh, chat realtime, thả reaction.</p>
@@ -1122,12 +1437,55 @@ export default function VideoPlayer({
                   ))}
                   <div ref={(el) => { if (el) el.scrollIntoView({ block: 'end' }); }}></div>
                 </div>
+                {/* Vote nhanh */}
+                {polls.length > 0 && (
+                  <div className="px-2 py-1.5 border-t border-slate-700/40 space-y-1.5">
+                    {polls.map(poll => {
+                      const votes = Object.values(poll.votes || {});
+                      const total = votes.length;
+                      return (
+                        <div key={poll.id} className="bg-slate-800/60 rounded-lg p-2">
+                          <div className="text-[11px] font-bold text-white">📊 {poll.q}</div>
+                          <div className="text-[9px] text-slate-500 mb-0.5">{poll.from} · {t('vp.n_votes', { n: total })}</div>
+                          {poll.opts.map((o, i) => {
+                            const c = votes.filter(v => v === i).length;
+                            const pct = total ? Math.round(c / total * 100) : 0;
+                            const mine = myVotes[poll.id] === i;
+                            return (
+                              <button key={i} onClick={() => votePoll(poll.id, i)} className={`w-full text-left mt-1 rounded-lg overflow-hidden border transition-all ${mine ? 'border-emerald-500/60' : 'border-slate-700/50 hover:border-purple-500/50'}`}>
+                                <div className="relative px-2 py-1">
+                                  <div className="absolute inset-0 bg-purple-600/30" style={{ width: `${pct}%` }}></div>
+                                  <span className="relative text-[10px] text-slate-200">{o} — {pct}% ({c}){mine ? ' ✓' : ''}</span>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
                 {/* Reaction bar */}
                 <div className="px-2 py-1 border-t border-slate-700/40 flex items-center gap-1 justify-center">
+                  {isHost && partyTab === 'party' && partyRoom && (
+                    <button onClick={() => { setShowPollForm(v => !v); resetOverlayTimer(); }} className={`p-1 rounded-lg text-sm transition-all ${showPollForm ? 'bg-purple-600' : 'hover:bg-slate-700/60'}`} title={t('vp.mkpoll')}>📊</button>
+                  )}
                   {PARTY_EMOJIS.map((em) => (
                     <button key={em} onClick={() => react(em)} className="text-base hover:scale-125 transition-transform p-0.5" title={`Thả ${em}`}>{em}</button>
                   ))}
                 </div>
+                {showPollForm && (
+                  <div className="px-2 py-2 border-t border-slate-700/40 space-y-1.5 bg-slate-900/40">
+                    <input value={pollDraft.q} onChange={e => setPollDraft(d => ({ ...d, q: e.target.value }))} placeholder={t('vp.poll_q_ph')} className="w-full px-2.5 py-1.5 bg-slate-800/60 border border-slate-700/40 rounded-lg text-[11px] text-white placeholder:text-slate-600 focus:outline-none focus:border-purple-500/60" />
+                    {pollDraft.opts.map((o, i) => (
+                      <input key={i} value={o} onChange={e => setPollDraft(d => { const opts = [...d.opts]; opts[i] = e.target.value; return { ...d, opts }; })} placeholder={t('vp.poll_opt', { n: i + 1 })} className="w-full px-2.5 py-1.5 bg-slate-800/60 border border-slate-700/40 rounded-lg text-[11px] text-white placeholder:text-slate-600 focus:outline-none focus:border-purple-500/60" />
+                    ))}
+                    <div className="flex items-center gap-1.5">
+                      {pollDraft.opts.length < 4 && <button onClick={() => setPollDraft(d => ({ ...d, opts: [...d.opts, ''] }))} className="px-2.5 py-1.5 bg-slate-700 text-white text-[10px] font-bold rounded-lg">{t('vp.add')}</button>}
+                      <button onClick={sendPoll} className="flex-1 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-[11px] font-bold rounded-lg">{t('vp.mkpoll_btn')}</button>
+                    </div>
+                  </div>
+                )}
                 <div className="px-2 py-2 border-t border-slate-700/40 flex items-center gap-1.5">
                   <input
                     value={partyText}
@@ -1156,16 +1514,32 @@ export default function VideoPlayer({
           </div>
         )}
 
+        {/* Báo lỗi kênh */}
+        {showReport && (
+          <div className="absolute top-12 right-3 z-20 w-72 bg-black/85 backdrop-blur-md rounded-xl border border-slate-700/40 p-3 pointer-events-auto shadow-2xl anim-pop-fast">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1.5 text-[10px] font-semibold text-amber-400 uppercase tracking-wider"><Flag className="w-3 h-3" /> {t('vp.report')}</div>
+              <button onClick={() => setShowReport(false)} className="p-0.5 rounded hover:bg-slate-700/50"><X className="w-3 h-3 text-slate-400" /></button>
+            </div>
+            <select value={reportType} onChange={e => setReportType(e.target.value)} className="w-full px-2.5 py-2 bg-slate-800/60 border border-slate-700/40 rounded-lg text-[11px] text-white focus:outline-none focus:border-amber-500/60 mb-2">
+              {[['cant_play', t('vp.rep_o1')], ['freeze', t('vp.rep_o2')], ['wrong_epg', t('vp.rep_o3')], ['poor_q', t('vp.rep_o4')], ['bad_ua', t('vp.rep_o5')], ['other', t('vp.rep_o6')]].map(([v, label]) => <option key={v} value={v}>{label}</option>)}
+            </select>
+            <textarea value={reportMsg} onChange={e => setReportMsg(e.target.value)} placeholder={t('vp.rep_ph')} rows={2} className="w-full px-2.5 py-2 bg-slate-800/60 border border-slate-700/40 rounded-lg text-[11px] text-white placeholder:text-slate-600 focus:outline-none focus:border-amber-500/60 mb-2 resize-none" />
+            <button onClick={submitReport} className="w-full py-2 btn-orange text-white text-xs font-bold rounded-xl">{t('vp.rep_send')}</button>
+            <p className="text-[9px] text-slate-600 text-center mt-1.5">{t('vp.rep_note')}</p>
+          </div>
+        )}
+
         {/* Sleep Timer */}
         {showSleepTimer && (
           <div className="absolute top-12 right-3 z-20 pointer-events-auto">
-            <SleepTimer onExpired={onSleepExpired} onClose={() => setShowSleepTimer(false)} />
+            <SleepTimer onExpired={onSleepExpired} onClose={() => setShowSleepTimer(false)} programEnd={(() => { try { const s = isCatchupMode ? (catchupProgram?.stop || catchupProgram?.end) : epgNow?.stop; if (!s) return 0; const ms = new Date(typeof s === 'string' ? s.replace(' ', 'T') : s).getTime(); return ms > Date.now() ? ms : 0; } catch { return 0; } })()} />
           </div>
         )}
 
         {/* Volume Slider (overlay) */}
         {showVolumeSlider && (
-          <div className="absolute top-12 left-1/2 -translate-x-1/2 z-20 bg-black/80 backdrop-blur-md rounded-xl border border-slate-700/40 px-4 py-2.5 flex items-center gap-3 pointer-events-auto shadow-2xl">
+          <div className="absolute top-12 left-1/2 -translate-x-1/2 z-20 bg-black/80 backdrop-blur-md rounded-xl border border-slate-700/40 px-4 py-2.5 flex items-center gap-3 pointer-events-auto shadow-2xl anim-pop-fast">
             <VolumeIcon className="w-4 h-4 text-slate-300 shrink-0" />
             <input
               type="range" min={0} max={100} value={isMuted ? 0 : volume}
@@ -1178,7 +1552,7 @@ export default function VideoPlayer({
 
         {/* Channel List Panel */}
         {showChannelList && (
-          <div className="absolute top-12 right-3 bottom-16 z-20 w-72 bg-black/90 backdrop-blur-md rounded-xl border border-slate-700/40 flex flex-col pointer-events-auto shadow-2xl">
+          <div className="absolute top-12 right-3 bottom-16 z-20 w-72 bg-black/90 backdrop-blur-md rounded-xl border border-slate-700/40 flex flex-col pointer-events-auto shadow-2xl anim-pop-fast">
             <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700/40">
               <div className="flex items-center gap-1.5 text-[10px] font-semibold text-blue-400 uppercase tracking-wider"><List className="w-3 h-3" /> DS kênh</div>
               <button onClick={() => setShowChannelList(false)} className="p-0.5 rounded hover:bg-slate-700/50"><X className="w-3 h-3 text-slate-400" /></button>
@@ -1212,21 +1586,21 @@ export default function VideoPlayer({
                 <div className="flex items-center gap-1 text-[9px] font-semibold text-[#ff9a3d] uppercase tracking-wider mb-0.5">
                   <Clock className="w-2.5 h-2.5" /> Đang phát
                 </div>
-                <h3 className="text-[13px] font-bold text-white truncate">{isCatchupMode && catchupProgram ? catchupProgram.title : (epgNow?.title || 'Chương trình')}</h3>
+                <h3 className="text-[13px] font-bold text-white truncate">{isCatchupMode && catchupProgram ? maskScores(catchupProgram.title) : maskScores(epgNow?.title) || 'Chương trình'}</h3>
                 <p className="text-[10px] text-slate-500 truncate">
                   {epgNow ? `${formatTimeHHMM(epgNow.start)} - ${formatTimeHHMM(epgNow.stop)}` : ''}
                   {epgNow?.desc && ` · ${epgNow.desc}`}
                 </p>
                 {epgNow && (
                   <div className="w-full bg-slate-800/80 h-1 rounded-full mt-1 overflow-hidden">
-                    <div className="bg-[#f36f21] h-full rounded-full transition-all duration-500" style={{ width: `${nowProgress}%` }} />
+                    <div className="bg-gradient-to-r from-[#22d3ee] to-[#f36f21] h-full rounded-full transition-all duration-500" style={{ width: `${nowProgress}%` }} />
                   </div>
                 )}
               </div>
               {epgNext && !isCatchupMode && (
                 <div className="md:w-48 border-t md:border-t-0 md:border-l border-slate-700/30 pt-1.5 md:pt-0 md:pl-2.5">
                   <div className="text-[9px] font-semibold text-slate-600 uppercase tracking-wider">{t('player.up_next')}</div>
-                  <h4 className="text-[11px] font-semibold text-slate-300 truncate">{epgNext.title}</h4>
+                  <h4 className="text-[11px] font-semibold text-slate-300 truncate">{maskScores(epgNext.title)}</h4>
                   <p className="text-[9px] text-slate-600">{formatTimeHHMM(epgNext.start)}</p>
                 </div>
               )}
@@ -1246,28 +1620,28 @@ export default function VideoPlayer({
           {/* Controls */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
-              <button onClick={togglePlay} className="p-2 rounded-full bg-[#f36f21] text-white hover:bg-[#f36f21] shadow-lg shadow-[#f36f21]/25">
+              <button onClick={togglePlay} className="p-2 rounded-full grad-brand text-white hover:brightness-110 shadow-lg shadow-[#f36f21]/25">
                 {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 fill-current" />}
               </button>
               <button onClick={toggleMute} className="p-2 rounded-full bg-black/50 text-slate-200 hover:bg-black/70">
                 <VolumeIcon className="w-3.5 h-3.5" />
               </button>
-              <button onClick={() => { setShowVolumeSlider(prev => !prev); resetOverlayTimer(); }} className="p-2 rounded-full bg-black/50 text-slate-200 hover:bg-black/70" title="Âm lượng">
+              <button onClick={() => { setShowVolumeSlider(prev => !prev); resetOverlayTimer(); }} className="p-2 rounded-full bg-black/50 text-slate-200 hover:bg-black/70" title={t('vp.vol')}>
                 <Volume2 className="w-3.5 h-3.5" />
               </button>
-              {onPrevChannel && <button onClick={onPrevChannel} className="p-2 rounded-full bg-black/50 text-slate-200 hover:bg-black/70" title="Trước (↑)"><ChevronUp className="w-3.5 h-3.5" /></button>}
-              {onNextChannel && <button onClick={onNextChannel} className="p-2 rounded-full bg-black/50 text-slate-200 hover:bg-black/70" title="Sau (↓)"><ChevronDown className="w-3.5 h-3.5" /></button>}
+              {onPrevChannel && <button onClick={onPrevChannel} className="p-2 rounded-full bg-black/50 text-slate-200 hover:bg-black/70" title={t('vp.prev')}><ChevronUp className="w-3.5 h-3.5" /></button>}
+              {onNextChannel && <button onClick={onNextChannel} className="p-2 rounded-full bg-black/50 text-slate-200 hover:bg-black/70" title={t('vp.next')}><ChevronDown className="w-3.5 h-3.5" /></button>}
             </div>
             <div className="flex items-center gap-1.5">
               {device.os === 'android' && (
-                <button onClick={openExternalPlayer} className="p-2 rounded-full bg-black/50 text-slate-200 hover:bg-black/70" title="Mở ngoài">
+                <button onClick={openExternalPlayer} className="p-2 rounded-full bg-black/50 text-slate-200 hover:bg-black/70" title={t('vp.open_ext')}>
                   <span className="text-[10px] font-bold">EXT</span>
                 </button>
               )}
-              <button onClick={() => { setShowEmojiBar(prev => !prev); if (!partyRoom) { setShowParty(true); createParty(); } resetOverlayTimer(); }} className={`p-2 rounded-full transition-all ${showEmojiBar ? 'bg-purple-600 text-white' : 'bg-black/50 text-slate-200 hover:bg-black/70'}`} title="Thả reaction">
+              <button onClick={() => { setShowEmojiBar(prev => !prev); if (!partyRoom) { setShowParty(true); createParty(); } resetOverlayTimer(); }} className={`p-2 rounded-full transition-all ${showEmojiBar ? 'bg-purple-600 text-white' : 'bg-black/50 text-slate-200 hover:bg-black/70'}`} title={t('vp.react')}>
                 <Smile className="w-3.5 h-3.5" />
               </button>
-              <button onClick={takeScreenshot} className="p-2 rounded-full bg-black/50 text-slate-200 hover:bg-black/70" title="Chụp màn (S)">
+              <button onClick={takeScreenshot} className="p-2 rounded-full bg-black/50 text-slate-200 hover:bg-black/70" title={t('vp.shot')}>
                 <Camera className="w-3.5 h-3.5" />
               </button>
               <button onClick={togglePiP} className="p-2 rounded-full bg-black/50 text-slate-200 hover:bg-black/70" title="PiP (P)">

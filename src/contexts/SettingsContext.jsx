@@ -17,6 +17,14 @@ const DEFAULT_SETTINGS = {
   m3uSources: [],
   sleepTimerMinutes: 0,
   gestureEnabled: true,
+  colorTheme: 'sunset',
+  tvMode: false,
+  spoilerMask: false,
+  dataSaver: false,
+  dataSaverCap: 480,
+  kidBedtimeEnabled: false,
+  kidBedtimeStart: '21:00',
+  kidBedtimeEnd: '06:00',
 };
 
 const SettingsContext = createContext(null);

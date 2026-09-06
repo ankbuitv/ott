@@ -57,3 +57,13 @@ export function onAuthChanged() {
   _guestToken = "";
   _guestExp = 0;
 }
+
+/** true nếu có JWT user thật (đã đăng nhập) — dùng để ẩn/hiện tính năng cần login. */
+export function hasUserToken() {
+  try {
+    const raw = localStorage.getItem("chrtv_token");
+    return !!(raw && JSON.parse(raw));
+  } catch {
+    return false;
+  }
+}

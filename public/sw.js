@@ -4,8 +4,8 @@ self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
 
 self.addEventListener('push', (event) => {
   event.waitUntil((async () => {
-    let title = 'CHRTV';
-    let body = 'Có thông báo mới từ CHRTV';
+    let title = 'CHRTV PLAY';
+    let body = 'Có thông báo mới từ CHRTV PLAY';
     let url = '/';
     try {
       // Push không payload → fetch nội dung mới nhất từ server

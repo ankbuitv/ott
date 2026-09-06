@@ -22,7 +22,7 @@ function normalize(str) {
  * @returns {{now: Object|null, next: Object|null}}
  */
 export function findEpgForChannel(programmes, channel, now = new Date()) {
-  if (!programmes || !Array.isArray(programmes) || !channel) return { now: null, next: null };
+  if (!programmes || !Array.isArray(programmes) || !channel) return { now: null, next: null, prev: null };
 
   const chId = normalize(channel.channel_id);
   const chName = normalize(channel.name);
@@ -38,17 +38,18 @@ export function findEpgForChannel(programmes, channel, now = new Date()) {
       return pn && (pn === chName || pn.includes(chName) || chName.includes(pn));
     });
   }
-  if (progs.length === 0) return { now: null, next: null };
+  if (progs.length === 0) return { now: null, next: null, prev: null };
 
   progs.sort((a, b) => parseEpgDate(a.start) - parseEpgDate(b.start));
 
-  let epgNow = null, epgNext = null;
+  let epgNow = null, epgNext = null, epgPrev = null;
   for (let i = 0; i < progs.length; i++) {
     const start = parseEpgDate(progs[i].start);
     const stop = parseEpgDate(progs[i].stop);
     if (start <= now && stop >= now) {
       epgNow = progs[i];
       epgNext = progs[i + 1] || null;
+      epgPrev = progs[i - 1] || null;
       break;
     }
     // If we passed the current time and nothing matched yet, the first future one is "next"
@@ -63,5 +64,10 @@ export function findEpgForChannel(programmes, channel, now = new Date()) {
     }
     if (!epgNow && progs.length) epgNow = progs[0];
   }
-  return { now: epgNow, next: epgNext };
+  // prev: chương trình ngay trước now (để nút "Xem lại")
+  if (!epgPrev && epgNow) {
+    const idx = progs.indexOf(epgNow);
+    if (idx > 0) epgPrev = progs[idx - 1];
+  }
+  return { now: epgNow, next: epgNext, prev: epgPrev };
 }

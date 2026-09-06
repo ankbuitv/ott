@@ -1,6 +1,11 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { X, RefreshCw, ExternalLink, AlertTriangle, ChevronLeft, ChevronRight, Play, Shield, ShieldOff, SkipForward, Sparkles } from 'lucide-react';
 import { buildEmbedSources, openExternalSearch } from '../services/embeds';
+import { imgPath } from '../services/tmdb';
+import { recordMovieProgress, getMovieProgress, fmtWatchSec } from '../services/movieList';
+import { sendBeat } from '../services/social';
+import { useProfile } from '../contexts/ProfileContext';
+import { recordProfileWatch } from '../services/kids';
 
 /**
  * CHRTV - Trình phát phim (multi-server embed)
@@ -25,8 +30,11 @@ const SANDBOX_PERMS = 'allow-scripts allow-same-origin allow-forms allow-present
 
 export default function MoviePlayerModal({ movie, onClose }) {
   const isTV = movie?.media_type === 'tv';
-  const [season, setSeason] = useState(1);
-  const [episode, setEpisode] = useState(1);
+  // Tiếp tục xem: nhớ đúng mùa/tập lần trước
+  const [season, setSeason] = useState(() => getMovieProgress(movie)?.season || 1);
+  const [episode, setEpisode] = useState(() => getMovieProgress(movie)?.episode || 1);
+  const [resumed] = useState(() => getMovieProgress(movie));
+  const { currentProfile } = useProfile();
   const [sourceIdx, setSourceIdx] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -72,6 +80,26 @@ export default function MoviePlayerModal({ movie, onClose }) {
     setReloadKey(k => k + 1);
   }, []);
 
+  // Cộng dồn giờ xem phim (30s/lần) + heartbeat server (BXH/fan/dashboard)
+  const watchRef = useRef({ season, episode });
+  watchRef.current = { season, episode };
+  useEffect(() => {
+    if (!movie?.id) return undefined;
+    sendBeat({ kind: 'movie', ref_id: `${movie.media_type === 'tv' ? 'tv' : 'movie'}-${movie.id}`, ref_name: movie.title || movie.name || '', seconds: 0, viewed: true });
+    const iv = setInterval(() => {
+      const { season: se, episode: ep } = watchRef.current;
+      recordMovieProgress(movie, { sec: 30, season: isTV ? se : 0, episode: isTV ? ep : 0 });
+      sendBeat({ kind: 'movie', ref_id: `${movie.media_type === 'tv' ? 'tv' : 'movie'}-${movie.id}`, ref_name: movie.title || movie.name || '', seconds: 30 });
+      recordProfileWatch(currentProfile?.id || 'guest', 30, movie.title || movie.name || '');
+    }, 30000);
+    return () => {
+      clearInterval(iv);
+      const { season: se, episode: ep } = watchRef.current;
+      recordMovieProgress(movie, { sec: 15, season: isTV ? se : 0, episode: isTV ? ep : 0 });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [movie?.id]);
+
   // ESC đóng
   useEffect(() => {
     const h = (e) => { if (e.key === 'Escape') onClose(); };
@@ -104,163 +132,182 @@ export default function MoviePlayerModal({ movie, onClose }) {
   if (!movie) return null;
 
   return (
-    <div className="fixed inset-0 z-[300] bg-black flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 md:px-6 py-3 bg-black/95 border-b border-white/10 shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#f36f21] to-[#c2570f] flex items-center justify-center shrink-0">
-            <Play className="w-4 h-4 fill-current" />
+    <div className="fixed inset-0 z-[300] bg-black flex flex-col anim-zoom-fade">
+      {/* ===== Header kính mờ + poster ===== */}
+      <div className="relative shrink-0 border-b border-white/10" style={{ background: 'linear-gradient(180deg, rgba(20,12,8,.97), rgba(10,10,14,.95))' }}>
+        <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(400px 60px at 10% 0%, rgba(243,111,33,.18), transparent 70%)' }} />
+        <div className="relative flex items-center gap-3 px-3 md:px-5 py-2.5">
+          <button onClick={onClose} title="Thoát" className="w-9 h-9 rounded-full bg-white/[0.07] hover:bg-white/[0.16] border border-white/10 flex items-center justify-center text-stone-200 hover:text-white transition active:scale-90 shrink-0">
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+          {movie.poster_path ? (
+            <img src={imgPath(movie.poster_path, 'w92')} alt="" className="w-9 h-[52px] object-cover rounded-lg ring-1 ring-white/20 shrink-0 hidden sm:block" />
+          ) : (
+            <div className="w-9 h-[52px] rounded-lg bg-gradient-to-br from-[#f36f21] to-[#7c2d12] items-center justify-center shrink-0 hidden sm:flex">
+              <Play className="w-4 h-4 fill-current text-white" />
+            </div>
+          )}
+          <div className="min-w-0 flex-1">
+            <h2 className="text-sm md:text-[15px] font-black text-white truncate leading-tight">{movie.title || movie.name}</h2>
+            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+              <span className="text-[10px] font-bold text-stone-400">{isTV ? `TV · Mùa ${season} — Tập ${episode}` : 'Phim lẻ'}</span>
+              <span className="text-[10px] text-stone-600">•</span>
+              <span className="text-[10px] font-bold text-[#ff9a3d]">{current?.name || '…'}</span>
+              {(resumed?.watchSec || 0) > 60 && (
+                <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded-full px-2 py-px">⏪ {fmtWatchSec(resumed.watchSec)}</span>
+              )}
+            </div>
           </div>
-          <div className="min-w-0">
-            <h2 className="text-sm md:text-base font-black text-white truncate">{movie.title || movie.name}</h2>
-            <p className="text-[10px] text-stone-500 truncate">
-              {isTV ? `TV Show · Tập ${episode} - Mùa ${season}` : 'Phim'}
-              {' · '}{current?.name || 'nguồn'}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {/* Nút bật/tắt chặn quảng cáo (sandbox iframe) */}
+          {/* Tập tiếp (TV) */}
+          {isTV && (
+            <button
+              onClick={() => { setEpisode(e => e + 1); setLoading(true); setError(false); }}
+              className="shrink-0 px-3 py-2 rounded-xl bg-white/[0.07] hover:bg-white/[0.14] border border-white/10 text-stone-200 text-[11px] font-black flex items-center gap-1.5 transition active:scale-95"
+            >
+              <SkipForward className="w-3.5 h-3.5" /><span className="hidden md:inline">Tập tiếp</span>
+            </button>
+          )}
+          {/* Chặn QC */}
           <button
             onClick={toggleAdBlock}
             title={adBlock ? 'Đang bật sandbox chặn QC — nếu server báo "disable sandbox" hoặc không phát, hãy tắt.' : 'Bật sandbox để chặn pop-up quảng cáo. Mặc định tắt vì nhiều server yêu cầu tắt sandbox.'}
-            className={`px-3 py-1.5 rounded-full text-[11px] font-bold flex items-center gap-1.5 transition-all border ${
+            className={`shrink-0 px-3 py-2 rounded-xl text-[11px] font-black flex items-center gap-1.5 transition-all border active:scale-95 ${
               adBlock
-                ? 'bg-emerald-600/20 text-emerald-400 border-emerald-500/40 hover:bg-emerald-600/30'
-                : 'bg-white/5 text-stone-400 border-white/10 hover:bg-white/10 hover:text-white'
+                ? 'bg-emerald-600/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-600/30'
+                : 'bg-white/[0.07] text-stone-400 border-white/10 hover:text-white'
             }`}
           >
             {adBlock ? <Shield className="w-3.5 h-3.5" /> : <ShieldOff className="w-3.5 h-3.5" />}
             <span className="hidden sm:inline">Chặn QC</span>
-            <span>{adBlock ? 'BẬT' : 'TẮT'}</span>
+            <span className={`text-[9px] px-1.5 py-px rounded-full ${adBlock ? 'bg-emerald-500/30 text-emerald-200' : 'bg-white/10 text-stone-500'}`}>{adBlock ? 'BẬT' : 'TẮT'}</span>
           </button>
-          <button onClick={onClose} className="w-9 h-9 rounded-full bg-white/5 hover:bg-white/15 flex items-center justify-center text-stone-300 hover:text-white transition shrink-0">
+          <button onClick={onClose} className="w-9 h-9 rounded-full bg-white/[0.07] hover:bg-red-600/70 border border-white/10 flex items-center justify-center text-stone-300 hover:text-white transition active:scale-90 shrink-0">
             <X className="w-5 h-5" />
           </button>
         </div>
-      </div>
-
-      {/* Body */}
-      <div className="flex-1 flex flex-col min-h-0">
         {/* TV season/episode picker */}
         {isTV && (
-          <div className="flex items-center gap-2 px-4 md:px-6 py-2 bg-black/60 border-b border-white/5 shrink-0 overflow-x-auto scrollbar-none">
-            <span className="text-[10px] text-stone-500 font-bold uppercase tracking-wider whitespace-nowrap">Mùa</span>
-            <div className="flex items-center gap-1">
-              <button onClick={() => setSeason(s => Math.max(1, s - 1))} className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center"><ChevronLeft className="w-3.5 h-3.5" /></button>
-              <span className="text-xs font-bold text-white w-6 text-center">{season}</span>
-              <button onClick={() => setSeason(s => s + 1)} className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center"><ChevronRight className="w-3.5 h-3.5" /></button>
+          <div className="relative flex items-center gap-2 px-3 md:px-5 pb-2.5 overflow-x-auto scrollbar-none">
+            <div className="flex items-center gap-1 rounded-xl bg-white/[0.05] border border-white/10 px-1.5 py-1">
+              <span className="text-[9px] text-stone-500 font-black uppercase tracking-wider px-1">Mùa</span>
+              <button onClick={() => setSeason(s => Math.max(1, s - 1))} className="w-7 h-7 rounded-lg bg-white/[0.06] hover:bg-white/[0.14] flex items-center justify-center text-white transition active:scale-90"><ChevronLeft className="w-3.5 h-3.5" /></button>
+              <span className="text-[13px] font-black text-white w-7 text-center">{season}</span>
+              <button onClick={() => setSeason(s => s + 1)} className="w-7 h-7 rounded-lg bg-white/[0.06] hover:bg-white/[0.14] flex items-center justify-center text-white transition active:scale-90"><ChevronRight className="w-3.5 h-3.5" /></button>
             </div>
-            <span className="text-[10px] text-stone-500 font-bold uppercase tracking-wider whitespace-nowrap ml-3">Tập</span>
-            <div className="flex items-center gap-1">
-              <button onClick={() => setEpisode(e => Math.max(1, e - 1))} className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center"><ChevronLeft className="w-3.5 h-3.5" /></button>
-              <span className="text-xs font-bold text-white w-6 text-center">{episode}</span>
-              <button onClick={() => setEpisode(e => e + 1)} className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center"><ChevronRight className="w-3.5 h-3.5" /></button>
+            <div className="flex items-center gap-1 rounded-xl bg-[#f36f21]/10 border border-[#f36f21]/30 px-1.5 py-1">
+              <span className="text-[9px] text-[#ffb37a] font-black uppercase tracking-wider px-1">Tập</span>
+              <button onClick={() => setEpisode(e => Math.max(1, e - 1))} className="w-7 h-7 rounded-lg bg-white/[0.06] hover:bg-white/[0.14] flex items-center justify-center text-white transition active:scale-90"><ChevronLeft className="w-3.5 h-3.5" /></button>
+              <span className="text-[13px] font-black text-white w-7 text-center">{episode}</span>
+              <button onClick={() => setEpisode(e => e + 1)} className="w-7 h-7 rounded-lg bg-white/[0.06] hover:bg-white/[0.14] flex items-center justify-center text-white transition active:scale-90"><ChevronRight className="w-3.5 h-3.5" /></button>
             </div>
           </div>
         )}
+      </div>
 
-        {/* Player area */}
-        <div className="flex-1 relative bg-black flex items-center justify-center min-h-0">
-          {!current && (
-            <div className="z-10 max-w-sm text-center px-6">
-              <p className="text-3xl mb-3">🎬</p>
-              <h3 className="text-sm font-bold text-white mb-1">Chưa có nguồn phát hợp lệ</h3>
-              <p className="text-xs text-stone-500">Nội dung này sẽ phát trực tiếp khi CHRTV có nguồn bản quyền. Theo dõi mục Tin tức để biết thêm.</p>
+      {/* ===== Player area ===== */}
+      <div className="flex-1 relative bg-black flex items-center justify-center min-h-0">
+        {!current && (
+          <div className="z-10 max-w-sm text-center px-6">
+            <div className="w-16 h-16 mx-auto rounded-2xl bg-white/[0.06] border border-white/10 flex items-center justify-center text-3xl mb-3">🎬</div>
+            <h3 className="text-sm font-bold text-white mb-1">Chưa có nguồn phát hợp lệ</h3>
+            <p className="text-xs text-stone-500">Nội dung này sẽ phát trực tiếp khi CHRTV PLAY có nguồn bản quyền. Theo dõi mục Tin tức để biết thêm.</p>
+          </div>
+        )}
+        {current && (
+          <iframe
+            // key chứa cả reloadKey + adBlock: đổi trạng thái là iframe mount lại
+            key={`${sourceIdx}-${season}-${episode}-${reloadKey}-${adBlock ? 'ab1' : 'ab0'}`}
+            src={current.url}
+            title={`${current.name} player`}
+            className="absolute inset-0 w-full h-full border-0"
+            allow="autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write"
+            allowFullScreen
+            referrerPolicy="origin"
+            // sandbox KHÔNG cấp allow-popups / allow-top-navigation* / allow-modals
+            // / allow-downloads => chặn pop-up, pop-under, redirect cướp trang
+            {...(adBlock ? { sandbox: SANDBOX_PERMS } : {})}
+            onLoad={() => setLoading(false)}
+          />
+        )}
+
+        {/* Loading overlay */}
+        {current && loading && !error && (
+          <div className="absolute inset-0 z-10 bg-black/85 backdrop-blur flex flex-col items-center justify-center px-6 text-center">
+            <div className="relative mb-4">
+              <div className="w-16 h-16 border-4 border-[#f36f21]/25 border-t-[#f36f21] rounded-full animate-spin"></div>
+              <Play className="absolute inset-0 m-auto w-5 h-5 fill-current text-[#ff9a3d]" />
             </div>
-          )}
-          {current && (
-            <iframe
-              // key chứa cả reloadKey + adBlock: đổi trạng thái là iframe mount lại
-              key={`${sourceIdx}-${season}-${episode}-${reloadKey}-${adBlock ? 'ab1' : 'ab0'}`}
-              src={current.url}
-              title={`${current.name} player`}
-              className="absolute inset-0 w-full h-full border-0"
-              allow="autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write"
-              allowFullScreen
-              referrerPolicy="origin"
-              // sandbox KHÔNG cấp allow-popups / allow-top-navigation* / allow-modals
-              // / allow-downloads => chặn pop-up, pop-under, redirect cướp trang
-              {...(adBlock ? { sandbox: SANDBOX_PERMS } : {})}
-              onLoad={() => setLoading(false)}
-            />
-          )}
+            <p className="text-[13px] font-bold text-white">Đang tải {current?.name}…</p>
+            <p className="text-[11px] text-stone-500 mt-1">Nếu lâu quá, chuyển server bên dưới (tự báo lỗi sau 20 giây)</p>
+          </div>
+        )}
 
-          {/* Loading overlay */}
-          {current && loading && !error && (
-            <div className="absolute inset-0 z-10 bg-black/80 backdrop-blur flex flex-col items-center justify-center">
-              <div className="w-14 h-14 border-4 border-[#f36f21] border-t-transparent rounded-full animate-spin mb-4"></div>
-              <p className="text-xs text-stone-400">Đang tải {current?.name}…</p>
-              <p className="text-[10px] text-stone-600 mt-1">Nếu lâu quá, chuyển server bên dưới (tự báo lỗi sau 20 giây)</p>
-            </div>
-          )}
-
-          {/* Error state */}
-          {error && (
-            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black px-6 text-center">
-              <AlertTriangle className="w-10 h-10 text-amber-400 mb-3" />
-              <h3 className="text-base font-bold text-white mb-1">Server {current?.name} không phát được</h3>
-              <p className="text-xs text-stone-500 mb-4 max-w-sm">
+        {/* Error state */}
+        {error && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/95 px-4">
+            <div className="w-full max-w-md rounded-3xl border border-white/10 bg-[#14151c] p-6 text-center shadow-2xl">
+              <div className="w-14 h-14 mx-auto rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center mb-3">
+                <AlertTriangle className="w-7 h-7 text-amber-400" />
+              </div>
+              <h3 className="text-[15px] font-black text-white mb-1">Server {current?.name} không phát được</h3>
+              <p className="text-[12px] text-stone-400 mb-4 leading-relaxed">
                 Nguồn này có thể đang lỗi hoặc hết phim.
                 {adBlock
-                  ? ' Nếu server báo "please disable sandbox" hoặc không phát, hãy tắt "Chặn QC" ở góc trên.'
-                  : ' Thử chuyển server khác bên dưới, hoặc bấm "Mở tab mới" để xem trực tiếp trên trang nguồn.'}
+                  ? ' Nếu server báo "please disable sandbox" hoặc không phát, hãy tắt "Chặn QC" ở trên.'
+                  : ' Thử chuyển server khác bên dưới, hoặc "Mở tab mới" để xem trực tiếp trên trang nguồn.'}
               </p>
-              <div className="flex items-center gap-2 flex-wrap justify-center">
-                <button onClick={nextSource} className="px-4 py-2 bg-[#f36f21] hover:bg-[#f36f21] text-white text-xs font-bold rounded-xl flex items-center gap-1.5">
-                  <SkipForward className="w-3.5 h-3.5" /> Server kế tiếp
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={nextSource} className="col-span-2 py-2.5 grad-brand text-white text-[13px] font-black rounded-2xl flex items-center justify-center gap-1.5 active:scale-[0.98]">
+                  <SkipForward className="w-4 h-4" /> Server kế tiếp
                 </button>
-                <button onClick={reload} className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl flex items-center gap-1.5">
+                <button onClick={reload} className="py-2.5 bg-white/[0.07] hover:bg-white/[0.13] text-white text-[12px] font-bold rounded-2xl flex items-center justify-center gap-1.5">
                   <RefreshCw className="w-3.5 h-3.5" /> Tải lại
                 </button>
-                {current?.url && (
-                  <a
-                    href={current.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl flex items-center gap-1.5"
-                  >
+                {current?.url ? (
+                  <a href={current.url} target="_blank" rel="noopener noreferrer" className="py-2.5 bg-white/[0.07] hover:bg-white/[0.13] text-white text-[12px] font-bold rounded-2xl flex items-center justify-center gap-1.5">
                     <ExternalLink className="w-3.5 h-3.5" /> Mở tab mới
                   </a>
+                ) : (
+                  <button onClick={() => openExternalSearch(movie)} className="py-2.5 bg-white/[0.07] hover:bg-white/[0.13] text-white text-[12px] font-bold rounded-2xl flex items-center justify-center gap-1.5">
+                    <ExternalLink className="w-3.5 h-3.5" /> Tìm nguồn khác
+                  </button>
                 )}
-                <button onClick={() => openExternalSearch(movie)} className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-bold rounded-xl flex items-center gap-1.5">
-                  <ExternalLink className="w-3.5 h-3.5" /> Tìm nguồn khác
-                </button>
               </div>
             </div>
-          )}
-        </div>
-
-        {/* Server selector */}
-        <div className="px-4 md:px-6 py-3 bg-black/95 border-t border-white/10 shrink-0">
-          <p className="text-[10px] text-stone-500 font-bold uppercase tracking-widest mb-2">Nguồn phát ({sources.length})</p>
-          <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-1">
-            {sources.map((s, i) => (
-              <button
-                key={s.name}
-                onClick={() => switchSource(i)}
-                className={`px-3.5 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all flex items-center gap-1 ${
-                  i === sourceIdx
-                    ? 'bg-[#f36f21] text-white shadow-lg shadow-[#f36f21]/30'
-                    : 'bg-white/5 hover:bg-white/10 text-stone-400 hover:text-white border border-white/10'
-                }`}
-              >
-                {i + 1}. {s.name}
-                {/* Nhãn "sạch" cho nguồn ít/không quảng cáo */}
-                {s.adFree && (
-                  <span className={`flex items-center gap-0.5 text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full ${
-                    i === sourceIdx ? 'bg-white/20 text-white' : 'bg-emerald-500/15 text-emerald-400'
-                  }`}>
-                    <Sparkles className="w-2.5 h-2.5" /> sạch
-                  </span>
-                )}
-              </button>
-            ))}
-            <button onClick={reload} className="px-3 py-1.5 rounded-full text-[11px] font-bold text-stone-400 hover:text-white hover:bg-white/10 border border-white/10 whitespace-nowrap flex items-center gap-1">
-              <RefreshCw className="w-3 h-3" /> Reload
-            </button>
           </div>
-          <p className="text-[9px] text-stone-600 mt-1.5">Nguồn gắn nhãn "sạch" ít/không quảng cáo, nên thử trước. Nếu 1 server lỗi hoặc báo "disable sandbox", bấm số khác để chuyển, hoặc bật/tắt "Chặn QC" ở góc trên.</p>
+        )}
+      </div>
+
+      {/* ===== Server selector ===== */}
+      <div className="px-3 md:px-5 py-2.5 bg-[#0c0d12]/95 border-t border-white/10 shrink-0">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-[10px] text-stone-500 font-black uppercase tracking-widest">Nguồn phát · {sources.length}</p>
+          <button onClick={reload} className="flex items-center gap-1 text-[11px] font-bold text-stone-400 hover:text-white transition">
+            <RefreshCw className="w-3 h-3" /> Reload
+          </button>
+        </div>
+        <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-0.5">
+          {sources.map((s, i) => (
+            <button
+              key={s.name}
+              onClick={() => switchSource(i)}
+              className={`pl-2.5 pr-3 py-2 rounded-2xl text-[12px] font-black whitespace-nowrap transition-all active:scale-95 flex items-center gap-2 border ${
+                i === sourceIdx
+                  ? 'grad-brand text-white border-transparent shadow-lg shadow-[#f36f21]/30'
+                  : 'bg-white/[0.05] hover:bg-white/[0.11] text-stone-300 hover:text-white border-white/10'
+              }`}
+            >
+              <span className={`w-5 h-5 rounded-lg flex items-center justify-center text-[10px] ${i === sourceIdx ? 'bg-white/25 text-white' : 'bg-white/10 text-stone-400'}`}>{i + 1}</span>
+              {s.name}
+              {s.adFree && (
+                <span className={`flex items-center gap-0.5 text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full ${
+                  i === sourceIdx ? 'bg-white/25 text-white' : 'bg-emerald-500/15 text-emerald-400'
+                }`}>
+                  <Sparkles className="w-2.5 h-2.5" /> sạch
+                </span>
+              )}
+            </button>
+          ))}
         </div>
       </div>
     </div>

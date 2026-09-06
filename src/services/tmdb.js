@@ -120,6 +120,17 @@ export async function getPopularMovies(region) {
   const q = region ? { region } : {};
   return tmdbFetch('/movie/popular', q);
 }
+// Top 10 phim hot nhất THÁNG NÀY: phát hành trong tháng hiện tại, xếp theo độ hot
+export async function getMonthlyTop(region) {
+  const now = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  const gte = `${now.getFullYear()}-${p(now.getMonth() + 1)}-01`;
+  const last = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const lte = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(last)}`;
+  const q = { sort_by: 'popularity.desc', 'primary_release_date.gte': gte, 'primary_release_date.lte': lte, 'vote_count.gte': 5 };
+  if (region) q.region = region;
+  return tmdbFetch('/discover/movie', q);
+}
 export async function getTopRated(region) {
   const q = region ? { region } : {};
   return tmdbFetch('/movie/top_rated', q);
@@ -139,6 +150,9 @@ export async function getLocalTV(region) {
 }
 export async function getMovieDetails(id) {
   return tmdbFetch(`/movie/${id}`);
+}
+export async function getTvDetails(id) {
+  return tmdbFetch(`/tv/${id}`);
 }
 export async function getMovieTrailer(id, mediaType = 'movie') {
   const kind = mediaType === 'tv' ? 'tv' : 'movie';
@@ -319,6 +333,11 @@ export const MovieAPI = {
   trending: () => safe('tr', () => getTrending('week'), FALLBACK_TRENDING),
   nowPlaying: (region) => safe('np' + (region || ''), () => getNowPlaying(region || undefined), FALLBACK_NOW_PLAYING),
   topRated: (region) => safe('tr2' + (region || ''), () => getTopRated(region || undefined), FALLBACK_TOP_RATED),
+  topMonth: (region) => {
+    const now = new Date();
+    const mk = `${now.getFullYear()}-${now.getMonth()}`;
+    return safe('topm_' + mk + '_' + (region || ''), () => getMonthlyTop(region || undefined), FALLBACK_TRENDING);
+  },
   // TV: ưu tiên show sản xuất tại chính quốc gia đó (region), trống thì fallback toàn cầu
   popularTV: (region) => {
     const cc = (region || 'US').toUpperCase();

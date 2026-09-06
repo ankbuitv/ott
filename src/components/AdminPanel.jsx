@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Users, BarChart3, Bell, Radio, Send, Eye, TrendingUp, Calendar, Plus, Trash2, Save, X, ScrollText, Ban, KeyRound, ShieldCheck, ChevronDown } from 'lucide-react';
+import { Settings, Users, BarChart3, Bell, Radio, Send, Eye, TrendingUp, Calendar, Plus, Trash2, Save, X, ScrollText, Ban, KeyRound, ShieldCheck, ChevronDown, Flag, Clapperboard, Crown, PartyPopper, Video } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { API_BASE } from '../services/config';
+import { LiveTab, GiftsTab, PaymentsTab, AdsTab, SchedTab, CommentsTab, PredictTab, ReportsTab, EXTRA_TABS } from './AdminExtras';
 
 const BASE = API_BASE;
 
@@ -35,6 +36,17 @@ export default function AdminPanel({ onClose }) {
   const [audit, setAudit] = useState([]);
   const [creds, setCreds] = useState([]);
   const [credForm, setCredForm] = useState({ channel_id: '', upstream_token: '' });
+  const [feedback, setFeedback] = useState([]);
+  const [shorts, setShorts] = useState([]);
+  const [shortForm, setShortForm] = useState({ title: '', caption: '', video_url: '', thumb_url: '', author: 'CHRTV' });
+  const [events, setEvents] = useState([]);
+  const [evForm, setEvForm] = useState({ title: '', subtitle: '', image_url: '', link_type: 'none', link_value: '', starts_at: '', ends_at: '', sort_order: 0 });
+  const [editingEv, setEditingEv] = useState(null);
+  const [sportsVids, setSportsVids] = useState([]);
+  const [svForm, setSvForm] = useState({ title: '', league: '', thumb_url: '', video_url: '', duration: '', sort_order: 0 });
+  const [plans, setPlans] = useState([]);
+  const [planForm, setPlanForm] = useState({ code: '', name: '', rank: 1, price: 0, price_text: '', tagline: '', allows: '', color: '#f36f21' });
+  const [editingPlan, setEditingPlan] = useState(null);
 
   // Notification form
   const [notifyTitle, setNotifyTitle] = useState('');
@@ -70,6 +82,11 @@ export default function AdminPanel({ onClose }) {
     fetch(`${BASE}/admin/users`, { headers }).then(r => r.json()).then(d => setUsers(d.users || [])).catch(() => {});
     fetch(`${BASE}/admin/audit`, { headers }).then(r => r.json()).then(d => setAudit(d.audit || [])).catch(() => {});
     fetch(`${BASE}/admin/stream-credentials`, { headers }).then(r => r.json()).then(d => setCreds(d.credentials || [])).catch(() => {});
+    fetch(`${BASE}/admin/feedback`, { headers }).then(r => r.json()).then(d => setFeedback(d.feedback || [])).catch(() => {});
+    fetch(`${BASE}/admin/shorts`, { headers }).then(r => r.json()).then(d => setShorts(d.shorts || [])).catch(() => {});
+    fetch(`${BASE}/admin/events`, { headers }).then(r => r.json()).then(d => setEvents(d.events || [])).catch(() => {});
+    fetch(`${BASE}/admin/sports-videos`, { headers }).then(r => r.json()).then(d => setSportsVids(d.videos || [])).catch(() => {});
+    fetch(`${BASE}/admin/plans`, { headers }).then(r => r.json()).then(d => setPlans(d.plans || [])).catch(() => {});
   }, [token]);
 
   // ===== Quản lý user =====
@@ -202,8 +219,8 @@ export default function AdminPanel({ onClose }) {
   };
 
   if (user?.role !== 'admin') return (
-    <div className="fixed inset-0 z-[150] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-[#1a1c24] border border-slate-800/60 rounded-2xl p-6 text-center max-w-sm" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[150] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 modal-backdrop" onClick={onClose}>
+      <div className="bg-[#1a1c24] border border-slate-800/60 rounded-2xl p-6 text-center max-w-sm modal-panel" onClick={e => e.stopPropagation()}>
         <div className="w-10 h-10 text-[#f36f21] mx-auto mb-2 flex items-center justify-center"><Users className="w-8 h-8" /></div>
         <h3 className="text-base font-bold text-white mb-1">Không có quyền truy cập</h3>
         <p className="text-xs text-slate-500 mb-3">Bạn cần tài khoản Admin</p>
@@ -213,15 +230,15 @@ export default function AdminPanel({ onClose }) {
   );
 
   return (
-    <div className="fixed inset-0 z-[150] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-[#1a1c24] border border-slate-800/60 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[150] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 modal-backdrop" onClick={onClose}>
+      <div className="bg-[#1a1c24] border border-slate-800/60 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col modal-panel" onClick={e => e.stopPropagation()}>
         <div className="px-5 py-3 border-b border-slate-800/40 flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm font-bold text-white"><Settings className="w-4 h-4 text-blue-400" /> Admin Panel</div>
           <button onClick={onClose} className="text-xs text-slate-500 hover:text-white">Đóng</button>
         </div>
 
         <div className="flex border-b border-slate-800/40 overflow-x-auto">
-          {[{ id: 'stats', label: 'Thống kê', icon: BarChart3 }, { id: 'users', label: 'Người dùng', icon: Users }, { id: 'audit', label: 'Nhật ký', icon: ScrollText }, { id: 'notify', label: 'Thông báo', icon: Bell }, { id: 'broadcast', label: 'Broadcast', icon: Send }, { id: 'epg', label: 'EPG kênh', icon: Calendar }, { id: 'analytics', label: 'Analytics', icon: TrendingUp }, { id: 'credentials', label: 'Chìa khoá stream', icon: KeyRound }].map(t => (
+          {[{ id: 'stats', label: 'Thống kê', icon: BarChart3 }, ...EXTRA_TABS, { id: 'users', label: 'Người dùng', icon: Users }, { id: 'audit', label: 'Nhật ký', icon: ScrollText }, { id: 'notify', label: 'Thông báo', icon: Bell }, { id: 'broadcast', label: 'Broadcast', icon: Send }, { id: 'epg', label: 'EPG kênh', icon: Calendar }, { id: 'analytics', label: 'Analytics', icon: TrendingUp }, { id: 'credentials', label: 'Chìa khoá stream', icon: KeyRound }, { id: 'feedback', label: 'Báo lỗi', icon: Flag }, { id: 'shorts', label: 'Shorts', icon: Clapperboard }, { id: 'plans', label: 'Gói cước', icon: Crown }, { id: 'events', label: 'Sự kiện', icon: PartyPopper }, { id: 'sportsvids', label: 'Video TT', icon: Video }].map(t => (
             <button key={t.id} onClick={() => setTab(t.id)} className={`flex items-center gap-1.5 px-4 py-2 text-[11px] font-semibold transition-all whitespace-nowrap ${tab === t.id ? 'text-[#ff9a3d] border-b-2 border-[#f36f21]' : 'text-slate-500 hover:text-white'}`}>
               <t.icon className="w-3 h-3" /> {t.label}
             </button>
@@ -459,6 +476,387 @@ export default function AdminPanel({ onClose }) {
             </div>
           )}
 
+          {tab === 'plans' && (
+            <div className="space-y-3">
+              <div className="rounded-lg border border-cyan-600/30 bg-cyan-950/20 p-3">
+                <p className="text-[11px] text-cyan-200/90 leading-relaxed">
+                  <b>Rank quyết định quyền xem:</b> rank 1 = chỉ kênh VN · rank 2 = VN + Phim · rank ≥ 3 = xem hết.
+                  Giá 0 = miễn phí. Sửa xong có hiệu lực ngay (không cần deploy).
+                </p>
+              </div>
+              <div className="space-y-2">
+                {plans.map(p => {
+                  let allows = [];
+                  try { allows = JSON.parse(p.allows || '[]'); } catch {}
+                  const ed = editingPlan === p.code;
+                  return (
+                    <div key={p.code} className="bg-slate-900/40 rounded-xl px-3 py-2.5 border border-slate-800/30 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="w-3.5 h-3.5 rounded-full shrink-0" style={{ background: p.color || '#f36f21' }}></span>
+                        <span className="text-[12px] font-black text-white">{p.name}</span>
+                        <span className="text-[9px] font-mono text-slate-500">{p.code} · rank {p.rank}</span>
+                        <span className={`ml-auto text-[10px] font-bold ${Number(p.price) > 0 ? 'text-emerald-400' : 'text-amber-300'}`}>
+                          {Number(p.price) > 0 ? `${Number(p.price).toLocaleString('vi-VN')}đ` : (p.price_text || 'FREE')}
+                        </span>
+                        <button onClick={() => { setEditingPlan(ed ? null : p.code); setPlanForm({ code: p.code, name: p.name, rank: p.rank, price: p.price, price_text: p.price_text || '', tagline: p.tagline || '', allows: allows.join('\n'), color: p.color || '#f36f21' }); }} className="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-slate-800 text-slate-300 hover:text-white">{ed ? 'Đóng' : 'Sửa'}</button>
+                        <button
+                          onClick={async () => {
+                            const ns = p.is_active === 0 ? 1 : 0;
+                            await fetch(`${BASE}/admin/plans`, { method: 'PUT', headers, body: JSON.stringify({ code: p.code, is_active: ns }) });
+                            setPlans(prev => prev.map(x => x.code === p.code ? { ...x, is_active: ns } : x));
+                          }}
+                          className="p-1.5 text-slate-500 hover:text-white" title={p.is_active === 0 ? 'Hiện' : 'Ẩn'}
+                        ><Eye className="w-3.5 h-3.5" /></button>
+                        {!['standard', 'recreational', 'ultimate', 'elite', 'signature'].includes(p.code) && (
+                          <button
+                            onClick={async () => {
+                              if (!confirm('Xoá gói ' + p.code + '?')) return;
+                              const r = await fetch(`${BASE}/admin/plans`, { method: 'DELETE', headers, body: JSON.stringify({ code: p.code }) });
+                              const d = await r.json();
+                              if (d.success) setPlans(prev => prev.filter(x => x.code !== p.code));
+                              else addToast(d.error || 'Lỗi', 'error');
+                            }}
+                            className="p-1.5 text-slate-500 hover:text-[#ff9a3d]" title="Xoá"
+                          ><Trash2 className="w-3.5 h-3.5" /></button>
+                        )}
+                      </div>
+                      {p.is_active === 0 && <p className="text-[9px] text-slate-600">🙈 Đang ẩn với người dùng</p>}
+                      {ed && (
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                          <input value={planForm.name} onChange={e => setPlanForm({ ...planForm, name: e.target.value })} placeholder="Tên gói" className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                          <input value={planForm.tagline} onChange={e => setPlanForm({ ...planForm, tagline: e.target.value })} placeholder="Tagline" className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] text-slate-500">Rank</span>
+                            <input type="number" min={1} max={9} value={planForm.rank} onChange={e => setPlanForm({ ...planForm, rank: e.target.value })} className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-2 py-1.5 text-[11px] text-white" />
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] text-slate-500">Giáđ</span>
+                            <input type="number" min={0} value={planForm.price} onChange={e => setPlanForm({ ...planForm, price: e.target.value })} className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-2 py-1.5 text-[11px] text-white" />
+                          </div>
+                          <input value={planForm.price_text} onChange={e => setPlanForm({ ...planForm, price_text: e.target.value })} placeholder="Chữ thay giá (VD: TẠM FREE)" className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] text-slate-500">Màu</span>
+                            <input type="color" value={planForm.color} onChange={e => setPlanForm({ ...planForm, color: e.target.value })} className="w-10 h-8 bg-transparent" />
+                          </div>
+                          <textarea value={planForm.allows} onChange={e => setPlanForm({ ...planForm, allows: e.target.value })} placeholder="Quyền lợi (mỗi dòng 1 cái)" rows={3} className="col-span-2 bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white resize-none" />
+                          <button
+                            onClick={async () => {
+                              const r = await fetch(`${BASE}/admin/plans`, { method: 'PUT', headers, body: JSON.stringify({ ...planForm, rank: parseInt(planForm.rank) || 1, price: parseInt(planForm.price) || 0 }) });
+                              const d = await r.json();
+                              if (d.success) {
+                                addToast('Đã lưu gói ' + planForm.code, 'success');
+                                setEditingPlan(null);
+                                fetch(`${BASE}/admin/plans`, { headers }).then(r2 => r2.json()).then(dd => setPlans(dd.plans || [])).catch(() => {});
+                              } else addToast(d.error || 'Lỗi', 'error');
+                            }}
+                            className="col-span-2 py-2 btn-orange text-white text-[11px] font-bold rounded-xl"
+                          >Lưu gói</button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!planForm.code.trim() || !planForm.name.trim()) { addToast('Nhập mã + tên gói', 'error'); return; }
+                  const r = await fetch(`${BASE}/admin/plans`, { method: 'POST', headers, body: JSON.stringify({ ...planForm, rank: parseInt(planForm.rank) || 1, price: parseInt(planForm.price) || 0 }) });
+                  const d = await r.json();
+                  if (d.success) {
+                    addToast('Đã thêm gói!', 'success');
+                    setPlanForm({ code: '', name: '', rank: 1, price: 0, price_text: '', tagline: '', allows: '', color: '#f36f21' });
+                    fetch(`${BASE}/admin/plans`, { headers }).then(r2 => r2.json()).then(dd => setPlans(dd.plans || [])).catch(() => {});
+                  } else addToast(d.error || 'Lỗi', 'error');
+                }}
+                className="space-y-2 bg-slate-900/40 rounded-xl p-3 border border-slate-800/40"
+              >
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Thêm gói mới</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <input value={planForm.code} onChange={e => setPlanForm({ ...planForm, code: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '') })} placeholder="Mã gói (vd: sport)" className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white font-mono" />
+                  <input value={planForm.name} onChange={e => setPlanForm({ ...planForm, name: e.target.value })} placeholder="Tên hiển thị (vd: SPORT)" className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <input type="number" min={1} max={9} value={planForm.rank} onChange={e => setPlanForm({ ...planForm, rank: e.target.value })} placeholder="Rank (1-9)" className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                  <input type="number" min={0} value={planForm.price} onChange={e => setPlanForm({ ...planForm, price: e.target.value })} placeholder="Giá VNĐ (0 = free)" className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                </div>
+                <button type="submit" className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold rounded-xl flex items-center justify-center gap-1.5"><Plus className="w-3.5 h-3.5" /> Thêm gói</button>
+              </form>
+            </div>
+          )}
+          {tab === 'events' && (
+            <div className="space-y-3">
+              <div className="rounded-lg border border-fuchsia-600/30 bg-fuchsia-950/20 p-3">
+                <p className="text-[11px] text-fuchsia-200/90 leading-relaxed">
+                  Banner chạy đầu <b>trang chủ</b>. Bấm vào banner sẽ: <b>none</b> = không làm gì · <b>tab</b> = mở mục (movies/tv/epg/plans) · <b>channel</b> = mở kênh (điền channel_id) · <b>url</b> = mở link ngoài.
+                </p>
+              </div>
+              <div className="space-y-2">
+                {events.length === 0 && <p className="text-xs text-slate-500 text-center py-3">Chưa có sự kiện nào</p>}
+                {events.map(ev => {
+                  const ed = editingEv === ev.id;
+                  return (
+                    <div key={ev.id} className="bg-slate-900/40 rounded-xl px-3 py-2.5 border border-slate-800/30 space-y-2">
+                      <div className="flex items-center gap-2.5">
+                        {ev.image_url ? <img src={ev.image_url} alt="" className="w-14 h-9 object-cover rounded-md shrink-0" onError={e => e.target.style.display = 'none'} /> : <span className="w-14 h-9 rounded-md grad-brand flex items-center justify-center text-base shrink-0">🎉</span>}
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[12px] font-black text-white truncate">{ev.title}</p>
+                          <p className="text-[9px] text-slate-500 truncate">{ev.link_type !== 'none' ? `${ev.link_type}:${ev.link_value}` : 'không link'} · thứ tự {ev.sort_order} {ev.is_active === 0 ? '· 🙈 ẩn' : ''}</p>
+                        </div>
+                        <button onClick={() => { setEditingEv(ed ? null : ev.id); setEvForm({ title: ev.title || '', subtitle: ev.subtitle || '', image_url: ev.image_url || '', link_type: ev.link_type || 'none', link_value: ev.link_value || '', starts_at: (ev.starts_at || '').replace(' ', 'T').slice(0, 16), ends_at: (ev.ends_at || '').replace(' ', 'T').slice(0, 16), sort_order: ev.sort_order || 0 }); }} className="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-slate-800 text-slate-300 hover:text-white">{ed ? 'Đóng' : 'Sửa'}</button>
+                        <button
+                          onClick={async () => {
+                            const ns = ev.is_active === 0 ? 1 : 0;
+                            await fetch(`${BASE}/admin/events`, { method: 'PUT', headers, body: JSON.stringify({ id: ev.id, is_active: ns }) });
+                            setEvents(prev => prev.map(x => x.id === ev.id ? { ...x, is_active: ns } : x));
+                          }}
+                          className="p-1.5 text-slate-500 hover:text-white" title={ev.is_active === 0 ? 'Hiện' : 'Ẩn'}
+                        ><Eye className="w-3.5 h-3.5" /></button>
+                        <button
+                          onClick={async () => {
+                            if (!confirm('Xoá sự kiện này?')) return;
+                            await fetch(`${BASE}/admin/events`, { method: 'DELETE', headers, body: JSON.stringify({ id: ev.id }) });
+                            setEvents(prev => prev.filter(x => x.id !== ev.id));
+                          }}
+                          className="p-1.5 text-slate-500 hover:text-[#ff9a3d]" title="Xoá"
+                        ><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
+                      {ed && (
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                          <input value={evForm.title} onChange={e => setEvForm({ ...evForm, title: e.target.value })} placeholder="Tiêu đề" className="col-span-2 bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                          <input value={evForm.subtitle} onChange={e => setEvForm({ ...evForm, subtitle: e.target.value })} placeholder="Mô tả ngắn" className="col-span-2 bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                          <input value={evForm.image_url} onChange={e => setEvForm({ ...evForm, image_url: e.target.value })} placeholder="Ảnh banner https://... (trống = nền gradient)" className="col-span-2 bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                          <select value={evForm.link_type} onChange={e => setEvForm({ ...evForm, link_type: e.target.value })} className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-2 py-1.5 text-[11px] text-white">
+                            <option value="none">Không link</option>
+                            <option value="tab">Mở mục (tab)</option>
+                            <option value="channel">Mở kênh</option>
+                            <option value="url">Link ngoài</option>
+                          </select>
+                          <input value={evForm.link_value} onChange={e => setEvForm({ ...evForm, link_value: e.target.value })} placeholder="movies / channel_id / https://..." className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[9px] text-slate-500 shrink-0">Từ</span>
+                            <input type="datetime-local" value={evForm.starts_at} onChange={e => setEvForm({ ...evForm, starts_at: e.target.value })} className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-1.5 py-1.5 text-[10px] text-white" />
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[9px] text-slate-500 shrink-0">Đến</span>
+                            <input type="datetime-local" value={evForm.ends_at} onChange={e => setEvForm({ ...evForm, ends_at: e.target.value })} className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-1.5 py-1.5 text-[10px] text-white" />
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] text-slate-500">Thứ tự</span>
+                            <input type="number" value={evForm.sort_order} onChange={e => setEvForm({ ...evForm, sort_order: e.target.value })} className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-2 py-1.5 text-[11px] text-white" />
+                          </div>
+                          <button
+                            onClick={async () => {
+                              const body = { ...evForm, id: ev.id, sort_order: parseInt(evForm.sort_order) || 0, starts_at: (evForm.starts_at || '').replace('T', ' ').slice(0, 19), ends_at: (evForm.ends_at || '').replace('T', ' ').slice(0, 19) };
+                              const r = await fetch(`${BASE}/admin/events`, { method: 'PUT', headers, body: JSON.stringify(body) });
+                              const d = await r.json();
+                              if (d.success) {
+                                addToast('Đã lưu sự kiện', 'success');
+                                setEditingEv(null);
+                                fetch(`${BASE}/admin/events`, { headers }).then(r2 => r2.json()).then(dd => setEvents(dd.events || [])).catch(() => {});
+                              } else addToast(d.error || 'Lỗi', 'error');
+                            }}
+                            className="py-2 btn-orange text-white text-[11px] font-bold rounded-xl"
+                          >Lưu</button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!evForm.title.trim()) { addToast('Nhập tiêu đề', 'error'); return; }
+                  const body = { ...evForm, sort_order: parseInt(evForm.sort_order) || 0, starts_at: (evForm.starts_at || '').replace('T', ' ').slice(0, 19), ends_at: (evForm.ends_at || '').replace('T', ' ').slice(0, 19) };
+                  const r = await fetch(`${BASE}/admin/events`, { method: 'POST', headers, body: JSON.stringify(body) });
+                  const d = await r.json();
+                  if (d.success) {
+                    addToast('Đã thêm sự kiện!', 'success');
+                    setEvForm({ title: '', subtitle: '', image_url: '', link_type: 'none', link_value: '', starts_at: '', ends_at: '', sort_order: 0 });
+                    fetch(`${BASE}/admin/events`, { headers }).then(r2 => r2.json()).then(dd => setEvents(dd.events || [])).catch(() => {});
+                  } else addToast(d.error || 'Lỗi', 'error');
+                }}
+                className="space-y-2 bg-slate-900/40 rounded-xl p-3 border border-slate-800/40"
+              >
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Thêm sự kiện mới</p>
+                <input value={evForm.title} onChange={e => setEvForm({ ...evForm, title: e.target.value })} placeholder="Tiêu đề (vd: 🎉 Chung kết AFF Cup)" className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                <input value={evForm.subtitle} onChange={e => setEvForm({ ...evForm, subtitle: e.target.value })} placeholder="Mô tả ngắn" className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                <input value={evForm.image_url} onChange={e => setEvForm({ ...evForm, image_url: e.target.value })} placeholder="Ảnh banner https://... (trống = nền gradient)" className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                <div className="grid grid-cols-2 gap-2">
+                  <select value={evForm.link_type} onChange={e => setEvForm({ ...evForm, link_type: e.target.value })} className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-2 py-1.5 text-[11px] text-white">
+                    <option value="none">Không link</option>
+                    <option value="tab">Mở mục (tab)</option>
+                    <option value="channel">Mở kênh</option>
+                    <option value="url">Link ngoài</option>
+                  </select>
+                  <input value={evForm.link_value} onChange={e => setEvForm({ ...evForm, link_value: e.target.value })} placeholder="movies / channel_id / https://..." className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                </div>
+                <button type="submit" className="w-full py-2 bg-fuchsia-600 hover:bg-fuchsia-500 text-white text-[11px] font-bold rounded-xl flex items-center justify-center gap-1.5"><Plus className="w-3.5 h-3.5" /> Thêm sự kiện</button>
+              </form>
+            </div>
+          )}
+          {tab === 'sportsvids' && (
+            <div className="space-y-3">
+              <div className="rounded-lg border border-emerald-600/30 bg-emerald-950/20 p-3">
+                <p className="text-[11px] text-emerald-200/90 leading-relaxed">
+                  Video xem lại trong trang <b>Thể thao</b>. Link YouTube (watch/shorts/youtu.be) tự nhúng · mp4 phát trực tiếp.
+                </p>
+              </div>
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!svForm.title.trim() || !svForm.video_url.trim()) { addToast('Nhập tiêu đề + link video', 'error'); return; }
+                  const r = await fetch(`${BASE}/admin/sports-videos`, { method: 'POST', headers, body: JSON.stringify({ ...svForm, sort_order: parseInt(svForm.sort_order) || 0 }) });
+                  const d = await r.json();
+                  if (d.success) {
+                    addToast('Đã thêm video!', 'success');
+                    setSvForm({ title: '', league: '', thumb_url: '', video_url: '', duration: '', sort_order: 0 });
+                    fetch(`${BASE}/admin/sports-videos`, { headers }).then(r2 => r2.json()).then(dd => setSportsVids(dd.videos || [])).catch(() => {});
+                  } else addToast(d.error || 'Lỗi', 'error');
+                }}
+                className="space-y-2 bg-slate-900/40 rounded-xl p-3 border border-slate-800/40"
+              >
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Thêm video xem lại</p>
+                <input value={svForm.title} onChange={e => setSvForm({ ...svForm, title: e.target.value })} placeholder="Tiêu đề (vd: Highlights MU 2-1 Everton)" className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                <input value={svForm.video_url} onChange={e => setSvForm({ ...svForm, video_url: e.target.value })} placeholder="Link YouTube hoặc mp4 https://..." className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                <div className="grid grid-cols-3 gap-2">
+                  <input value={svForm.league} onChange={e => setSvForm({ ...svForm, league: e.target.value })} placeholder="Giải (EPL...)" className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                  <input value={svForm.duration} onChange={e => setSvForm({ ...svForm, duration: e.target.value })} placeholder="Dài (10:24)" className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                  <input type="number" value={svForm.sort_order} onChange={e => setSvForm({ ...svForm, sort_order: e.target.value })} placeholder="Thứ tự" className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                </div>
+                <input value={svForm.thumb_url} onChange={e => setSvForm({ ...svForm, thumb_url: e.target.value })} placeholder="Ảnh bìa https://... (trống cũng được)" className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                <button type="submit" className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold rounded-xl flex items-center justify-center gap-1.5"><Plus className="w-3.5 h-3.5" /> Thêm video</button>
+              </form>
+              <div className="space-y-2">
+                {sportsVids.length === 0 && <p className="text-xs text-slate-500 text-center py-3">Chưa có video nào</p>}
+                {sportsVids.map(v => (
+                  <div key={v.id} className="flex items-center gap-2.5 bg-slate-900/40 rounded-lg px-3 py-2 border border-slate-800/30">
+                    {v.thumb_url ? <img src={v.thumb_url} alt="" className="w-16 h-9 object-cover rounded-md shrink-0" onError={e => e.target.style.display = 'none'} /> : <span className="w-16 h-9 rounded-md grad-brand flex items-center justify-center text-sm shrink-0">⚽</span>}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] font-bold text-white truncate">{v.title}</p>
+                      <p className="text-[9px] text-slate-500">{v.league || '—'} {v.is_active === 0 ? '· 🙈 ẩn' : ''}</p>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        const ns = v.is_active === 0 ? 1 : 0;
+                        await fetch(`${BASE}/admin/sports-videos`, { method: 'PUT', headers, body: JSON.stringify({ id: v.id, is_active: ns }) });
+                        setSportsVids(prev => prev.map(x => x.id === v.id ? { ...x, is_active: ns } : x));
+                      }}
+                      className="p-1.5 text-slate-500 hover:text-white" title={v.is_active === 0 ? 'Hiện' : 'Ẩn'}
+                    ><Eye className="w-3.5 h-3.5" /></button>
+                    <button
+                      onClick={async () => {
+                        if (!confirm('Xoá video này?')) return;
+                        await fetch(`${BASE}/admin/sports-videos`, { method: 'DELETE', headers, body: JSON.stringify({ id: v.id }) });
+                        setSportsVids(prev => prev.filter(x => x.id !== v.id));
+                      }}
+                      className="p-1.5 text-slate-500 hover:text-[#ff9a3d]" title="Xoá"
+                    ><Trash2 className="w-3.5 h-3.5" /></button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {tab === 'shorts' && (
+            <div className="space-y-3">
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!shortForm.video_url.trim()) { addToast('Nhập link video', 'error'); return; }
+                  const r = await fetch(`${BASE}/admin/shorts`, { method: 'POST', headers, body: JSON.stringify(shortForm) });
+                  const d = await r.json();
+                  if (d.success) {
+                    addToast('Đã đăng short!', 'success');
+                    setShortForm({ title: '', caption: '', video_url: '', thumb_url: '', author: 'CHRTV' });
+                    fetch(`${BASE}/admin/shorts`, { headers }).then(r2 => r2.json()).then(dd => setShorts(dd.shorts || [])).catch(() => {});
+                  } else addToast(d.error || 'Lỗi', 'error');
+                }}
+                className="space-y-2 bg-slate-900/40 rounded-xl p-3 border border-slate-800/40"
+              >
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Đăng short mới (link mp4 trực tiếp)</p>
+                <input value={shortForm.title} onChange={e => setShortForm({ ...shortForm, title: e.target.value })} placeholder="Tiêu đề" className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-[#f36f21]" />
+                <input value={shortForm.video_url} onChange={e => setShortForm({ ...shortForm, video_url: e.target.value })} placeholder="Link video mp4 https://..." className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-[#f36f21]" />
+                <div className="grid grid-cols-2 gap-2">
+                  <input value={shortForm.thumb_url} onChange={e => setShortForm({ ...shortForm, thumb_url: e.target.value })} placeholder="Ảnh bìa (không bắt buộc)" className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-[#f36f21]" />
+                  <input value={shortForm.author} onChange={e => setShortForm({ ...shortForm, author: e.target.value })} placeholder="Tác giả" className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-[#f36f21]" />
+                </div>
+                <textarea value={shortForm.caption} onChange={e => setShortForm({ ...shortForm, caption: e.target.value })} placeholder="Mô tả ngắn" rows={2} className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-[#f36f21] resize-none" />
+                <button type="submit" className="w-full py-2 btn-orange text-white text-xs font-bold rounded-xl">Đăng short</button>
+              </form>
+              <div className="space-y-2">
+                {shorts.length === 0 && <p className="text-xs text-slate-500 text-center py-3">Chưa có short nào</p>}
+                {shorts.map(s => (
+                  <div key={s.id} className="flex items-center gap-2.5 bg-slate-900/40 rounded-lg px-3 py-2 border border-slate-800/30">
+                    {s.thumb_url ? <img src={s.thumb_url} alt="" className="w-9 h-14 object-cover rounded-md shrink-0" onError={e => e.target.style.display = 'none'} /> : <span className="w-9 h-14 rounded-md grad-brand flex items-center justify-center text-sm shrink-0">🎬</span>}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] font-bold text-white truncate">{s.title || '(không tên)'}</p>
+                      <p className="text-[9px] text-slate-500">👁 {s.views || 0} · ❤ {s.likes || 0} · {s.status === 'hidden' ? '🙈 Đang ẩn' : '✅ Đang hiện'}</p>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        const ns = s.status === 'hidden' ? 'live' : 'hidden';
+                        await fetch(`${BASE}/admin/shorts`, { method: 'PUT', headers, body: JSON.stringify({ id: s.id, status: ns }) });
+                        setShorts(prev => prev.map(x => x.id === s.id ? { ...x, status: ns } : x));
+                      }}
+                      className="p-1.5 text-slate-500 hover:text-white" title={s.status === 'hidden' ? 'Hiện' : 'Ẩn'}
+                    ><Eye className="w-3.5 h-3.5" /></button>
+                    <button
+                      onClick={async () => {
+                        if (!confirm('Xoá short này?')) return;
+                        await fetch(`${BASE}/admin/shorts`, { method: 'DELETE', headers, body: JSON.stringify({ id: s.id }) });
+                        setShorts(prev => prev.filter(x => x.id !== s.id));
+                      }}
+                      className="p-1.5 text-slate-500 hover:text-[#ff9a3d]" title="Xoá"
+                    ><Trash2 className="w-3.5 h-3.5" /></button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {tab === 'feedback' && (
+            <div className="space-y-2">
+              {feedback.length === 0 && <p className="text-xs text-slate-500 text-center py-4">Chưa có báo lỗi nào 🎉</p>}
+              {feedback.map((f) => {
+                let info = {};
+                try { info = JSON.parse(f.client_info || '{}'); } catch {}
+                return (
+                  <div key={f.id} className="bg-slate-900/40 rounded-lg px-3 py-2.5 border border-slate-800/30 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold text-white truncate">{f.channel_id || 'Kênh?'}</span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <select
+                          value={f.status || 'new'}
+                          onChange={async (e) => {
+                            const status = e.target.value;
+                            await fetch(`${BASE}/admin/feedback`, { method: 'PUT', headers, body: JSON.stringify({ id: f.id, status }) });
+                            setFeedback(prev => prev.map(x => x.id === f.id ? { ...x, status } : x));
+                          }}
+                          className="bg-slate-800 text-[10px] text-slate-200 px-2 py-1 rounded-lg border border-slate-700"
+                        >
+                          <option value="new">🆕 Mới</option>
+                          <option value="doing">🔧 Đang xử lý</option>
+                          <option value="done">✅ Xong</option>
+                        </select>
+                        <button
+                          onClick={async () => {
+                            if (!confirm('Xoá báo lỗi này?')) return;
+                            await fetch(`${BASE}/admin/feedback`, { method: 'DELETE', headers, body: JSON.stringify({ id: f.id }) });
+                            setFeedback(prev => prev.filter(x => x.id !== f.id));
+                          }}
+                          className="p-1.5 text-slate-500 hover:text-[#ff9a3d]" title="Xoá"
+                        ><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-slate-300 leading-relaxed">{f.message}</p>
+                    <p className="text-[9px] text-slate-600 font-mono break-all">
+                      {info.program ? `CT: ${info.program} · ` : ''}{info.upstreamUA ? `UA: ${info.upstreamUA} · ` : ''}{f.created_at ? new Date(typeof f.created_at === 'number' ? f.created_at * 1000 : f.created_at).toLocaleString('vi-VN') : ''}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
           {tab === 'credentials' && (
             <div className="space-y-3">
               <div className="rounded-lg border border-amber-600/30 bg-amber-950/20 p-3">
@@ -519,6 +917,14 @@ export default function AdminPanel({ onClose }) {
               </form>
             </div>
           )}
+          {tab === 'live' && <LiveTab BASE={BASE} headers={headers} />}
+          {tab === 'gifts' && <GiftsTab BASE={BASE} headers={headers} addToast={addToast} />}
+          {tab === 'payments' && <PaymentsTab BASE={BASE} headers={headers} addToast={addToast} />}
+          {tab === 'ads' && <AdsTab BASE={BASE} headers={headers} addToast={addToast} />}
+          {tab === 'sched' && <SchedTab BASE={BASE} headers={headers} addToast={addToast} />}
+          {tab === 'comments' && <CommentsTab BASE={BASE} headers={headers} addToast={addToast} />}
+          {tab === 'predict' && <PredictTab BASE={BASE} headers={headers} addToast={addToast} />}
+          {tab === 'reports' && <ReportsTab BASE={BASE} headers={headers} token={token} />}
         </div>
       </div>
     </div>

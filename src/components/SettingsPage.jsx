@@ -1,5 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, RotateCcw, Eye, EyeOff, Globe, Database, Shield, Monitor, Trash2, Languages, Moon, Sun, MapPin, Info, Cpu, Leaf, Copy, CheckCircle2, ShieldOff } from 'lucide-react';
+import { Settings, RotateCcw, Crown, Eye, EyeOff, Globe, Database, Shield, Monitor, Trash2, Languages, Moon, Sun, MapPin, Info, Cpu, Leaf, Copy, CheckCircle2, ShieldOff, Palette, Tv, Trophy, Smartphone, LogOut, QrCode, Users, KeyRound } from 'lucide-react';
+import ShareButtons from './ShareButtons';
+import { getDeviceInfo } from '../services/device';
+import { Fingerprint, Wifi, Clock, Server } from 'lucide-react';
+import { hasAppPin, setAppPin, clearAppPin, weekReport, getKidLimit, setKidLimit, fmtDur } from '../services/kids';
+import { useProfile } from '../contexts/ProfileContext';
+import QrScanner from './QrScanner';
+import PlansScreen from './PlansScreen';
+import { BADGES, getStats, fmtHours, badgeName, badgeDesc } from '../services/achievements';
 import { API_BASE } from '../services/config';
 import { useSettings } from '../contexts/SettingsContext';
 import { useDevice } from '../contexts/DeviceContext';
@@ -22,23 +30,86 @@ function Toggle({ on, onClick, label }) {
   );
 }
 
+// Dòng info trong About
+function AboutRow({ Icon, label, value, loading, mono, accent }) {
+  return (
+    <div className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
+      <span className="flex items-center gap-2 text-slate-400 shrink-0">{Icon && <Icon className="w-3.5 h-3.5" />} {label}</span>
+      {loading ? (
+        <span className="w-20 h-3.5 rounded bg-white/10 animate-pulse" />
+      ) : (
+        <span className={`font-bold text-right truncate ${mono ? 'font-mono text-[11px]' : ''} ${accent || 'text-slate-200'}`}>{value || '—'}</span>
+      )}
+    </div>
+  );
+}
+
 export default function SettingsPage({ onClose }) {
-  const { t } = useI18n();
-  const { lang, setLang, languages, detectedLang } = useI18n();
+  const { profiles } = useProfile();
+  const [pinOn, setPinOn] = useState(() => hasAppPin());
+  const [pinNew, setPinNew] = useState('');
+  const [pinMsg, setPinMsg] = useState('');
+  const { t, lang, setLang, languages, detectedLang } = useI18n();
   const { settings, updateSetting, resetSettings } = useSettings();
   const device = useDevice();
   const [pin, setPin] = useState('');
   const [showPin, setShowPin] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [active, setActive] = useState('lang'); // master-detail: mục đang chọn
 
   // ===== 2FA (TOTP) =====
   const [twoFa, setTwoFa] = useState({ loading: true, enabled: false });
   const [twoFaSetup, setTwoFaSetup] = useState(null); // {secret, otpauth}
   const [twoFaCode, setTwoFaCode] = useState('');
   const [twoFaMsg, setTwoFaMsg] = useState('');
+  const [sessions, setSessions] = useState([]);
+  const [currentSessId, setCurrentSessId] = useState(0);
+  const [sessLoading, setSessLoading] = useState(false);
+  const [achStats, setAchStats] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [devInfo, setDevInfo] = useState(null);
+  const [fpCopied, setFpCopied] = useState(false);
 
-  const { token } = useAuth();
+  // Nạp thông tin thiết bị khi mở mục Giới thiệu
+  useEffect(() => {
+    if (active !== 'about' || devInfo) return;
+    let on = true;
+    getDeviceInfo().then((d) => { if (on) setDevInfo(d); }).catch(() => {});
+    return () => { on = false; };
+  }, [active]);
+
+  const copyFp = async () => {
+    if (!devInfo?.fingerprint) return;
+    try {
+      await navigator.clipboard.writeText(devInfo.fingerprint);
+      setFpCopied(true);
+      setTimeout(() => setFpCopied(false), 1500);
+    } catch {}
+  };
+
+  const { token, user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  const [showQr, setShowQr] = useState(false);
+  // Phiên đăng nhập
+  const loadSessions = async () => {
+    if (!token) return;
+    setSessLoading(true);
+    try {
+      const r = await fetch(`${API_BASE}/auth/sessions`, { headers: { Authorization: `Bearer ${token}` } });
+      const d = await r.json();
+      setSessions(d.sessions || []);
+      setCurrentSessId(d.currentId || 0);
+    } catch {}
+    setSessLoading(false);
+  };
+  const revokeSession = async (id) => {
+    if (!token || !id) return;
+    try {
+      await fetch(`${API_BASE}/auth/sessions`, { method: 'DELETE', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ id }) });
+      loadSessions();
+    } catch {}
+  };
+  useEffect(() => { loadSessions(); setAchStats(getStats()); }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!token) return;
     fetch(`${API_BASE}/user/2fa/status`, { headers: { Authorization: `Bearer ${token}` } })
@@ -53,8 +124,8 @@ export default function SettingsPage({ onClose }) {
       const r = await fetch(`${API_BASE}/user/2fa/setup`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
       const d = await r.json();
       if (d.success) setTwoFaSetup(d);
-      else setTwoFaMsg(d.error || 'Lỗi tạo secret');
-    } catch { setTwoFaMsg('Lỗi kết nối server'); }
+      else setTwoFaMsg(d.error || t('settings.2fa_err'));
+    } catch { setTwoFaMsg(t('settings.2fa_net')); }
   };
 
   const confirm2Fa = async () => {
@@ -63,8 +134,8 @@ export default function SettingsPage({ onClose }) {
       const r = await fetch(`${API_BASE}/user/2fa/verify`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ code: twoFaCode }) });
       const d = await r.json();
       if (d.success) { setTwoFa({ loading: false, enabled: true }); setTwoFaSetup(null); setTwoFaCode(''); setTwoFaMsg('Đã bật 2FA! ✅'); }
-      else setTwoFaMsg(d.error || 'Mã sai');
-    } catch { setTwoFaMsg('Lỗi kết nối server'); }
+      else setTwoFaMsg(d.error || t('settings.2fa_wrong'));
+    } catch { setTwoFaMsg(t('settings.2fa_net')); }
   };
 
   const disable2Fa = async () => {
@@ -73,8 +144,8 @@ export default function SettingsPage({ onClose }) {
       const r = await fetch(`${API_BASE}/user/2fa/disable`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ code: twoFaCode }) });
       const d = await r.json();
       if (d.success) { setTwoFa({ loading: false, enabled: false }); setTwoFaCode(''); setTwoFaMsg('Đã tắt 2FA.'); }
-      else setTwoFaMsg(d.error || 'Mã sai');
-    } catch { setTwoFaMsg('Lỗi kết nối server'); }
+      else setTwoFaMsg(d.error || t('settings.2fa_wrong'));
+    } catch { setTwoFaMsg(t('settings.2fa_net')); }
   };
 
   const country = detectCountry();
@@ -96,8 +167,25 @@ export default function SettingsPage({ onClose }) {
     }
   };
 
+  const navItems = [
+    { id: 'lang', label: t('settings.language'), Icon: Languages },
+    { id: 'appearance', label: t('settings.appearance'), Icon: Palette },
+    { id: 'video', label: t('settings.video'), Icon: Monitor },
+    { id: 'parental', label: t('settings.parental'), Icon: Shield },
+    { id: 'sleep', label: t('settings.sleep_timer'), Icon: Cpu },
+    ...(isAdmin ? [{ id: 'sources', label: t('settings.data_sources'), Icon: Globe }] : []),
+    { id: 'sessions', label: t('settings.sessions'), Icon: Smartphone },
+    { id: 'badges', label: t('settings.ach_title'), Icon: Trophy },
+    { id: 'family', label: t('settings.family'), Icon: Users },
+    { id: 'pin', label: t('settings.app_pin'), Icon: KeyRound },
+    { id: '2fa', label: '2FA', Icon: QrCode },
+    { id: 'plans', label: t('nav.plans'), Icon: Crown },
+    { id: 'about', label: t('settings.about'), Icon: Info },
+  ];
+
   return (
     <div className="p-5 md:p-7 space-y-5 max-w-6xl mx-auto">
+      {showQr && token && <QrScanner onClose={() => setShowQr(false)} />}
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -106,16 +194,36 @@ export default function SettingsPage({ onClose }) {
           </div>
           <h1 className="text-2xl font-extrabold text-white">{t('settings.title')}</h1>
         </div>
-        {onClose && (
-          <button onClick={onClose} className="px-4 py-2 text-xs text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors">
-            {t('common.close')}
-          </button>
-        )}
+        <div className="hidden md:flex items-center gap-1.5 text-[11px] text-stone-500">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          {t('settings.synced')}
+        </div>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-5">
+      <div className="flex flex-col md:flex-row gap-4 items-start">
+        {/* LEFT: nav */}
+        <nav className="w-full md:w-60 shrink-0 flex md:flex-col gap-1 overflow-x-auto md:overflow-visible pb-1 scrollbar-none bg-[#14151c] border border-white/[0.07] rounded-2xl p-2 md:self-start">
+          {navItems.map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => { setActive(id); try { document.querySelector('main')?.scrollTo({ top: 0 }); } catch {} }}
+              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[12px] font-bold whitespace-nowrap transition-all active:scale-[0.98] flex-1 md:flex-none ${
+                active === id
+                  ? 'grad-brand text-white shadow-lg shadow-[#f36f21]/25'
+                  : 'text-stone-400 hover:text-white hover:bg-white/[0.06]'
+              }`}
+            >
+              <Icon className="w-4 h-4 shrink-0" /> {label}
+            </button>
+          ))}
+        </nav>
+        {/* RIGHT: content */}
+        <div className="flex-1 min-w-0 w-full">
+        {active === 'plans' ? <PlansScreen /> : (<>
         {/* ===== NGÔN NGỮ ===== */}
-        <div className="bg-[#13151c] border border-slate-800/40 rounded-xl p-5 space-y-4 md:col-span-2">
+        {active === 'lang' && (
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 shadow-xl shadow-black/30 space-y-4 md:col-span-2">
           <h3 className="text-sm font-bold text-white flex items-center gap-2"><Languages className="w-4 h-4 text-[#ff9a3d]" /> {t('settings.language')}</h3>
           <div className="flex flex-wrap gap-2.5">
             {languages.map(l => {
@@ -149,9 +257,11 @@ export default function SettingsPage({ onClose }) {
             {t('settings.current_lang')}: <span className="text-stone-300 font-bold">{languages.find(l => l.code === lang)?.label || lang}</span>
           </div>
         </div>
+        )}
 
         {/* ===== GIAO DIỆN ===== */}
-        <div className="bg-[#13151c] border border-slate-800/40 rounded-xl p-5 space-y-4">
+        {active === 'appearance' && (
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 shadow-xl shadow-black/30 space-y-4">
           <h3 className="text-sm font-bold text-white flex items-center gap-2"><Moon className="w-4 h-4 text-blue-400" /> {t('settings.appearance')}</h3>
           <div className="flex items-center justify-between">
             <span className="text-xs text-slate-400">{t('settings.theme')}</span>
@@ -170,10 +280,33 @@ export default function SettingsPage({ onClose }) {
               ))}
             </div>
           </div>
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-slate-400 flex items-center gap-1.5"><Palette className="w-3.5 h-3.5 text-pink-400" /> {t('settings.color_theme')}</span>
+            <div className="flex gap-1.5">
+              {[
+                { v: 'sunset', label: t('settings.theme_sunset'), grad: 'linear-gradient(135deg,#f36f21,#ff9a3d)' },
+                { v: 'ocean', label: t('settings.theme_ocean'), grad: 'linear-gradient(135deg,#0ea5e9,#6366f1)' },
+                { v: 'fire', label: t('settings.theme_fire'), grad: 'linear-gradient(135deg,#ef4444,#f59e0b)' },
+              ].map(o => (
+                <button key={o.v} onClick={() => updateSetting('colorTheme', o.v)} className={`flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg font-medium transition-all ${settings.colorTheme === o.v ? 'bg-slate-700 text-white ring-1 ring-[#f36f21]' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>
+                  <span className="w-3.5 h-3.5 rounded-full" style={{ background: o.grad }}></span>{o.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium text-slate-200 flex items-center gap-1.5"><Tv className="w-3.5 h-3.5 text-cyan-400" /> {t('settings.tv_mode')}</p>
+              <p className="text-[10px] text-slate-500">{t('settings.tv_mode_desc')}</p>
+            </div>
+            <Toggle on={!!settings.tvMode} onClick={() => updateSetting('tvMode', !settings.tvMode)} label="TV mode" />
+          </div>
         </div>
+        )}
 
         {/* ===== VIDEO ===== */}
-        <div className="bg-[#13151c] border border-slate-800/40 rounded-xl p-5 space-y-4">
+        {active === 'video' && (
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 shadow-xl shadow-black/30 space-y-4">
           <h3 className="text-sm font-bold text-white flex items-center gap-2"><Monitor className="w-4 h-4 text-blue-400" /> {t('settings.video')}</h3>
           <div className="flex items-center justify-between">
             <span className="text-xs text-slate-400">{t('settings.default_quality')}</span>
@@ -233,10 +366,19 @@ export default function SettingsPage({ onClose }) {
               <Toggle on={!!settings.gestureEnabled} onClick={() => updateSetting('gestureEnabled', !settings.gestureEnabled)} label={t('settings.gesture')} />
             </div>
           )}
+          <div className="flex items-center justify-between pt-1 border-t border-slate-800/40">
+            <div>
+              <p className="text-xs font-medium text-slate-200 flex items-center gap-1.5"><EyeOff className="w-3.5 h-3.5 text-purple-400" /> {t('settings.spoiler')}</p>
+              <p className="text-[10px] text-slate-500">{t('settings.spoiler_desc')}</p>
+            </div>
+            <Toggle on={!!settings.spoilerMask} onClick={() => updateSetting('spoilerMask', !settings.spoilerMask)} label="Spoiler mask" />
+          </div>
         </div>
+        )}
 
         {/* ===== KIỂM SOÁT PHỤ HUYNH ===== */}
-        <div className="bg-[#13151c] border border-slate-800/40 rounded-xl p-5 space-y-4">
+        {active === 'parental' && (
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 shadow-xl shadow-black/30 space-y-4">
           <h3 className="text-sm font-bold text-white flex items-center gap-2"><Shield className="w-4 h-4 text-amber-400" /> {t('settings.parental')}</h3>
           <div className="flex items-center justify-between">
             <span className="text-xs text-slate-400">{t('settings.parental_enable')}</span>
@@ -244,11 +386,26 @@ export default function SettingsPage({ onClose }) {
           </div>
           <div className="flex items-center justify-between py-2">
             <div>
-              <p className="text-xs font-medium text-slate-200 flex items-center gap-1.5"><Leaf className="w-3.5 h-3.5 text-emerald-400" /> Tiết kiệm data</p>
-              <p className="text-[10px] text-slate-500">Giới hạn độ phân giải video ≤ 480p (tiết kiệm 3G/4G)</p>
+              <p className="text-xs font-medium text-slate-200 flex items-center gap-1.5"><Leaf className="w-3.5 h-3.5 text-emerald-400" /> {t('settings.data_saver')}</p>
+              <p className="text-[10px] text-slate-500">{t('settings.data_saver_desc')}</p>
             </div>
             <Toggle on={!!settings.dataSaver} onClick={() => updateSetting('dataSaver', !settings.dataSaver)} label="Data saver" />
           </div>
+          {settings.dataSaver && (
+            <div className="flex items-center justify-between pl-1">
+              <span className="text-xs text-slate-400">{t('settings.data_cap')}</span>
+              <select
+                value={settings.dataSaverCap || 480}
+                onChange={e => updateSetting('dataSaverCap', parseInt(e.target.value) || 480)}
+                className="bg-slate-800 text-xs text-slate-200 px-3 py-2 rounded-lg border border-slate-700"
+              >
+                <option value={240}>240p ({t('settings.cap_ultra')})</option>
+                <option value={360}>360p ({t('settings.cap_save')})</option>
+                <option value={480}>480p ({t('settings.cap_bal')})</option>
+                <option value={720}>720p ({t('settings.cap_mid')})</option>
+              </select>
+            </div>
+          )}
           {settings.parentalEnabled && (
             <div className="flex items-center gap-2">
               <span className="text-xs text-slate-400">PIN:</span>
@@ -267,15 +424,32 @@ export default function SettingsPage({ onClose }) {
               </div>
             </div>
           )}
+          <div className="flex items-center justify-between pt-2 border-t border-slate-800/40">
+            <div>
+              <p className="text-xs font-medium text-slate-200 flex items-center gap-1.5"><Moon className="w-3.5 h-3.5 text-indigo-400" /> 🌙 {t('settings.bedtime')}</p>
+              <p className="text-[10px] text-slate-500">{t('settings.bedtime_desc')}</p>
+            </div>
+            <Toggle on={!!settings.kidBedtimeEnabled} onClick={() => updateSetting('kidBedtimeEnabled', !settings.kidBedtimeEnabled)} label="Bedtime" />
+          </div>
+          {settings.kidBedtimeEnabled && (
+            <div className="flex items-center gap-2 pl-1">
+              <span className="text-xs text-slate-400">{t('settings.from')}</span>
+              <input type="time" value={settings.kidBedtimeStart || '21:00'} onChange={e => updateSetting('kidBedtimeStart', e.target.value)} className="bg-slate-800 text-xs text-slate-200 px-2 py-1.5 rounded-lg border border-slate-700" />
+              <span className="text-xs text-slate-400">{t('settings.to')}</span>
+              <input type="time" value={settings.kidBedtimeEnd || '06:00'} onChange={e => updateSetting('kidBedtimeEnd', e.target.value)} className="bg-slate-800 text-xs text-slate-200 px-2 py-1.5 rounded-lg border border-slate-700" />
+            </div>
+          )}
           <div className="pt-2 border-t border-slate-800/40">
             <p className="text-[10px] text-slate-600 leading-relaxed">
               {t('settings.parental_desc')}
             </p>
           </div>
         </div>
+        )}
 
         {/* ===== HẸN GIỜ TẮT ===== */}
-        <div className="bg-[#13151c] border border-slate-800/40 rounded-xl p-5 space-y-4">
+        {active === 'sleep' && (
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 shadow-xl shadow-black/30 space-y-4">
           <h3 className="text-sm font-bold text-white flex items-center gap-2"><Cpu className="w-4 h-4 text-purple-400" /> {t('settings.sleep_timer')}</h3>
           <div className="flex items-center justify-between">
             <span className="text-xs text-slate-400">{t('settings.sleep_timer')}</span>
@@ -298,10 +472,12 @@ export default function SettingsPage({ onClose }) {
             </p>
           </div>
         </div>
+        )}
 
-        {/* ===== EPG & NGUỒN ===== */}
-        <div className="bg-[#13151c] border border-slate-800/40 rounded-xl p-5 space-y-4">
-          <h3 className="text-sm font-bold text-white flex items-center gap-2"><Globe className="w-4 h-4 text-emerald-400" /> {t('settings.data_sources')}</h3>
+        {/* ===== EPG & NGUỒN (chỉ admin) ===== */}
+        {isAdmin && active === 'sources' && (
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 shadow-xl shadow-black/30 space-y-4">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2"><Globe className="w-4 h-4 text-emerald-400" /> {t('settings.data_sources')} <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">ADMIN</span></h3>
           <div className="space-y-2">
             <label className="text-xs text-slate-400 block">{t('settings.epg_url')}</label>
             <input
@@ -317,12 +493,150 @@ export default function SettingsPage({ onClose }) {
             <p className="text-[10px] text-slate-600 leading-relaxed">{t('settings.database_desc')}</p>
           </div>
         </div>
+        )}
+
+        {/* ===== PHIÊN ĐĂNG NHẬP ===== */}
+        {active === 'sessions' && (
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 shadow-xl shadow-black/30 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2"><Smartphone className="w-4 h-4 text-cyan-400" /> {t('settings.sessions')}</h3>
+            {token && (
+              <button onClick={() => setShowQr(true)} className="flex items-center gap-1.5 px-3 py-1.5 grad-brand text-white text-[11px] font-bold rounded-xl shadow-md shadow-[#f36f21]/25">
+                <QrCode className="w-3.5 h-3.5" /> {t('settings.scan_qr')}
+              </button>
+            )}
+          </div>
+          {!token ? (
+            <p className="text-[11px] text-slate-500">{t('settings.sess_login')}</p>
+          ) : sessLoading ? (
+            <p className="text-xs text-slate-500">{t('app.loading')}</p>
+          ) : sessions.length === 0 ? (
+            <p className="text-[11px] text-slate-500">{t('settings.sess_empty')}</p>
+          ) : (
+            <div className="space-y-2 max-h-56 overflow-y-auto">
+              {sessions.map(s => {
+                const ua = s.user_agent || t('settings.sess_unknown');
+                const isCur = s.id === currentSessId;
+                const dev = /mobile|android|iphone/i.test(ua) ? '📱' : /tv|smarttv|tizen|webos/i.test(ua) ? '📺' : '💻';
+                return (
+                  <div key={s.id} className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border ${isCur ? 'border-emerald-600/50 bg-emerald-950/20' : 'border-slate-800/60 bg-black/20'}`}>
+                    <span className="text-lg">{dev}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] text-slate-200 truncate">{ua}</p>
+                      <p className="text-[9px] text-slate-500">
+                        {isCur ? <span className="text-emerald-400 font-bold">● {t('settings.sess_this')} · </span> : null}
+                        {t('settings.sess_exp')} {new Date(s.expires_at).toLocaleDateString(lang === 'vi' ? 'vi-VN' : 'en-US')}
+                      </p>
+                    </div>
+                    {!isCur && (
+                      <button onClick={() => revokeSession(s.id)} title={t('settings.sess_revoke')} className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-950/40 transition-all">
+                        <LogOut className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        )}
+
+        {/* ===== HUY HIỆU ===== */}
+        {active === 'badges' && (
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 shadow-xl shadow-black/30 space-y-3">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2"><Trophy className="w-4 h-4 text-amber-400" /> {t('settings.ach_title')}</h3>
+          {achStats && (
+            <p className="text-[11px] text-slate-400">
+              {t('settings.ach_sum', { h: fmtHours(achStats.totalSec || 0, lang), c: (achStats.channels || []).length, s: achStats.streak || 0, g: (achStats.badges || []).length, n: BADGES.length })}
+            </p>
+          )}
+          {achStats && (achStats.badges || []).length > 0 && (
+            <ShareButtons
+              url={typeof window !== 'undefined' ? window.location.href : ''}
+              title={t('settings.ach_share', { g: (achStats.badges || []).length, h: fmtHours(achStats.totalSec || 0, lang) })}
+              compact
+            />
+          )}
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+            {BADGES.map(b => {
+              const got = achStats?.badges?.includes(b.id);
+              return (
+                <div key={b.id} title={`${badgeName(b, lang)} — ${badgeDesc(b, lang)}`} className={`rounded-xl border px-2 py-2.5 text-center transition-all ${got ? 'border-amber-500/50 bg-amber-950/20' : 'border-slate-800/60 bg-black/20 opacity-45 grayscale'}`}>
+                  <div className="text-xl">{b.icon}</div>
+                  <div className="text-[9px] font-bold text-slate-200 mt-1 leading-tight">{badgeName(b, lang)}</div>
+                  <div className="text-[8px] text-slate-500 leading-tight mt-0.5">{badgeDesc(b, lang)}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        )}
+
+        {/* ===== GIA ĐÌNH & BÁO CÁO BÉ ===== */}
+        {active === 'family' && (
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 shadow-xl shadow-black/30 space-y-4">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2"><Users className="w-4 h-4 text-fuchsia-400" /> {t('settings.family')}</h3>
+          {(profiles || []).filter(p => p.is_child).length === 0 && (
+            <p className="text-[11px] text-slate-500">{t('settings.no_kids')}</p>
+          )}
+          {(profiles || []).filter(p => p.is_child).map(p => {
+            const rep = weekReport(p.id);
+            const lim = getKidLimit(p.id);
+            const max = Math.max(1, ...rep.days.map(d => d.sec));
+            return (
+              <div key={p.id} className="rounded-2xl bg-black/30 border border-white/[0.06] p-3">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <p className="text-[13px] font-black text-white">🧒 {p.name}</p>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-slate-500 font-bold">{t('settings.limit_day')}</span>
+                    <input
+                      type="number" min="0" max="1440" defaultValue={lim} key={`${p.id}-${lim}`}
+                      onBlur={e => setKidLimit(p.id, e.target.value)}
+                      className="w-16 px-2 py-1 bg-slate-800 border border-slate-700 rounded-lg text-[12px] font-bold text-white text-center outline-none focus:border-[#f36f21]"
+                    />
+                    <span className="text-[10px] text-slate-500">′</span>
+                  </div>
+                </div>
+                <div className="flex items-end gap-1 h-16">
+                  {rep.days.map(d => (
+                    <div key={d.date} className="flex-1 flex flex-col items-center gap-0.5" title={`${d.date}: ${fmtDur(d.sec)}`}>
+                      <div className="w-full rounded-t-md bg-gradient-to-t from-[#f36f21] to-amber-400 min-h-[3px]" style={{ height: `${Math.max(4, Math.round((d.sec / max) * 52))}px` }} />
+                      <span className="text-[8px] text-slate-600 font-bold">{d.date.slice(8)}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1.5">{t('settings.week_total')}: <b className="text-slate-300">{fmtDur(rep.total)}</b>
+                  {rep.top.length > 0 && <span> · ⭐ {rep.top.slice(0, 3).map(([name, sec]) => `${name} (${fmtDur(sec)})`).join(' · ')}</span>}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+        )}
+
+        {/* ===== PIN MỞ APP ===== */}
+        {active === 'pin' && (
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 shadow-xl shadow-black/30 space-y-3">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2"><KeyRound className="w-4 h-4 text-amber-400" /> {t('settings.app_pin')}</h3>
+          <p className="text-[11px] text-slate-400">{t('settings.pin_sub')}</p>
+          {pinOn ? (
+            <button onClick={() => { clearAppPin(); setPinOn(false); setPinMsg(t('settings.pin_off')); }} className="px-4 py-2 bg-white/10 hover:bg-white/15 text-white text-xs font-bold rounded-xl">{t('settings.pin_disable')}</button>
+          ) : (
+            <div className="flex gap-2">
+              <input value={pinNew} onChange={e => { setPinNew(e.target.value.replace(/\D/g, '').slice(0, 8)); setPinMsg(''); }} placeholder="PIN 4-8 số" inputMode="numeric" className="w-36 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm font-mono tracking-widest text-white text-center outline-none focus:border-amber-500" />
+              <button onClick={async () => { if (await setAppPin(pinNew)) { setPinOn(true); setPinNew(''); setPinMsg(t('settings.pin_on')); } else setPinMsg(t('settings.pin_invalid')); }} className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold rounded-xl">{t('settings.pin_enable')}</button>
+            </div>
+          )}
+          {pinMsg && <p className="text-[11px] text-amber-400">{pinMsg}</p>}
+        </div>
+        )}
 
         {/* ===== BẢO MẬT (2FA) ===== */}
-        <div className="bg-[#13151c] border border-slate-800/40 rounded-xl p-5 space-y-3">
+        {active === '2fa' && (
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 shadow-xl shadow-black/30 space-y-3">
           <h3 className="text-sm font-bold text-white flex items-center gap-2"><Shield className="w-4 h-4 text-emerald-400" /> Bảo mật — Xác thực 2 lớp (2FA)</h3>
           {twoFa.loading ? (
-            <p className="text-xs text-slate-500">Đang tải…</p>
+            <p className="text-xs text-slate-500">{t('app.loading')}</p>
           ) : !twoFa.enabled ? (
             !twoFaSetup ? (
               <div className="space-y-2">
@@ -359,18 +673,47 @@ export default function SettingsPage({ onClose }) {
           )}
           {twoFaMsg && <p className="text-[11px] text-amber-400">{twoFaMsg}</p>}
         </div>
+        )}
 
         {/* ===== VỀ APP + RESET ===== */}
-        <div className="bg-[#13151c] border border-slate-800/40 rounded-xl p-5 space-y-4">
+        {active === 'about' && (
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 shadow-xl shadow-black/30 space-y-4">
           <h3 className="text-sm font-bold text-white flex items-center gap-2"><Info className="w-4 h-4 text-slate-400" /> {t('settings.about')}</h3>
           <div className="flex items-center justify-between text-xs">
             <span className="text-slate-400">{t('settings.version')}</span>
-            <span className="text-slate-200 font-bold">CHRTV 1.0.0</span>
+            <span className="text-slate-200 font-bold">CHRTV PLAY 2.0</span>
           </div>
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-slate-400">Region</span>
-            <span className="text-slate-200 font-bold">{countryFlag} {countryName}</span>
+          {/* ===== Thiết bị đang dùng ===== */}
+          <div className="rounded-xl border border-white/[0.06] bg-black/30 divide-y divide-white/[0.05] overflow-hidden">
+            <AboutRow Icon={Globe} label={t('about.browser')} value={devInfo?.browser} loading={!devInfo} />
+            <AboutRow Icon={Cpu} label={t('about.os')} value={devInfo?.os ? `${devInfo.os}${devInfo.cores ? ` · ${devInfo.cores} CPU` : ''}` : ''} loading={!devInfo} />
+            <AboutRow Icon={device.isMobile ? Smartphone : Monitor} label={t('about.device')} value={devInfo ? t(`about.kind_${devInfo.kind}`) : ''} loading={!devInfo} />
+            <AboutRow Icon={Monitor} label={t('about.screen')} value={devInfo?.screen ? `${devInfo.screen}${devInfo.viewport ? ` · view ${devInfo.viewport}` : ''}` : ''} loading={!devInfo} />
+            <AboutRow Icon={Languages} label={t('about.lang_tz')} value={devInfo ? `${devInfo.lang || '?'} · ${devInfo.tz || '?'}` : ''} loading={!devInfo} />
+            <AboutRow Icon={MapPin} label={t('about.country')} value={`${countryFlag} ${countryName} (${country})`} />
+            <AboutRow Icon={Wifi} label={t('about.net')} value={devInfo ? (devInfo.online ? t('about.online') : t('about.offline')) : ''} loading={!devInfo} accent={devInfo ? (devInfo.online ? 'text-emerald-400' : 'text-red-400') : ''} />
+            {devInfo?.standalone && <AboutRow Icon={CheckCircle2} label={t('about.app_mode')} value={t('about.pwa')} accent="text-emerald-400" />}
+            <AboutRow Icon={Server} label={t('about.server')} value={API_BASE.replace(/^https?:\/\//, '').slice(0, 40)} mono />
           </div>
+          {/* Fingerprint */}
+          <div className="rounded-xl border border-[#f36f21]/25 bg-[#f36f21]/[0.05] p-3">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="flex items-center gap-1.5 text-[11px] font-bold text-stone-300"><Fingerprint className="w-3.5 h-3.5 text-[#ff9a3d]" /> {t('about.fp')}</span>
+              <button onClick={copyFp} className="flex items-center gap-1 text-[11px] font-bold text-stone-400 hover:text-white transition-colors">
+                {fpCopied ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                {fpCopied ? t('about.copied') : t('about.copy')}
+              </button>
+            </div>
+            <div className="font-mono text-[15px] font-black tracking-[0.2em] text-white text-center select-all">{devInfo?.fingerprint || '…'}</div>
+            <p className="text-[10px] text-stone-500 text-center mt-1">{t('about.fp_hint')}</p>
+          </div>
+          {/* User-Agent */}
+          {devInfo?.ua && (
+            <div className="rounded-xl border border-white/[0.06] bg-black/30 p-3">
+              <div className="flex items-center gap-1.5 text-[11px] font-bold text-stone-400 mb-1"><Clock className="w-3.5 h-3.5" /> User-Agent</div>
+              <p className="text-[10px] text-stone-500 break-all leading-relaxed font-mono">{devInfo.ua}</p>
+            </div>
+          )}
           <div className="pt-3 border-t border-slate-800/40">
             <button
               onClick={handleReset}
@@ -386,6 +729,9 @@ export default function SettingsPage({ onClose }) {
               </button>
             )}
           </div>
+        </div>
+        )}
+        </>)}
         </div>
       </div>
     </div>

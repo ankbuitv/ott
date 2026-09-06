@@ -441,6 +441,13 @@ export default function SettingsPage({ onClose }) {
           </div>
           <div className="flex items-center justify-between py-2">
             <div>
+              <p className="text-xs font-medium text-slate-200 flex items-center gap-1.5"><Leaf className="w-3.5 h-3.5 text-sky-400" /> Tự hạ chất lượng khi mạng yếu</p>
+              <p className="text-[10px] text-slate-500">Rời Wi-Fi sang 4G hoặc mạng chậm là tự giảm xuống 480p và báo cho bạn biết</p>
+            </div>
+            <Toggle on={settings.autoQualityOnCellular !== false} onClick={() => updateSetting('autoQualityOnCellular', settings.autoQualityOnCellular === false)} label="Auto quality" />
+          </div>
+          <div className="flex items-center justify-between py-2">
+            <div>
               <p className="text-xs font-medium text-slate-200 flex items-center gap-1.5"><Leaf className="w-3.5 h-3.5 text-emerald-400" /> {t('settings.data_saver')}</p>
               <p className="text-[10px] text-slate-500">{t('settings.data_saver_desc')}</p>
             </div>

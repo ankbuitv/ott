@@ -79,14 +79,15 @@ Xếp lại theo **thứ tự thi công** (cái nào sửa đau nhất + rẻ nh
 
 ---
 
-## Ba thứ phải quyết trước khi code
+## Quyết định đã chốt với bro
 
-1. **Cron** — Workers Free chỉ cho **5 cron trigger/tài khoản** và đang hết (nên `wrangler.toml` đã tắt cron).
-   Các tính năng 46, 2, 35, 40 đều cần chạy nền. Cách rẻ nhất: **1 cron trigger duy nhất**
-   (`*/5 * * * *`) gọi 1 hàm dispatcher tự chia việc theo phút, hoặc dùng dịch vụ ping ngoài
-   (cron-job.org) gọi `/api/cron/run` có token bí mật. Không cần lên Workers Paid.
-2. **Thanh toán** — xem cảnh báo ở đợt 4.
-3. **Quảng cáo (34)** — tự bán chỗ hay gắn mạng quảng cáo (VAST)? Ảnh hưởng lớn tới cách làm player.
+1. **Không dùng cron** — mọi việc chạy nền đi theo request thật (`runDueJobs()` + bảng `jobs`).
+   Không tốn cron trigger nào, không cần Workers Paid. Đánh đổi: app phải có người dùng thì
+   việc nền mới chạy (app không ai vào thì cũng chẳng cần kiểm tra kênh).
+   Các tính năng 2 (nhắc lịch), 35 (nhắc gia hạn), 40 (gợi ý) sẽ dùng chung cơ chế này.
+2. **Thanh toán thủ công** — user chuyển khoản, admin vào duyệt rồi kích hoạt/sinh mã.
+   Không làm số 31 (webhook VietQR/SePay). Ảnh hưởng: 32/36/38 đều đi qua bước duyệt tay.
+3. **Quảng cáo (34)** — chưa chốt cách bán chỗ; sẽ hỏi lại khi tới đợt 4.
 
 ## Bảng nợ kỹ thuật kèm theo
 

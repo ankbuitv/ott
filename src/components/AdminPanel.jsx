@@ -3,7 +3,7 @@ import { Settings, Users, BarChart3, Bell, Radio, Send, Eye, TrendingUp, Calenda
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { API_BASE } from '../services/config';
-import { LiveTab, GiftsTab, PaymentsTab, AdsTab, SchedTab, CommentsTab, PredictTab, ReportsTab, EXTRA_TABS } from './AdminExtras';
+import { LiveTab, GiftsTab, PaymentsTab, AdsTab, SchedTab, CommentsTab, PredictTab, ReportsTab, HealthTab, EXTRA_TABS } from './AdminExtras';
 
 const BASE = API_BASE;
 
@@ -1002,6 +1002,7 @@ export default function AdminPanel({ onClose }) {
               </form>
             </div>
           )}
+          {tab === 'health' && <HealthTab BASE={BASE} headers={headers} addToast={addToast} />}
           {tab === 'live' && <LiveTab BASE={BASE} headers={headers} />}
           {tab === 'gifts' && <GiftsTab BASE={BASE} headers={headers} addToast={addToast} />}
           {tab === 'payments' && <PaymentsTab BASE={BASE} headers={headers} addToast={addToast} />}

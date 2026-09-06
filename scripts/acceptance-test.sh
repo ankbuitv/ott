@@ -215,6 +215,35 @@ if [ -n "$GTOKEN" ] && [ -n "$CH_VN" ]; then
 fi
 
 echo ""
+echo "[13] ĐỢT 1 — VẬN HÀNH KÊNH (báo lỗi 20 · telemetry 49 · health 46 · status 47 · hot 3)"
+# 13a: trang trạng thái công khai, không cần đăng nhập
+C=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -A "$UA" "$BASE/status")
+check_eq "/status mở được không cần login" 200 "$C"
+S=$(curl -s --max-time 15 "$BASE/api/status")
+check_eq "/api/status trả JSON" "true" "$(printf '%s' "$S" | sed -n 's/.*"success":\([a-z]*\).*/\1/p' | head -1)"
+# 13b: báo kênh lỗi cần phiên hợp lệ
+C=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -X POST -H 'Content-Type: application/json' \
+     -d '{"channel_id":"X"}' "$BASE/api/report-channel")
+if [ "$C" = "200" ] || [ "$C" = "401" ]; then ok "/api/report-channel phản hồi hợp lệ (= $C)"; else bad "/api/report-channel trả $C"; fi
+if [ -n "$GTOKEN" ]; then
+  R=$(curl -s --max-time 15 -A "$UA" -H "Authorization: Bearer $GTOKEN" -H 'Content-Type: application/json' \
+      -X POST -d '{"channel_id":"ACCEPT_TEST","channel_name":"Acceptance","code":"no_play","note":"acceptance"}' "$BASE/api/report-channel")
+  check_eq "gửi báo kênh lỗi" "true" "$(printf '%s' "$R" | sed -n 's/.*"success":\([a-z]*\).*/\1/p' | head -1)"
+  R=$(curl -s --max-time 15 -A "$UA" -H "Authorization: Bearer $GTOKEN" -H 'Content-Type: application/json' \
+      -X POST -d '{"channel_id":"ACCEPT_TEST","engine":"hls","code":"acceptanceError","fatal":true}' "$BASE/api/telemetry/player")
+  check_eq "gửi log lỗi player" "true" "$(printf '%s' "$R" | sed -n 's/.*"success":\([a-z]*\).*/\1/p' | head -1)"
+fi
+# 13c: bảng xếp hạng "đang hot" (15 phút) không lộ stream_url
+TR=$(curl -s --max-time 15 "$BASE/api/stats/trending")
+check_eq "/api/stats/trending trả JSON" "true" "$(printf '%s' "$TR" | sed -n 's/.*"success":\([a-z]*\).*/\1/p' | head -1)"
+check_le "trending không chứa stream_url" 0 "$(printf '%s' "$TR" | grep -c 'stream_url' || true)"
+# 13d: endpoint vận hành chỉ dành cho admin
+for ep in "/admin/channel-health" "/admin/channel-reports" "/admin/player-errors"; do
+  C=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -A "$UA" "$BASE$ep")
+  check_eq "$ep chặn người lạ" 403 "$C"
+done
+
+echo ""
 echo "=============================================================="
 echo " KẾT QUẢ: $PASS passed, $FAIL failed"
 echo "=============================================================="

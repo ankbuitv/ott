@@ -45,6 +45,11 @@ npx wrangler deploy
 npx wrangler secret put M3U_SOURCE_URL       # nguồn playlist riêng tư — xem mục 3
 npx wrangler secret put STREAM_MANIFEST_TTL  # tuỳ chọn, mặc định 300 (giây, cho phép 60..1800)
 npx wrangler secret put PROXY_ALLOWED_HOSTS  # tuỳ chọn: "fptplay53.net,seenow.vn,vtv.sub.id"
+
+# --- ĐỢT 1 (vận hành kênh) — đều tuỳ chọn ---
+npx wrangler secret put TELEGRAM_BOT_TOKEN      # báo kênh chết về Telegram
+npx wrangler secret put TELEGRAM_CHAT_ID
+npx wrangler secret put AUTO_HIDE_DEAD_CHANNELS # "1" = tự ẩn kênh chết sau 5 lần fail (mặc định chỉ gắn cờ)
 ```
 
 **KHÔNG set `PUBLIC_STREAM_URL`** — đó là công tắc khẩn cấp, để trống nghĩa là bảo vệ đang bật.
@@ -100,6 +105,8 @@ Rồi thử tay 3 việc trên web `https://play.ankb.qzz.io`:
 1. Đăng nhập → mở 1 kênh → **F12 → Network**: chỉ thấy `/api/stream/proxy?t=…`, không thấy domain gốc.
 2. Copy link proxy đó dán sang VLC → phải **lỗi/403**.
 3. Cài đặt → **Đổi mật khẩu**, tick “đăng xuất thiết bị khác” → thiết bị kia bị đá ra thật.
+4. Mở `https://play.ankb.qzz.io/status` → thấy % kênh sống (sau vài phút app có người dùng,
+   bộ kiểm tra nền sẽ tự quét dần 155 kênh; muốn nhanh thì Admin → **Sức khoẻ kênh** → *Kiểm tra 20 kênh ngay*).
 
 ---
 

@@ -1,12 +1,16 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import shaka from 'shaka-player';
 import Hls from 'hls.js';
-import { Play, Pause, Volume2, VolumeX, Maximize, Minimize, AlertTriangle, Radio, Clock, ArrowLeft, ChevronUp, ChevronDown, RefreshCw, List, X, Settings } from 'lucide-react';
+import { Play, Pause, Volume2, VolumeX, Maximize, Minimize, AlertTriangle, Radio, Clock, ArrowLeft, ChevronUp, ChevronDown, RefreshCw, List, X, Settings, Flag, Signal } from 'lucide-react';
 import { formatTimeHHMM, calculateProgramProgress } from '../utils/dateUtils';
 import { maskScores } from '../utils/spoiler';
 import { useToast } from '../contexts/ToastContext';
 import { useI18n } from '../contexts/I18nContext';
 import { isHlsUrl, isProxiedStreamUrl, getRotateAtMs, refreshStreamToken, makeStreamRequestFilter, applyStreamClientHeaders } from '../services/streamGuard';
+import { logPlayerError } from '../services/telemetry';
+import useNetworkQuality, { heightCapFor } from '../hooks/useNetworkQuality';
+import { useSettings } from '../contexts/SettingsContext';
+import ReportChannelModal from './ReportChannelModal';
 
 function hexToUint8(hex) {
   const arr = new Uint8Array(hex.length / 2);
@@ -34,6 +38,7 @@ export default function VideoPlayer({
   const shakaRef = useRef(null);
   const { addToast } = useToast();
   const { t } = useI18n();
+  const { settings } = useSettings();
 
   const [playing, setPlaying] = useState(true);
   const [muted, setMuted] = useState(false);
@@ -47,7 +52,17 @@ export default function VideoPlayer({
   const [showQuality, setShowQuality] = useState(false);
   const [tracks, setTracks] = useState([]);
   const [selectedTrack, setSelectedTrack] = useState(-1);
+  const [showReport, setShowReport] = useState(false);
   const overlayTimer = useRef(null);
+
+  // (13) Mạng yếu / chuyển sang 4G -> cảnh báo + tự hạ bitrate
+  const net = useNetworkQuality((info) => {
+    addToast(`Bạn vừa chuyển sang mạng di động (${(info.effectiveType || '4g').toUpperCase()}) — app đã tự hạ chất lượng để tiết kiệm data`, 'info');
+  });
+  const netRef = useRef(net);
+  netRef.current = net;
+  const capRef = useRef(0);
+  capRef.current = heightCapFor(net, settings || {});
 
   const channelName = channel?.name || 'TV';
 
@@ -130,6 +145,10 @@ export default function VideoPlayer({
             streaming: { rebufferingGoal: 2, bufferingGoal: 12, lowLatencyMode: true },
             abr: { enabled: true, defaultBandwidthEstimate: 2000000 },
           });
+          // (13) Mạng yếu / 4G / bật tiết kiệm dữ liệu -> chặn trần độ phân giải
+          if (capRef.current) {
+            try { player.configure({ restrictions: { maxHeight: capRef.current } }); } catch {}
+          }
           const ckId = channel?.clearKeyId || channel?.clear_key_id;
           const ckKey = channel?.clearKey || channel?.clear_key;
           if (ckId && ckKey) {
@@ -143,6 +162,7 @@ export default function VideoPlayer({
           player.addEventListener('error', (e) => {
             if (cancelled) return;
             console.error('shaka error', e.detail);
+            logPlayerError({ channel, engine: 'shaka', code: `shaka_${e.detail?.code || 'err'}`, detail: e.detail?.message || '', fatal: true });
             setError(e.detail?.message || 'Không phát được');
             setBuffering(false);
           });
@@ -167,6 +187,7 @@ export default function VideoPlayer({
         }
       } catch (e) {
         if (!cancelled) {
+          logPlayerError({ channel, engine: 'shaka', code: 'load_failed', detail: String(e?.message || e), fatal: true });
           setError(String(e?.message || e || 'Lỗi tải kênh'));
           setBuffering(false);
         }
@@ -176,10 +197,13 @@ export default function VideoPlayer({
     const load = async () => {
       try {
         if (isHls && Hls.isSupported()) {
+          const cap = capRef.current; // trần chiều cao (px), 0 = không giới hạn
           const hls = new Hls({
             enableWorker: true,
             lowLatencyMode: true,
             backBufferLength: 30,
+            // (13) Mạng yếu/4G: chặn trần bitrate + khởi động ở mức thấp cho lên hình nhanh
+            ...(cap ? { maxStarvationDelay: 6 } : {}),
             // Gắn header định danh client cho request tới proxy CHRTV
             xhrSetup: (xhr, url) => {
               if (!isProxiedStreamUrl(url)) return;
@@ -192,6 +216,12 @@ export default function VideoPlayer({
           hls.on(Hls.Events.MEDIA_ATTACHED, () => { if (!cancelled) hls.loadSource(streamUrl); });
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
             if (cancelled) return;
+            if (cap) {
+              try {
+                const idx = hls.levels.map((l, i) => [l.height || 0, i]).filter(([h]) => h && h <= cap).map(([, i]) => i);
+                if (idx.length) hls.autoLevelCapping = idx[idx.length - 1];
+              } catch {}
+            }
             setBuffering(false);
             scheduleRotate();
             video.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
@@ -206,6 +236,13 @@ export default function VideoPlayer({
                 .catch(() => {});
               return;
             }
+            logPlayerError({
+              channel,
+              engine: 'hls',
+              code: data?.details || data?.type || 'hls_error',
+              detail: `${data?.type || ''} ${data?.reason || data?.response?.code || ''}`.trim(),
+              fatal: !!data.fatal,
+            });
             if (data.fatal) {
               if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
               else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
@@ -309,6 +346,9 @@ export default function VideoPlayer({
               <button onClick={() => { setError(null); setLoadKey(k => k + 1); }} className="px-4 py-2 rounded-full bg-[#f36f21] text-white text-xs font-bold flex items-center gap-1.5">
                 <RefreshCw className="w-3.5 h-3.5" /> Thử lại
               </button>
+              <button onClick={() => setShowReport(true)} className="px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-bold flex items-center gap-1.5">
+                <Flag className="w-3.5 h-3.5" /> Báo kênh lỗi
+              </button>
               {onClose && <button onClick={onClose} className="px-4 py-2 rounded-full bg-white/10 text-white text-xs font-bold">Đóng</button>}
             </div>
           </div>
@@ -329,6 +369,12 @@ export default function VideoPlayer({
             </div>
           </div>
           <div className="ml-auto flex items-center gap-1.5">
+            {(net.cellular || net.slow) && (
+              <span className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[10px] font-bold">
+                <Signal className="w-3 h-3" />{net.cellular ? 'Đang dùng 4G' : 'Mạng yếu'}
+              </span>
+            )}
+            <button onClick={() => { setShowReport(true); resetOverlay(); }} title="Báo kênh lỗi" className="p-2 rounded-full bg-black/50 text-white/70 hover:text-white hover:bg-white/15"><Flag className="w-4 h-4" /></button>
             <button onClick={() => { setShowQuality(v => !v); resetOverlay(); }} className={`p-2 rounded-full ${showQuality ? 'bg-[#f36f21] text-white' : 'bg-black/50 text-white/70 hover:text-white'}`}><Settings className="w-4 h-4" /></button>
             <button onClick={() => { setShowList(v => !v); resetOverlay(); }} className={`p-2 rounded-full ${showList ? 'bg-[#f36f21] text-white' : 'bg-black/50 text-white/70 hover:text-white'}`}><List className="w-4 h-4" /></button>
             {onMinimize && !mini && <button onClick={onMinimize} className="p-2 rounded-full bg-black/50 text-white/70 hover:text-white text-[10px] font-bold">Thu nhỏ</button>}
@@ -411,6 +457,15 @@ export default function VideoPlayer({
           </div>
         </div>
       </div>
+
+      {showReport && (
+        <ReportChannelModal
+          channel={channel}
+          defaultCode={error ? 'no_play' : 'buffering'}
+          onClose={() => setShowReport(false)}
+          addToast={addToast}
+        />
+      )}
     </div>
   );
 }

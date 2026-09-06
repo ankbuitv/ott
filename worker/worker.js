@@ -179,7 +179,16 @@ export default {
     const url = new URL(request.url);
     const p = url.pathname;
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: { ...corsHeadersFor(request, env), ...SECURITY_HEADERS } });
+    // Việc chạy nền không cần cron: mỗi request "ghé nhờ" một chút, có khoá chống chạy trùng.
+    try { if (ctx && ctx.waitUntil && request.method === "GET") ctx.waitUntil(runDueJobs(env)); } catch {}
     try {
+      // (47) Trang trạng thái công khai — HTML tự chứa, không cần đăng nhập
+      if (p === "/status" || p === "/status/") {
+        return new Response(statusHtml(await getStatusSummary(env)), {
+          status: 200,
+          headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=30", ...SECURITY_HEADERS },
+        });
+      }
       // API routes
       if (p.startsWith("/api/v1/") || p.startsWith("/api/")) {
         return await guardApiRes(request, await handleAPI(p.startsWith("/api/v1/") ? p.replace("/api/v1", "/api") : p, request, env, ctx));
@@ -832,6 +841,18 @@ const SCHEMA_STATEMENTS = [
   // đăng ký/đăng nhập được. Index được tạo sau phần ALTER.
   `CREATE INDEX IF NOT EXISTS idx_short_follows_creator ON short_follows(creator_id)`,
   `CREATE INDEX IF NOT EXISTS idx_short_follows_follower ON short_follows(follower_user_id)`,
+  // ---- ĐỢT 1: báo kênh lỗi (20) · log lỗi player (49) · sức khoẻ kênh (46) · đang hot (3) ----
+  `CREATE TABLE IF NOT EXISTS channel_reports (id INTEGER PRIMARY KEY AUTOINCREMENT, channel_id TEXT NOT NULL, channel_name TEXT DEFAULT '', user_id INTEGER DEFAULT 0, code TEXT DEFAULT 'other', note TEXT DEFAULT '', ua TEXT DEFAULT '', status TEXT DEFAULT 'open', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE INDEX IF NOT EXISTS idx_channel_reports ON channel_reports(channel_id, status)`,
+  `CREATE TABLE IF NOT EXISTS player_errors (id INTEGER PRIMARY KEY AUTOINCREMENT, channel_id TEXT DEFAULT '', channel_name TEXT DEFAULT '', engine TEXT DEFAULT '', code TEXT DEFAULT '', detail TEXT DEFAULT '', fatal INTEGER DEFAULT 0, platform TEXT DEFAULT '', user_id INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE INDEX IF NOT EXISTS idx_player_errors ON player_errors(channel_id, created_at)`,
+  `CREATE TABLE IF NOT EXISTS channel_health (channel_id TEXT PRIMARY KEY, status TEXT DEFAULT 'unknown', http_code INTEGER DEFAULT 0, latency_ms INTEGER DEFAULT 0, fail_count INTEGER DEFAULT 0, ok_at INTEGER DEFAULT 0, checked_at INTEGER DEFAULT 0, note TEXT DEFAULT '')`,
+  `CREATE INDEX IF NOT EXISTS idx_channel_health_checked ON channel_health(checked_at)`,
+  `CREATE TABLE IF NOT EXISTS watch_pulse (channel_id TEXT NOT NULL, bucket INTEGER NOT NULL, seconds INTEGER DEFAULT 0, views INTEGER DEFAULT 0, PRIMARY KEY(channel_id, bucket))`,
+  `CREATE INDEX IF NOT EXISTS idx_watch_pulse_bucket ON watch_pulse(bucket)`,
+  // Bộ chạy nền KHÔNG dùng cron (Workers Free đã hết 5 trigger): mỗi request có thể
+  // "nhận việc" nếu tới hạn — xem runDueJobs().
+  `CREATE TABLE IF NOT EXISTS jobs (name TEXT PRIMARY KEY, last_run INTEGER DEFAULT 0, running_until INTEGER DEFAULT 0, cursor TEXT DEFAULT '', last_result TEXT DEFAULT '')`,
 ];
 
 let schemaReady = false;
@@ -1002,7 +1023,10 @@ async function handleAPI(path, request, env, ctx) {
   if (path === "/api/channels") return await handleChannels(env);
   if (path === "/api/search") return await handleSearch(request, env);
   if (path === "/api/analytics") return await handleAnalytics(request, env);
-  if (path === "/api/stats/beat" || path === "/api/stats/top" || path === "/api/stats/top-fans") return await handleStats(path, request, env);
+  if (path === "/api/stats/beat" || path === "/api/stats/top" || path === "/api/stats/top-fans" || path === "/api/stats/trending") return await handleStats(path, request, env);
+  if (path === "/api/report-channel") return await handleReportChannel(request, env, ctx);
+  if (path === "/api/telemetry/player") return await handlePlayerTelemetry(request, env);
+  if (path === "/api/status") return json({ success: true, ...(await getStatusSummary(env)) }, 200, request, env);
   if (path === "/api/profile" || path === "/api/u") return await handlePublicProfile(path, request, env);
   if (path === "/api/comments") return await handleComments(request, env);
   if (path === "/api/fan-groups") return await handleFanGroups(request, env);
@@ -1038,6 +1062,7 @@ function publicChannel(ch, env) {
     clearKey: ch.clear_key || ch.clearKey || "",
     protected: true, // client hiểu: phải xin token phát, không có URL sẵn
   };
+  if (ch.health_status) out.health = ch.health_status; // up | flaky | down (từ bảng channel_health)
   if (streamUrlIsPublic(env)) {
     out.stream_url = ch.stream_url || "";
     out.user_agent = ch.user_agent || "";
@@ -1054,7 +1079,7 @@ async function handlePlaylist(env, request) {
     await ensureSchema(env);
     if (!refresh) {
       try {
-        const { results } = await env.DB.prepare("SELECT * FROM channels WHERE is_active = 1 ORDER BY id ASC").all();
+        const { results } = await env.DB.prepare("SELECT c.*, h.status AS health_status FROM channels c LEFT JOIN channel_health h ON h.channel_id = c.channel_id WHERE c.is_active = 1 ORDER BY c.id ASC").all();
         if (results && results.length > 0) return json({ success: true, source: "d1", data: results.map((c) => publicChannel(c, env)), d1_count: results.length }, 200, request, env);
       } catch (e) { console.error("handlePlaylist D1 error:", e?.message || e); }
     }
@@ -3122,6 +3147,60 @@ async function handleAdmin(path, request, env, ctx) {
   }
 
   // ========== BÁO CÁO + XUẤT EXCEL (CSV) ==========
+  // ---- (20/46/49) Vận hành kênh: báo lỗi · sức khoẻ · log player ----
+  if (path === "/admin/channel-reports" && request.method === "GET") {
+    const status = new URL(request.url).searchParams.get("status") || "open";
+    const { results } = await env.DB.prepare(
+      `SELECT r.*, COALESCE(u.username, '') AS username FROM channel_reports r
+       LEFT JOIN users u ON u.id = r.user_id
+       WHERE (? = 'all' OR r.status = ?) ORDER BY r.id DESC LIMIT 200`
+    ).bind(status, status).all();
+    const { results: grouped } = await env.DB.prepare(
+      `SELECT channel_id, MAX(channel_name) AS channel_name, COUNT(*) AS n, MAX(created_at) AS last_at
+       FROM channel_reports WHERE status = 'open' GROUP BY channel_id ORDER BY n DESC LIMIT 50`
+    ).all();
+    return json({ success: true, reports: results || [], grouped: grouped || [] }, 200, request, env);
+  }
+  if (path === "/admin/channel-reports" && request.method === "PUT") {
+    const b = await request.json().catch(() => ({}));
+    const st = ["open", "fixed", "closed"].includes(b.status) ? b.status : "closed";
+    if (b.channel_id) {
+      await env.DB.prepare("UPDATE channel_reports SET status = ? WHERE channel_id = ? AND status = 'open'").bind(st, String(b.channel_id)).run();
+    } else if (b.id) {
+      await env.DB.prepare("UPDATE channel_reports SET status = ? WHERE id = ?").bind(st, parseInt(b.id, 10) || 0).run();
+    } else return json({ error: "Thiếu id/channel_id" }, 400, request, env);
+    return json({ success: true }, 200, request, env);
+  }
+  if (path === "/admin/channel-health" && request.method === "GET") {
+    const { results } = await env.DB.prepare(
+      `SELECT c.channel_id, c.name, c.group_title, COALESCE(h.status, 'unknown') AS status, COALESCE(h.http_code, 0) AS http_code,
+              COALESCE(h.latency_ms, 0) AS latency_ms, COALESCE(h.fail_count, 0) AS fail_count, COALESCE(h.checked_at, 0) AS checked_at,
+              COALESCE(h.note, '') AS note
+       FROM channels c LEFT JOIN channel_health h ON h.channel_id = c.channel_id
+       WHERE c.is_active = 1
+       ORDER BY CASE COALESCE(h.status, 'unknown') WHEN 'down' THEN 0 WHEN 'flaky' THEN 1 WHEN 'unknown' THEN 2 ELSE 3 END, c.name ASC`
+    ).all();
+    let job = null;
+    try { const j = await env.DB.prepare("SELECT * FROM jobs WHERE name = 'channel_health'").all(); job = j.results?.[0] || null; } catch {}
+    return json({ success: true, channels: results || [], job, summary: await getStatusSummary(env) }, 200, request, env);
+  }
+  if (path === "/admin/channel-health" && request.method === "POST") {
+    const b = await request.json().catch(() => ({}));
+    const ids = Array.isArray(b.channel_ids) ? b.channel_ids.slice(0, 20).map(String) : null;
+    const result = await runChannelHealthCheck(env, parseInt(b.limit, 10) || 15, ids && ids.length ? ids : null);
+    return json({ success: true, result }, 200, request, env);
+  }
+  if (path === "/admin/player-errors" && request.method === "GET") {
+    const { results } = await env.DB.prepare(
+      `SELECT channel_id, MAX(channel_name) AS channel_name, code, COUNT(*) AS n, SUM(fatal) AS fatal_n, MAX(created_at) AS last_at
+       FROM player_errors WHERE created_at > datetime('now', '-3 days')
+       GROUP BY channel_id, code ORDER BY n DESC LIMIT 100`
+    ).all();
+    const { results: recent } = await env.DB.prepare(
+      "SELECT * FROM player_errors ORDER BY id DESC LIMIT 60"
+    ).all();
+    return json({ success: true, grouped: results || [], recent: recent || [] }, 200, request, env);
+  }
   if (path === "/admin/reports/summary" && request.method === "GET") {
     const [rev, users, views, xp] = await Promise.all([
       env.DB.prepare("SELECT COALESCE(SUM(amount), 0) AS total, COUNT(*) AS n FROM payments WHERE status = 'paid'").all(),
@@ -3687,7 +3766,7 @@ async function handleChannels(env, request) {
   if (hasDB(env)) {
     await ensureSchema(env);
     try {
-      const { results } = await env.DB.prepare("SELECT * FROM channels WHERE is_active = 1 ORDER BY id ASC").all();
+      const { results } = await env.DB.prepare("SELECT c.*, h.status AS health_status FROM channels c LEFT JOIN channel_health h ON h.channel_id = c.channel_id WHERE c.is_active = 1 ORDER BY c.id ASC").all();
       if (results && results.length > 0 && !refresh) return json({ success: true, channels: results.map((c) => publicChannel(c, env)) }, 200, request, env);
     } catch (e) { console.error("handleChannels D1 error:", e?.message || e); }
   }
@@ -3803,6 +3882,302 @@ async function handleAnalytics(request, env) {
   return json({ success: true }, 200, request, env);
 }
 
+// ============================================================================
+// ĐỢT 1 — VẬN HÀNH KÊNH: báo lỗi (20) · telemetry player (49) · health check (46)
+//          · status page (47) · đang hot 15 phút (3)
+//
+// KHÔNG DÙNG CRON: tài khoản Workers Free đã hết 5 cron trigger nên mọi việc chạy
+// nền được "ghé nhờ" request thật (ctx.waitUntil) và khoá bằng bảng `jobs` để chỉ
+// một request chạy tại một thời điểm.
+// ============================================================================
+
+const JOB_DEFS = {
+  // tên: [chu kỳ giây, thời gian giữ khoá giây]
+  channel_health: [600, 60],
+  db_cleanup: [21600, 60],
+};
+
+// Nhận việc: trả true nếu request này được quyền chạy job (đã tới hạn + chưa ai giữ khoá).
+async function claimJob(env, name) {
+  const [everySec, leaseSec] = JOB_DEFS[name] || [600, 60];
+  const now = Math.floor(Date.now() / 1000);
+  try {
+    await env.DB.prepare("INSERT OR IGNORE INTO jobs (name, last_run, running_until) VALUES (?, 0, 0)").bind(name).run();
+    const res = await env.DB.prepare(
+      "UPDATE jobs SET last_run = ?, running_until = ? WHERE name = ? AND last_run <= ? AND running_until <= ?"
+    ).bind(now, now + leaseSec, name, now - everySec, now).run();
+    return !!(res && res.meta && res.meta.changes > 0);
+  } catch { return false; }
+}
+
+async function finishJob(env, name, result) {
+  try {
+    await env.DB.prepare("UPDATE jobs SET running_until = 0, last_result = ? WHERE name = ?")
+      .bind(String(result || "").slice(0, 300), name).run();
+  } catch {}
+}
+
+// Gọi từ fetch() — không await, không bao giờ ném lỗi ra ngoài.
+async function runDueJobs(env) {
+  if (!hasDB(env)) return;
+  try {
+    await ensureSchema(env);
+    if (await claimJob(env, "channel_health")) {
+      let msg = "";
+      try { msg = await runChannelHealthCheck(env, 12); } catch (e) { msg = "error: " + (e?.message || e); }
+      await finishJob(env, "channel_health", msg);
+    }
+    if (await claimJob(env, "db_cleanup")) {
+      let msg = "ok";
+      try {
+        const nowS = Math.floor(Date.now() / 1000);
+        await env.DB.batch([
+          env.DB.prepare("DELETE FROM sessions WHERE expires_at < ?").bind(Date.now()),
+          env.DB.prepare("DELETE FROM login_attempts WHERE created_at < datetime('now', '-1 day')"),
+          env.DB.prepare("DELETE FROM rate_limits WHERE window_start < ?").bind(nowS - 86400),
+          env.DB.prepare("DELETE FROM watch_pulse WHERE bucket < ?").bind(Math.floor(nowS / 300) - 24),
+          env.DB.prepare("DELETE FROM player_errors WHERE created_at < datetime('now', '-14 days')"),
+          env.DB.prepare("DELETE FROM channel_reports WHERE status = 'closed' AND created_at < datetime('now', '-30 days')"),
+        ]);
+      } catch (e) { msg = "error: " + (e?.message || e); }
+      await finishJob(env, "db_cleanup", msg);
+    }
+  } catch {}
+}
+
+// ---- (46) Kiểm tra sức khoẻ kênh ----
+// Mỗi lượt chỉ ping `limit` kênh lâu chưa kiểm tra nhất → 155 kênh quét hết trong
+// khoảng 2 giờ mà không tốn subrequest của 1 request nào quá nhiều.
+async function checkOneChannel(ch) {
+  const t0 = Date.now();
+  const headers = { "User-Agent": ch.user_agent || "Mozilla/5.0 (SmartTV) CHRTV-HealthCheck/1.0" };
+  if (ch.referer) headers.Referer = ch.referer;
+  try {
+    const res = await fetch(ch.stream_url, { headers, redirect: "follow", signal: AbortSignal.timeout(6000) });
+    const latency = Date.now() - t0;
+    const code = res.status;
+    let ok = res.ok;
+    let note = "";
+    if (ok && /\.m3u8(\?|$)/i.test(ch.stream_url)) {
+      const text = (await res.text().catch(() => "")).slice(0, 4000);
+      if (!text.includes("#EXTM3U")) { ok = false; note = "không phải m3u8 hợp lệ"; }
+    } else {
+      try { await res.body?.cancel(); } catch {}
+    }
+    return { ok, code, latency, note };
+  } catch (e) {
+    return { ok: false, code: 0, latency: Date.now() - t0, note: String(e?.message || e).slice(0, 80) };
+  }
+}
+
+async function runChannelHealthCheck(env, limit = 12, onlyIds = null) {
+  if (!hasDB(env)) return "no-db";
+  await ensureSchema(env);
+  let rows = [];
+  if (onlyIds && onlyIds.length) {
+    const marks = onlyIds.map(() => "?").join(",");
+    const r = await env.DB.prepare(`SELECT channel_id, name, stream_url, user_agent, referer FROM channels WHERE channel_id IN (${marks})`).bind(...onlyIds).all();
+    rows = r.results || [];
+  } else {
+    const r = await env.DB.prepare(
+      `SELECT c.channel_id, c.name, c.stream_url, c.user_agent, c.referer
+       FROM channels c LEFT JOIN channel_health h ON h.channel_id = c.channel_id
+       WHERE c.is_active = 1 ORDER BY COALESCE(h.checked_at, 0) ASC LIMIT ?`
+    ).bind(Math.max(1, Math.min(30, limit))).all();
+    rows = r.results || [];
+  }
+  if (!rows.length) return "no-channels";
+  const nowS = Math.floor(Date.now() / 1000);
+  let down = 0, up = 0;
+  const justDied = [];
+  for (const ch of rows) {
+    const r = await checkOneChannel(ch);
+    let prevFail = 0;
+    try {
+      const p = await env.DB.prepare("SELECT fail_count FROM channel_health WHERE channel_id = ?").bind(ch.channel_id).all();
+      prevFail = p.results?.[0]?.fail_count || 0;
+    } catch {}
+    const failCount = r.ok ? 0 : prevFail + 1;
+    // Chỉ gọi là "chết" sau 3 lần fail liên tiếp — tránh báo động giả khi upstream
+    // chặn IP Cloudflare hoặc mạng chớp nháy.
+    const status = r.ok ? "up" : (failCount >= 3 ? "down" : "flaky");
+    if (r.ok) up++; else down++;
+    if (status === "down" && prevFail === 2) justDied.push(ch.name || ch.channel_id);
+    try {
+      await env.DB.prepare(
+        `INSERT INTO channel_health (channel_id, status, http_code, latency_ms, fail_count, ok_at, checked_at, note)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(channel_id) DO UPDATE SET status = excluded.status, http_code = excluded.http_code,
+           latency_ms = excluded.latency_ms, fail_count = excluded.fail_count, checked_at = excluded.checked_at,
+           note = excluded.note, ok_at = CASE WHEN excluded.status = 'up' THEN excluded.checked_at ELSE channel_health.ok_at END`
+      ).bind(ch.channel_id, status, r.code, r.latency, failCount, r.ok ? nowS : 0, nowS, r.note).run();
+    } catch {}
+    // Tự ẩn kênh chết — chỉ khi bật AUTO_HIDE_DEAD_CHANNELS=1 (mặc định chỉ gắn cờ)
+    if (status === "down" && String(env.AUTO_HIDE_DEAD_CHANNELS || "") === "1" && failCount >= 5) {
+      try { await env.DB.prepare("UPDATE channels SET is_active = 0 WHERE channel_id = ?").bind(ch.channel_id).run(); } catch {}
+    }
+  }
+  if (justDied.length) {
+    try { await env.DB.prepare("INSERT INTO analytics (event, data) VALUES ('channel_down', ?)").bind(JSON.stringify({ channels: justDied })).run(); } catch {}
+    await notifyOps(env, `🔴 Kênh chết: ${justDied.slice(0, 10).join(", ")}${justDied.length > 10 ? ` (+${justDied.length - 10})` : ""}`);
+  }
+  return `checked=${rows.length} up=${up} down=${down}`;
+}
+
+// Báo cho vận hành: Telegram (TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID) hoặc webhook chung.
+async function notifyOps(env, text) {
+  try {
+    if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
+      await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: env.TELEGRAM_CHAT_ID, text: `[CHRTV] ${text}`, disable_web_page_preview: true }),
+        signal: AbortSignal.timeout(5000),
+      });
+      return;
+    }
+    if (env.ADMIN_ALERT_WEBHOOK) {
+      await fetch(env.ADMIN_ALERT_WEBHOOK, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: "chrtv-ott", action: "ops.alert", text, ts: new Date().toISOString() }),
+        signal: AbortSignal.timeout(5000),
+      });
+    }
+  } catch {}
+}
+
+// ---- (20) Người xem báo kênh lỗi ----
+const REPORT_CODES = ["no_play", "buffering", "no_audio", "wrong_program", "bad_quality", "other"];
+
+async function handleReportChannel(request, env, ctx) {
+  if (request.method !== "POST") return json({ error: "Method not allowed" }, 405, request, env);
+  if (!hasDB(env)) return json({ success: true, skipped: true }, 200, request, env);
+  await ensureSchema(env);
+  const auth = await getAuth(request, env);
+  const uid = auth && auth.user ? auth.user.id : 0;
+  const ip = request.headers.get("CF-Connecting-IP") || "local";
+  const rl = await rateLimitCheck(env, `report:${uid || ip}`, 12, 3600);
+  if (!rl.allowed) return json({ error: "Bạn báo hơi nhiều rồi, thử lại sau nhé", retryAfter: rl.retryAfter }, 429, request, env);
+
+  const b = await request.json().catch(() => ({}));
+  const channelId = String(b.channel_id || "").slice(0, 80).trim();
+  if (!channelId) return json({ error: "Thiếu channel_id" }, 400, request, env);
+  const code = REPORT_CODES.includes(b.code) ? b.code : "other";
+  const note = String(b.note || "").slice(0, 300).trim();
+  const name = String(b.channel_name || "").slice(0, 120);
+  const ua = (request.headers.get("User-Agent") || "").slice(0, 160);
+  try {
+    await env.DB.prepare("INSERT INTO channel_reports (channel_id, channel_name, user_id, code, note, ua) VALUES (?, ?, ?, ?, ?, ?)")
+      .bind(channelId, name, uid, code, note, ua).run();
+  } catch (e) { return json({ error: "Không lưu được báo cáo" }, 500, request, env); }
+
+  // Nhiều người cùng báo 1 kênh trong 30 phút → xác minh ngay + báo vận hành
+  let openCount = 0;
+  try {
+    const { results } = await env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM channel_reports WHERE channel_id = ? AND status = 'open' AND created_at > datetime('now', '-30 minutes')"
+    ).bind(channelId).all();
+    openCount = results?.[0]?.n || 0;
+  } catch {}
+  if (openCount === 3 && ctx && ctx.waitUntil) {
+    ctx.waitUntil((async () => {
+      const res = await runChannelHealthCheck(env, 1, [channelId]).catch(() => "");
+      await notifyOps(env, `⚠️ ${openCount} lượt báo lỗi kênh "${name || channelId}" trong 30 phút (${res})`);
+    })());
+  }
+  return json({ success: true, reports: openCount }, 200, request, env);
+}
+
+// ---- (49) Player gửi mã lỗi về server ----
+async function handlePlayerTelemetry(request, env) {
+  if (request.method !== "POST") return json({ error: "Method not allowed" }, 405, request, env);
+  if (!hasDB(env)) return json({ success: true, skipped: true }, 200, request, env);
+  await ensureSchema(env);
+  const auth = await getAuth(request, env);
+  const uid = auth && auth.user ? auth.user.id : 0;
+  const ip = request.headers.get("CF-Connecting-IP") || "local";
+  const rl = await rateLimitCheck(env, `plerr:${uid || ip}`, 60, 3600);
+  if (!rl.allowed) return json({ success: true, throttled: true }, 200, request, env);
+  const b = await request.json().catch(() => ({}));
+  try {
+    await env.DB.prepare(
+      "INSERT INTO player_errors (channel_id, channel_name, engine, code, detail, fatal, platform, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    ).bind(
+      String(b.channel_id || "").slice(0, 80),
+      String(b.channel_name || "").slice(0, 120),
+      String(b.engine || "hls").slice(0, 20),
+      String(b.code || "unknown").slice(0, 60),
+      String(b.detail || "").slice(0, 300),
+      b.fatal ? 1 : 0,
+      String(b.platform || "").slice(0, 60),
+      uid
+    ).run();
+  } catch {}
+  return json({ success: true }, 200, request, env);
+}
+
+// ---- (47) Trạng thái hệ thống công khai ----
+async function getStatusSummary(env) {
+  const out = { channels: 0, up: 0, down: 0, flaky: 0, unknown: 0, checked_at: 0, down_list: [], api: "ok" };
+  if (!hasDB(env)) { out.api = "no-db"; return out; }
+  await ensureSchema(env);
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT COALESCE(h.status, 'unknown') AS status, COUNT(*) AS n, MAX(COALESCE(h.checked_at, 0)) AS last
+       FROM channels c LEFT JOIN channel_health h ON h.channel_id = c.channel_id
+       WHERE c.is_active = 1 GROUP BY COALESCE(h.status, 'unknown')`
+    ).all();
+    for (const r of results || []) {
+      out.channels += r.n;
+      if (r.status === "up") out.up = r.n;
+      else if (r.status === "down") out.down = r.n;
+      else if (r.status === "flaky") out.flaky = r.n;
+      else out.unknown += r.n;
+      out.checked_at = Math.max(out.checked_at, r.last || 0);
+    }
+    const dl = await env.DB.prepare(
+      `SELECT c.name FROM channels c JOIN channel_health h ON h.channel_id = c.channel_id
+       WHERE h.status = 'down' AND c.is_active = 1 ORDER BY h.checked_at DESC LIMIT 20`
+    ).all();
+    out.down_list = (dl.results || []).map((r) => r.name);
+  } catch (e) { out.api = "degraded"; }
+  return out;
+}
+
+function statusHtml(s) {
+  const pct = s.channels ? Math.round(((s.up + s.flaky) / s.channels) * 100) : 100;
+  const color = pct >= 95 ? "#22c55e" : pct >= 80 ? "#fbbf24" : "#ef4444";
+  const when = s.checked_at ? new Date(s.checked_at * 1000).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" }) : "chưa kiểm tra";
+  const esc = (x) => String(x).replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
+  return `<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Trạng thái hệ thống — CHRTV PLAY</title><meta http-equiv="refresh" content="60"><style>
+*{box-sizing:border-box;margin:0;padding:0}body{min-height:100vh;background:#0b0c10;color:#e7e5e4;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;padding:24px;display:flex;justify-content:center}
+.wrap{max-width:720px;width:100%}.logo{display:inline-flex;gap:8px;font-weight:900;letter-spacing:.2em;font-size:12px;color:#ff9a3d;margin-bottom:18px}
+.card{background:#14151c;border:1px solid rgba(255,255,255,.08);border-radius:22px;padding:26px;margin-bottom:14px}
+h1{font-size:22px;margin-bottom:6px}.sub{font-size:12px;color:#a8a29e}
+.big{font-size:52px;font-weight:900;color:${color};line-height:1.1;margin:10px 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-top:16px}
+.kpi{background:#0c0d11;border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:14px}
+.kpi b{display:block;font-size:22px;font-weight:800}.kpi span{font-size:11px;color:#a8a29e}
+ul{list-style:none;margin-top:10px}li{font-size:13px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05);color:#fca5a5}
+a{color:#ff9a3d;text-decoration:none;font-weight:700;font-size:13px}small{color:#57534e;font-size:11px}
+</style></head><body><div class="wrap">
+<div class="logo">▶ CHRTV PLAY</div>
+<div class="card"><h1>Trạng thái hệ thống</h1><p class="sub">Tự cập nhật mỗi 60 giây · lần kiểm tra kênh gần nhất: ${esc(when)}</p>
+<div class="big">${pct}%</div><p class="sub">kênh đang phát bình thường</p>
+<div class="grid">
+<div class="kpi"><b>${s.channels}</b><span>tổng số kênh</span></div>
+<div class="kpi"><b style="color:#22c55e">${s.up}</b><span>hoạt động tốt</span></div>
+<div class="kpi"><b style="color:#fbbf24">${s.flaky}</b><span>chập chờn</span></div>
+<div class="kpi"><b style="color:#ef4444">${s.down}</b><span>đang lỗi</span></div>
+<div class="kpi"><b>${s.api === "ok" ? "OK" : esc(s.api)}</b><span>API</span></div>
+</div></div>
+${s.down_list.length ? `<div class="card"><h1 style="font-size:16px">Kênh đang lỗi</h1><ul>${s.down_list.map((n) => `<li>● ${esc(n)}</li>`).join("")}</ul></div>` : ""}
+<div class="card"><a href="/">← Về CHRTV PLAY</a> &nbsp;·&nbsp; <small>Thấy kênh lỗi mà chưa có trong danh sách? Bấm nút “Báo kênh lỗi” ngay trong app nhé.</small></div>
+</div></body></html>`;
+}
+
 // ========== WATCH PARTY (D1 + polling — khong phu thuoc gioi han cross-request WebSocket cua workerd) ==========
 // Rooms + chat + reaction + trạng thái host lưu D1; client poll /api/party/feed mỗi ~2s.
 async function handleParty(path, request, env) {
@@ -3900,6 +4275,10 @@ async function handleStats(path, request, env) {
       if (kind === "channel" && refId) {
         await env.DB.prepare("INSERT INTO watch_counters (channel_id, views, seconds, updated_at) VALUES (?, 0, ?, ?) ON CONFLICT(channel_id) DO UPDATE SET seconds = seconds + ?, updated_at = ?").bind(refId, sec, nowS, sec, nowS).run();
         if (b.viewed) await env.DB.prepare("UPDATE watch_counters SET views = views + 1 WHERE channel_id = ?").bind(refId).run();
+        // (3) "Đang hot": gom theo ô 5 phút để xếp hạng 15 phút gần nhất
+        const bucket = Math.floor(nowS / 300);
+        await env.DB.prepare("INSERT INTO watch_pulse (channel_id, bucket, seconds, views) VALUES (?, ?, ?, ?) ON CONFLICT(channel_id, bucket) DO UPDATE SET seconds = seconds + ?, views = views + ?")
+          .bind(refId, bucket, sec, b.viewed ? 1 : 0, sec, b.viewed ? 1 : 0).run();
       }
       if (uid && sec > 0) {
         const xp = Math.floor(sec / 60); // 1 phút xem = 1 XP
@@ -3913,6 +4292,19 @@ async function handleStats(path, request, env) {
       const { results } = await env.DB.prepare("SELECT w.channel_id, w.views, w.seconds, c.name, c.logo, c.group_title FROM watch_counters w LEFT JOIN channels c ON c.channel_id = w.channel_id ORDER BY w.seconds DESC, w.views DESC LIMIT 10").all();
       return json({ success: true, top: results || [] }, 200, request, env);
     } catch { return json({ success: true, top: [] }, 200, request, env); }
+  }
+  if (path === "/api/stats/trending" && request.method === "GET") {
+    // Xếp hạng theo 15 phút gần nhất (3 ô 5 phút). Ít dữ liệu quá thì trả rỗng để
+    // client tự rơi về bảng xếp hạng tổng.
+    try {
+      const from = Math.floor(nowS / 300) - 2;
+      const { results } = await env.DB.prepare(
+        `SELECT p.channel_id, SUM(p.seconds) AS seconds, SUM(p.views) AS views, c.name, c.logo, c.group_title
+         FROM watch_pulse p LEFT JOIN channels c ON c.channel_id = p.channel_id
+         WHERE p.bucket >= ? GROUP BY p.channel_id ORDER BY seconds DESC, views DESC LIMIT 10`
+      ).bind(from).all();
+      return json({ success: true, window_min: 15, trending: results || [] }, 200, request, env);
+    } catch { return json({ success: true, window_min: 15, trending: [] }, 200, request, env); }
   }
   if (path === "/api/stats/top-fans" && request.method === "GET") {
     try {

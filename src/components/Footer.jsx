@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ShieldCheck, FileText, Scale, Mail } from 'lucide-react';
+import { ShieldCheck, FileText, Scale, Mail, Activity } from 'lucide-react';
 import { useI18n } from '../contexts/I18nContext';
 import Logo from './Logo';
 import LegalModal from './LegalModal';
@@ -51,6 +51,14 @@ export default function Footer({ onGoTab }) {
         <div>
           <p className="text-[10px] font-black uppercase tracking-widest text-stone-500 mb-3">{t('footer.legal')}</p>
           <div className="space-y-2">
+            <a
+              href="/status"
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-2 text-[13px] font-semibold text-stone-400 hover:text-white transition-colors"
+            >
+              <Activity className="w-3.5 h-3.5 text-emerald-400" /> Trạng thái hệ thống
+            </a>
             {links.map(l => (
               <button
                 key={l.id}

@@ -22,6 +22,7 @@ const DEFAULT_SETTINGS = {
   spoilerMask: false,
   dataSaver: false,
   dataSaverCap: 480,
+  autoQualityOnCellular: true, // (13) tự hạ chất lượng khi mạng yếu / 4G
   kidBedtimeEnabled: false,
   kidBedtimeStart: '21:00',
   kidBedtimeEnd: '06:00',

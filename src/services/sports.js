@@ -5,8 +5,8 @@ const TSB = 'https://www.thesportsdb.com/api/v1/json/3';
 const OLB = 'https://api.openligadb.de';
 
 export const LEAGUES = [
-  { id: 'aff', name: 'AFF Championship (ASEAN)', short: 'ASEAN', tsdb: '4481', flag: '🌏', cup: true, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/841.png' },
-  { id: 'u20', name: 'FIFA U-20 World Cup', short: 'U20', tsdb: '4484', flag: '🌐', cup: true, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/102.png' },
+  { id: 'aff', name: 'ASEAN Championship', short: 'ASEAN', tsdb: '5889', flag: '🌏', cup: true, latestSeason: true, logo: 'https://r2.thesportsdb.com/images/media/league/badge/z9dvdf1780551855.png' },
+  { id: 'u20', name: 'AFC U-20 Asian Cup', short: 'U20 Á', tsdb: '5642', flag: '🌏', cup: true, latestSeason: true, logo: 'https://r2.thesportsdb.com/images/media/league/badge/o9zi0a1751440425.png' },
   { id: 'epl', name: 'Ngoại hạng Anh', short: 'EPL', tsdb: '4328', flag: '🇬🇧', logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png' },
   { id: 'laliga', name: 'La Liga', short: 'LaLiga', tsdb: '4335', flag: '🇪🇸', logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/15.png' },
   { id: 'seriea', name: 'Serie A', short: 'Serie A', tsdb: '4332', flag: '🇮🇹', logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/12.png' },
@@ -27,6 +27,28 @@ export function currentSeason() {
 export function currentSeasonShort() {
   const now = new Date();
   return now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
+}
+
+function seasonRank(s) {
+  const m = String(s || '').match(/(\d{4})/g);
+  return m ? Number(m[m.length - 1]) : 0;
+}
+
+// Cúp (ASEAN, U20…): lấy mùa mới nhất có trên API, không gắn cứng 2026-2027.
+async function seasonFor(league) {
+  if (league?.season) return league.season;
+  if (league?.cup || league?.latestSeason) {
+    try {
+      const d = await getJSON(`${TSB}/search_all_seasons.php?id=${league.tsdb}`);
+      const seasons = (d.seasons || []).map((x) => x.strSeason).filter(Boolean);
+      if (seasons.length) {
+        seasons.sort((a, b) => seasonRank(b) - seasonRank(a) || String(b).localeCompare(String(a)));
+        return seasons[0];
+      }
+    } catch {}
+    return String(new Date().getFullYear());
+  }
+  return currentSeason();
 }
 
 async function getJSON(url, timeoutMs = 12000) {
@@ -71,19 +93,23 @@ export function eventIsPostponed(ev) {
 // Lịch (5 tháng tới) + kết quả + BXH 1 giải.
 // Opts: { fresh: true } -> BỎ cache, luôn lấy dữ liệu mới nhất từ API (tự cập nhật).
 export function fetchLeague(league, { fresh = false } = {}) {
-  const season = currentSeason();
-  const key = `league_${league.id}_${season}`;
-  if (fresh) {
-    // ghi đè cache bằng dữ liệu mới rồi trả về
-    return loadLeagueData(league, season).then(d => { memCache.set(key, { at: Date.now(), data: d }); return d; })
-      .catch(() => {
-        // API lỗi (mạng/chưa có dữ liệu mùa mới) -> dùng cache cũ nếu còn
+  const run = async () => {
+    const season = await seasonFor(league);
+    const key = `league_${league.id}_${season}`;
+    if (fresh) {
+      try {
+        const d = await loadLeagueData(league, season);
+        memCache.set(key, { at: Date.now(), data: d });
+        return d;
+      } catch {
         const c = memCache.get(key);
         if (c) return c.data;
         throw new Error('SPORTS_FETCH_FAILED');
-      });
-  }
-  return cached(key, () => loadLeagueData(league, season));
+      }
+    }
+    return cached(key, () => loadLeagueData(league, season));
+  };
+  return run();
 }
 
 async function loadLeagueData(league, season) {
@@ -147,29 +173,31 @@ async function loadLeagueData(league, season) {
 // TỈ SỐ MỚI NHẤT (tự cập nhật): trận ĐANG ĐÁ (strStatus = 1H/HT/72'...) + vừa kết thúc.
 // Cache rất ngắn (45s) để poll mỗi phút là có dữ liệu mới thật.
 export function fetchLatestResults(league) {
-  const season = currentSeason();
-  return cached(`latest_${league.id}_${season}`, async () => {
-    let evts = [];
-    try {
-      const d = await getJSON(`${TSB}/eventsseason.php?id=${league.tsdb}&s=${season}`);
-      if (Array.isArray(d.events)) evts = d.events;
-    } catch {}
-    if (!evts.length) {
+  return (async () => {
+    const season = await seasonFor(league);
+    return cached(`latest_${league.id}_${season}`, async () => {
+      let evts = [];
       try {
-        const d = await getJSON(`${TSB}/eventspastleague.php?id=${league.tsdb}`);
-        return { live: [], past: (Array.isArray(d.events) ? d.events : []).slice(0, 15) };
-      } catch { return { live: [], past: [] }; }
-    }
-    const now = Date.now();
-    const withTs = evts.map(ev => ({ ev, ts: tsOfEvent(ev) })).filter(x => x.ts > 0);
-    const live = withTs
-      .filter(({ ev, ts }) => eventIsLive(ev) && ts >= now - 5 * 3600 * 1000)
-      .sort((a, b) => b.ts - a.ts).slice(0, 15).map(x => x.ev);
-    const past = withTs
-      .filter(({ ev, ts }) => String(ev.strStatus || '').toUpperCase() === 'FT' && ts < now + 3600 * 1000)
-      .sort((a, b) => b.ts - a.ts).slice(0, 15).map(x => x.ev);
-    return { live, past };
-  }, 45 * 1000);
+        const d = await getJSON(`${TSB}/eventsseason.php?id=${league.tsdb}&s=${season}`);
+        if (Array.isArray(d.events)) evts = d.events;
+      } catch {}
+      if (!evts.length) {
+        try {
+          const d = await getJSON(`${TSB}/eventspastleague.php?id=${league.tsdb}`);
+          return { live: [], past: (Array.isArray(d.events) ? d.events : []).slice(0, 15) };
+        } catch { return { live: [], past: [] }; }
+      }
+      const now = Date.now();
+      const withTs = evts.map(ev => ({ ev, ts: tsOfEvent(ev) })).filter(x => x.ts > 0);
+      const live = withTs
+        .filter(({ ev, ts }) => eventIsLive(ev) && ts >= now - 5 * 3600 * 1000)
+        .sort((a, b) => b.ts - a.ts).slice(0, 15).map(x => x.ev);
+      const past = withTs
+        .filter(({ ev, ts }) => String(ev.strStatus || '').toUpperCase() === 'FT' && ts < now + 3600 * 1000)
+        .sort((a, b) => b.ts - a.ts).slice(0, 15).map(x => x.ev);
+      return { live, past };
+    }, 45 * 1000);
+  })();
 }
 
 // TỈ SỐ MỚI NHẤT GHÉP TẤT CẢ GIẢI (EPL, La Liga, Serie A, Bundesliga, Ligue 1,

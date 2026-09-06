@@ -357,7 +357,7 @@ export default function TVPage({
             Truyền hình
             <span className="px-2.5 py-1 rounded-full bg-white/10 border border-white/10 text-[11px] font-bold tracking-widest text-stone-300">{channels.length} KÊNH • {groups.length} NHÓM</span>
           </h1>
-          <p className="text-[11px] md:text-xs text-stone-500 mt-1 flex items-center gap-1.5"><Zap className="w-3 h-3 text-[#ff9a3d]" /> Trực tiếp • Không proxy • Chia nhóm theo TVG • Player to hơn</p>
+          <p className="text-[11px] md:text-xs text-stone-500 mt-1 flex items-center gap-1.5"><Zap className="w-3 h-3 text-[#ff9a3d]" /> Trực tiếp • Chia nhóm theo TVG • Player to hơn</p>
         </div>
         <div className="ml-auto flex items-center gap-2">
           {tvChannel && (

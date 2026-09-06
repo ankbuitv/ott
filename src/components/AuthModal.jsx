@@ -110,7 +110,6 @@ export default function AuthModal({ open, onClose, initialView = 'login' }) {
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    if (!agree) { setError(t('auth.agree_required')); return; }
     setError('');
     setNeedTotp(false);
     const r = await login(loginVal, password, totpCode);
@@ -262,15 +261,6 @@ export default function AuthModal({ open, onClose, initialView = 'login' }) {
                 {needTotp && (
                   <input type="text" value={totpCode} onChange={e => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Mã 2FA (6 số)" inputMode="numeric" required className="w-full px-3 py-2.5 bg-amber-500/5 border border-amber-500/30 rounded-xl text-sm font-mono tracking-[0.3em] text-center text-amber-200 placeholder:text-amber-700 focus:outline-none focus:border-amber-500" />
                 )}
-                <label className="flex items-start gap-2 cursor-pointer select-none">
-                  <input type="checkbox" checked={agree} onChange={e => setAgree(e.target.checked)} className="mt-0.5 w-4 h-4 accent-[#f36f21] shrink-0" />
-                  <span className="text-[11px] text-slate-400 leading-relaxed">
-                    {t('auth.agree_pre')}{' '}
-                    <button type="button" onClick={() => setLegal('terms')} className="text-[#ff9a3d] hover:underline font-semibold">{t('footer.terms')}</button>
-                    {' '}{t('auth.agree_and')}{' '}
-                    <button type="button" onClick={() => setLegal('policy')} className="text-[#ff9a3d] hover:underline font-semibold">{t('footer.policy')}</button>
-                  </span>
-                </label>
                 <button type="submit" disabled={loading} className="w-full py-2.5 btn-orange disabled:opacity-50 text-white font-bold text-sm rounded-xl transition-all flex items-center justify-center gap-1.5">
                   {loading ? t('app.loading') : <>{t('auth.btn.login')} <ArrowRight className="w-4 h-4" /></>}
                 </button>

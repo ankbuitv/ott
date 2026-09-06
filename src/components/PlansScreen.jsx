@@ -165,6 +165,70 @@ export default function PlansScreen({ initialCode = '' }) {
           </div>
         </div>
 
+        {plans.length > 1 && (
+          <div className="mb-8 overflow-x-auto rounded-3xl border border-white/10 bg-[#101117]">
+            <div className="px-4 py-3 border-b border-white/[0.07] flex items-center justify-between">
+              <p className="text-[13px] font-black text-white">{t('plans.compare')}</p>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-stone-500">{t('plans.feature')}</span>
+            </div>
+            <table className="w-full min-w-[720px] text-left">
+              <thead>
+                <tr className="border-b border-white/[0.06]">
+                  <th className="px-4 py-3 text-[11px] font-black text-stone-500 uppercase tracking-wider w-[180px]">{t('plans.feature')}</th>
+                  {plans.map((p) => (
+                    <th key={p.code} className="px-3 py-3 text-center">
+                      <div className="text-[13px] font-black italic" style={{ color: p.color || '#f36f21' }}>{p.name}</div>
+                      <div className="text-[11px] text-stone-400 font-bold mt-0.5">{fmtPrice(p, lang) || t('plans.free_price')}</div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(() => {
+                  const rows = [];
+                  const seen = new Set();
+                  plans.forEach((p) => (Array.isArray(p.allows) ? p.allows : []).forEach((f) => {
+                    const k = String(f).trim();
+                    if (k && !seen.has(k)) { seen.add(k); rows.push(k); }
+                  }));
+                  return (rows.length ? rows : [t('plans.feature')]).slice(0, 10).map((feat) => (
+                    <tr key={feat} className="border-b border-white/[0.04]">
+                      <td className="px-4 py-2.5 text-[12px] text-stone-300 font-semibold">{feat}</td>
+                      {plans.map((p) => {
+                        const ok = (Array.isArray(p.allows) ? p.allows : []).includes(feat);
+                        return (
+                          <td key={p.code} className="px-3 py-2.5 text-center">
+                            {ok ? <Check className="w-4 h-4 text-emerald-400 mx-auto" /> : <X className="w-4 h-4 text-stone-700 mx-auto" />}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ));
+                })()}
+                <tr>
+                  <td className="px-4 py-3" />
+                  {plans.map((p) => {
+                    const isCurrent = current === p.code;
+                    const priceStr = fmtPrice(p, lang);
+                    return (
+                      <td key={p.code} className="px-3 py-3 text-center">
+                        <button
+                          onClick={() => startBuy(p)}
+                          disabled={busy === p.code || isCurrent}
+                          className={`w-full py-2 rounded-xl text-[12px] font-black ${isCurrent ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/40' : 'grad-brand text-white'}`}
+                        >
+                          {isCurrent ? t('plans.is_current') : t('plans.buy_now')}
+                        </button>
+                        {!isCurrent && priceStr && <p className="text-[10px] text-stone-500 mt-1">{priceStr}{t('plans.per_month')}</p>}
+                      </td>
+                    );
+                  })}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+
         {/* ===== Thẻ gói ===== */}
         <div className={`grid gap-5 ${plans.length >= 5 ? 'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5' : plans.length >= 4 ? 'sm:grid-cols-2 lg:grid-cols-4' : plans.length === 2 ? 'md:grid-cols-2 max-w-[760px] mx-auto' : 'md:grid-cols-3'}`}>
           {plans.map((p) => {
@@ -221,7 +285,7 @@ export default function PlansScreen({ initialCode = '' }) {
                   className={`mx-5 mt-3 py-2.5 rounded-2xl font-extrabold text-[13px] transition active:scale-[0.98] ${isCurrent ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/40 cursor-default' : 'text-white hover:brightness-110 disabled:opacity-60 shadow-lg'}`}
                   style={!isCurrent ? { background: `linear-gradient(135deg, ${p.color || '#f36f21'}, ${p.color || '#f36f21'}bb)`, boxShadow: `0 8px 24px ${p.color || '#f36f21'}44` } : {}}
                 >
-                  {isCurrent ? t('plans.is_current') : busy === p.code ? t('plans.activating') : canUp || currentRank === 0 ? (priceStr ? t('plans.activate') : t('plans.activate_free')) : t('plans.downgrade')}
+                  {isCurrent ? t('plans.is_current') : busy === p.code ? t('plans.activating') : t('plans.buy_now')}
                 </button>
                 <ul className="px-5 py-4 flex flex-col gap-2">
                   {allows.map((f, i) => (

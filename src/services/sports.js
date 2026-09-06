@@ -5,15 +5,17 @@ const TSB = 'https://www.thesportsdb.com/api/v1/json/3';
 const OLB = 'https://api.openligadb.de';
 
 export const LEAGUES = [
-  { id: 'epl', name: 'Ngoại hạng Anh', short: 'EPL', tsdb: '4328', flag: '🇬🇧' },
-  { id: 'laliga', name: 'La Liga', short: 'LaLiga', tsdb: '4335', flag: '🇪🇸' },
-  { id: 'seriea', name: 'Serie A', short: 'Serie A', tsdb: '4332', flag: '🇮🇹' },
-  { id: 'bundesliga', name: 'Bundesliga', short: 'Bundesliga', tsdb: '4331', flag: '🇩🇪', olb: 'bl1' },
-  { id: 'ligue1', name: 'Ligue 1', short: 'Ligue 1', tsdb: '4334', flag: '🇫🇷' },
-  { id: 'ucl', name: 'Cúp C1 châu Âu', short: 'UCL', tsdb: '4480', flag: '🏆', cup: true },
-  { id: 'vleague1', name: 'V.League 1', short: 'V.League 1', tsdb: '4803', flag: '🇻🇳' },
-  { id: 'vleague2', name: 'V.League 2', short: 'V.League 2', tsdb: '5214', flag: '🇻🇳' },
-  { id: 'nba', name: 'NBA — Bóng rổ Mỹ', short: 'NBA', tsdb: '4387', flag: '🏀' },
+  { id: 'aff', name: 'AFF Championship (ASEAN)', short: 'ASEAN', tsdb: '4481', flag: '🌏', cup: true, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/841.png' },
+  { id: 'u20', name: 'FIFA U-20 World Cup', short: 'U20', tsdb: '4484', flag: '🌐', cup: true, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/102.png' },
+  { id: 'epl', name: 'Ngoại hạng Anh', short: 'EPL', tsdb: '4328', flag: '🇬🇧', logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png' },
+  { id: 'laliga', name: 'La Liga', short: 'LaLiga', tsdb: '4335', flag: '🇪🇸', logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/15.png' },
+  { id: 'seriea', name: 'Serie A', short: 'Serie A', tsdb: '4332', flag: '🇮🇹', logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/12.png' },
+  { id: 'bundesliga', name: 'Bundesliga', short: 'Bundesliga', tsdb: '4331', flag: '🇩🇪', olb: 'bl1', logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/10.png' },
+  { id: 'ligue1', name: 'Ligue 1', short: 'Ligue 1', tsdb: '4334', flag: '🇫🇷', logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/9.png' },
+  { id: 'ucl', name: 'Cúp C1 châu Âu', short: 'UCL', tsdb: '4480', flag: '🏆', cup: true, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2.png' },
+  { id: 'vleague1', name: 'V.League 1', short: 'V.League 1', tsdb: '4803', flag: '🇻🇳', logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2341.png' },
+  { id: 'vleague2', name: 'V.League 2', short: 'V.League 2', tsdb: '5214', flag: '🇻🇳', logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/2341.png' },
+  { id: 'nba', name: 'NBA — Bóng rổ Mỹ', short: 'NBA', tsdb: '4387', flag: '🏀', logo: 'https://a.espncdn.com/i/teamlogos/leagues/500/nba.png' },
 ];
 
 // Mùa giải hiện tại: từ tháng 7 tính mùa mới (2026-2027)

@@ -90,7 +90,7 @@ function MatchCard({ ev, showScore, onClick }) {
 
 export default function SportsScreen({ channels = [], onSelectChannel }) {
   const { t } = useI18n();
-  const [leagueId, setLeagueId] = useState('epl');
+  const [leagueId, setLeagueId] = useState('aff');
   const [data, setData] = useState({ next: [], past: [], table: [] });
   const [loading, setLoading] = useState(true);
   const [videos, setVideos] = useState([]);
@@ -256,13 +256,18 @@ export default function SportsScreen({ channels = [], onSelectChannel }) {
             <button
               key={l.id}
               onClick={() => setLeagueId(l.id)}
-              className={`shrink-0 px-3.5 py-2 rounded-full text-[12px] font-bold transition-all active:scale-95 flex items-center gap-1.5 ${
+              className={`shrink-0 pl-2 pr-3.5 py-1.5 rounded-full text-[12px] font-bold transition-all active:scale-95 flex items-center gap-2 ${
                 leagueId === l.id
                   ? 'grad-brand text-white shadow-lg shadow-[#f36f21]/30'
                   : 'bg-white/[0.06] text-stone-300 hover:bg-white/[0.12] hover:text-white'
               }`}
             >
-              <span>{l.flag}</span> {l.short}
+              {l.logo ? (
+                <img src={l.logo} alt="" className="w-6 h-6 object-contain rounded-md bg-white/90 p-0.5" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+              ) : (
+                <span>{l.flag}</span>
+              )}
+              {l.short}
             </button>
           ))}
           <button
@@ -351,7 +356,9 @@ export default function SportsScreen({ channels = [], onSelectChannel }) {
                   className={`group shrink-0 w-[210px] snap-start rounded-2xl border p-2.5 text-left transition-all hover:-translate-y-0.5 ${s.live ? 'bg-[#f36f21]/10 border-[#f36f21]/50' : 'bg-white/[0.03] border-white/[0.07] hover:border-[#f36f21]/50'}`}
                 >
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[9px] font-black text-stone-400">{s.league?.flag} {s.league?.short}</span>
+                    <span className="text-[9px] font-black text-stone-400 flex items-center gap-1">
+                      {s.league?.logo ? <img src={s.league.logo} alt="" className="w-3.5 h-3.5 object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : s.league?.flag} {s.league?.short}
+                    </span>
                     {s.live ? (
                       <span className="px-1.5 py-0.5 text-[8px] font-black rounded-full grad-brand text-white flex items-center gap-1">
                         <span className="w-1 h-1 rounded-full bg-white animate-pulse"></span>{String(s.ev?.strStatus || 'LIVE').toUpperCase()}
@@ -421,7 +428,9 @@ export default function SportsScreen({ channels = [], onSelectChannel }) {
               <CalendarDays className="w-4 h-4 text-sky-400" />
             </span>
             <h2 className="text-[19px] font-extrabold tracking-tight">{t('sports.fixtures')}</h2>
-            <span className="text-[11px] text-stone-500 font-bold">{league.flag} {league.name}</span>
+            <span className="text-[11px] text-stone-500 font-bold flex items-center gap-1.5">
+              {league.logo ? <img src={league.logo} alt="" className="w-4 h-4 object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : league.flag} {league.name}
+            </span>
           </div>
           {loading ? (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">

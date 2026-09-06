@@ -326,6 +326,17 @@ html.tvmode .tv-focused {
 @keyframes eqBounce { 0%, 100% { transform: scaleY(0.4); } 50% { transform: scaleY(1); } }
 .anim-eq { transform-origin: bottom; animation: eqBounce 0.9s ease-in-out infinite; }
 
+@keyframes splashGlow {
+  0%, 100% { filter: drop-shadow(0 0 12px rgba(243,111,33,.35)); transform: scale(1); }
+  50% { filter: drop-shadow(0 0 36px rgba(243,111,33,.85)) drop-shadow(0 0 48px rgba(34,211,238,.35)); transform: scale(1.06); }
+}
+@keyframes splashBar {
+  from { width: 0%; }
+  to { width: 100%; }
+}
+.splash-logo { animation: splashGlow 1.4s ease-in-out infinite; }
+.splash-bar { animation: splashBar 1.55s cubic-bezier(.22,.8,.36,1) both; }
+
 /* ===== POLISH v1.0.0-beta: mượt & sạch hơn ===== */
 @keyframes sheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
 .mobile-sheet { animation: sheetUp .28s cubic-bezier(.22,.9,.3,1) both; }

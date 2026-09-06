@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Logo from './Logo';
-import { Bell, Check, BellRing, Globe } from 'lucide-react';
+import { Bell, Check, BellRing, Globe, Mic } from 'lucide-react';
+import { listenOnce, parseVoiceCommand, findChannelByVoice } from '../services/voice';
 import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../contexts/I18nContext';
 import { MovieAPI, imgPath } from '../services/tmdb';
@@ -8,7 +9,7 @@ import { API_BASE } from '../services/config';
 import { enablePush, disablePush, isPushEnabled } from '../services/push';
 
 function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, setActiveTab, activeTab, onSelectChannel, onSelectMovie, onShowAuth }) {
-  const { isAuthenticated, logout } = useAuth();
+  const { isAuthenticated, logout, effectivePlan } = useAuth();
   const { t, lang, setLang, languages } = useI18n();
   const [searchFocused, setSearchFocused] = useState(false);
   const [movieResults, setMovieResults] = useState([]);
@@ -24,6 +25,42 @@ function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, s
   const [pushOn, setPushOn] = useState(false);
   const notifRef = useRef(null);
   const [langOpen, setLangOpen] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [voiceMsg, setVoiceMsg] = useState('');
+
+  // Tìm kiếm / điều khiển bằng giọng nói
+  const startVoice = async () => {
+    if (listening) return;
+    setListening(true);
+    setVoiceMsg('Đang nghe... nói tên kênh, VD: "mở VTV1"');
+    try {
+      const text = await listenOnce('vi-VN');
+      setVoiceMsg(`Nghe: "${text}"`);
+      const cmd = parseVoiceCommand(text);
+      if (cmd.action === 'tab' && setActiveTab) {
+        setActiveTab(cmd.tab);
+        setVoiceMsg(`Đã chuyển: ${cmd.tab}`);
+      } else if (cmd.action === 'channel') {
+        const ch = findChannelByVoice(channels || [], cmd.query);
+        if (ch && onSelectChannel) {
+          setSearchQuery(''); setSearchFocused(false);
+          onSelectChannel(ch);
+          setVoiceMsg(`Đang mở: ${ch.name}`);
+        } else {
+          setVoiceMsg(`Không tìm thấy kênh "${cmd.query}"`);
+        }
+      } else {
+        setSearchQuery(cmd.query);
+        setSearchFocused(true);
+        if (setActiveTab) setActiveTab('home');
+      }
+    } catch (e) {
+      setVoiceMsg(e?.message === 'NO_MIC' ? 'Trình duyệt chưa cấp quyền micro' : (e?.message === 'NO_SR' ? 'Trình duyệt không hỗ trợ nhận diện giọng nói' : 'Không nghe rõ, thử lại nhé'));
+    } finally {
+      setListening(false);
+      setTimeout(() => setVoiceMsg(''), 4000);
+    }
+  };
   const langRef = useRef(null);
   const curLang = (languages || []).find((l) => l.code === lang);
 
@@ -131,12 +168,21 @@ function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, s
               onFocus={() => setSearchFocused(true)}
               onKeyDown={e => { if (e.key === 'Escape') setSearchFocused(false); }}
             />
+            <button onClick={startVoice} title="Tìm bằng giọng nói (VD: mở VTV1)" className={`shrink-0 p-1.5 rounded-full transition-all ${listening ? 'bg-red-600 text-white animate-pulse' : 'text-stone-400 hover:text-white hover:bg-white/10'}`}>
+              <Mic className="w-3.5 h-3.5" />
+            </button>
             {searchingMovies ? (
               <span className="w-3.5 h-3.5 border-2 border-[#f36f21] border-t-transparent rounded-full animate-spin shrink-0"></span>
             ) : (
               <kbd className="hidden lg:inline px-1.5 py-0.5 text-[10px] text-stone-500 bg-white/5 rounded border border-white/10 font-mono">⌘K</kbd>
             )}
           </div>
+
+          {voiceMsg && (
+            <div className="absolute top-full mt-2 left-0 right-0 bg-[#14151a]/95 border border-white/10 rounded-xl px-3 py-2 text-[11px] text-stone-200 shadow-2xl z-50 anim-pop-fast">
+              🎙️ {voiceMsg}
+            </div>
+          )}
 
           {/* Dropdown results */}
           {showDropdown && (
@@ -294,8 +340,12 @@ function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, s
 
         {isAuthenticated && currentProfile ? (
           <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-amber-500 to-[#f36f21] flex items-center justify-center font-bold text-white text-sm cursor-pointer">
-              {currentProfile.name[0].toUpperCase()}
+            <div className="relative cursor-pointer" title={`Gói ${(effectivePlan || 'standard').toUpperCase()}`}>
+              <div className={`w-9 h-9 rounded-full bg-gradient-to-br from-amber-500 to-[#f36f21] flex items-center justify-center font-bold text-white text-sm ${effectivePlan === 'vip' ? 'ring-2 ring-amber-300 shadow-[0_0_12px_rgba(251,191,36,.7)]' : effectivePlan === 'recreational' ? 'ring-2 ring-purple-400 shadow-[0_0_10px_rgba(192,132,252,.6)]' : 'ring-1 ring-white/20'}`}>
+                {currentProfile.name[0].toUpperCase()}
+              </div>
+              {effectivePlan === 'vip' && <span className="absolute -top-1.5 -right-1 text-[10px] leading-none">👑</span>}
+              {effectivePlan === 'recreational' && <span className="absolute -top-1.5 -right-1 text-[10px] leading-none">⭐</span>}
             </div>
             <span className="text-xs text-stone-300 hidden md:inline">{currentProfile.name}</span>
             <button onClick={logout} className="text-[10px] text-stone-500 hover:text-[#ff9a3d] ml-1">{t('nav.logout')}</button>

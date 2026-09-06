@@ -624,7 +624,8 @@ function json(data, status = 200, request = null, env = null) {
 // không bắt buộc phải chạy tay `wrangler d1 execute ... --file=./schema.sql`.
 const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, avatar_url TEXT DEFAULT '', display_name TEXT DEFAULT '', role TEXT DEFAULT 'user', email_verified INTEGER DEFAULT 0, verify_code TEXT DEFAULT '', verify_expires INTEGER DEFAULT 0, reset_token TEXT DEFAULT '', reset_expires INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
-  `CREATE TABLE IF NOT EXISTS sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, token TEXT UNIQUE NOT NULL, expires_at INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, token TEXT UNIQUE NOT NULL, expires_at INTEGER NOT NULL, user_agent TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS feedback (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER DEFAULT 0, channel_id TEXT DEFAULT '', message TEXT NOT NULL, client_info TEXT DEFAULT '', status TEXT DEFAULT 'new', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS user_settings (user_id INTEGER PRIMARY KEY, theme TEXT DEFAULT 'dark', default_quality TEXT DEFAULT 'auto', buffer_goal INTEGER DEFAULT 10, language TEXT DEFAULT 'vi', parental_pin TEXT DEFAULT '', parental_enabled INTEGER DEFAULT 0, settings_json TEXT DEFAULT '{}', updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS user_favorites (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, channel_id TEXT NOT NULL, sort_order INTEGER DEFAULT 0, group_name TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, channel_id))`,
   `CREATE TABLE IF NOT EXISTS watch_history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, channel_id TEXT NOT NULL, last_position INTEGER DEFAULT 0, watch_count INTEGER DEFAULT 1, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, channel_id))`,
@@ -678,6 +679,7 @@ async function ensureSchema(env) {
     // Nếu cột đã tồn tại, lệnh này fail và bị bỏ qua — không sao.
     for (const stmt of [
       "ALTER TABLE channels ADD COLUMN is_active INTEGER DEFAULT 1",
+      "ALTER TABLE sessions ADD COLUMN user_agent TEXT DEFAULT ''",
       "ALTER TABLE channels ADD COLUMN user_agent TEXT DEFAULT ''",
       "ALTER TABLE channels ADD COLUMN referer TEXT DEFAULT ''",
       "ALTER TABLE channels ADD COLUMN manifest_type TEXT DEFAULT ''",
@@ -744,6 +746,7 @@ async function handleAPI(path, request, env, ctx) {
   if (path.startsWith("/api/party/")) return await handleParty(path, request, env);
   if (path === "/api/tmdb") return await handleTMDBProxy(request, env);
   if (path === "/api/reminders") return await handleReminders(request, env);
+  if (path === "/api/feedback") return await handleFeedback(request, env);
   if (path === "/api/broadcasts") return await handleBroadcasts(env, request);
   if (path === "/api/channels") return await handleChannels(env);
   if (path === "/api/search") return await handleSearch(request, env);
@@ -1627,6 +1630,9 @@ async function handleAuth(path, request, env) {
     if (!g.allowed) return json({ error: "Quá nhiều request — thử lại sau.", code: "RATE_LIMITED", retry_after: g.retryAfter }, 429, request, env);
   } catch (e) { /* DB lỗi — bỏ qua rate limit, vẫn có lockout riêng từng endpoint */ }
 
+  // Quản lý phiên đăng nhập (xem + đá thiết bị)
+  if (path === "/auth/sessions") return await handleSessions(request, env);
+
   const body = await request.json().catch(() => ({}));
 
   // Register
@@ -1739,7 +1745,11 @@ async function handleAuth(path, request, env) {
 
       const token = generateJWT(user.id, env);
       const expires = Date.now() + 30 * 24 * 3600 * 1000;
-      await env.DB.prepare("INSERT INTO sessions (user_id, token, expires_at) VALUES (?, ?, ?)").bind(user.id, token, expires).run();
+      try {
+        await env.DB.prepare("INSERT INTO sessions (user_id, token, expires_at, user_agent) VALUES (?, ?, ?, ?)").bind(user.id, token, expires, (request.headers.get("User-Agent") || "").slice(0, 160)).run();
+      } catch {
+        await env.DB.prepare("INSERT INTO sessions (user_id, token, expires_at) VALUES (?, ?, ?)").bind(user.id, token, expires).run();
+      }
 
       // Track analytics
       try { await env.DB.prepare("INSERT INTO analytics (event, user_id, data) VALUES ('login', ?, ?)").bind(user.id, JSON.stringify({ login })).run(); } catch {}
@@ -2126,6 +2136,24 @@ async function handleAdmin(path, request, env, ctx) {
   try { await logAudit(env, adminUser ? adminUser.id : 0, "admin.access", { path, ip, master: isMaster }); } catch {}
   adminAlert(env, ctx, "admin.access", { path, ip, user: adminUser ? adminUser.username : "master-token" });
 
+  // Feedback báo lỗi kênh (1 chạm từ player)
+  if (path === "/admin/feedback" && request.method === "GET") {
+    const { results } = await env.DB.prepare("SELECT * FROM feedback ORDER BY created_at DESC LIMIT 100").all();
+    return json({ success: true, feedback: results || [] }, 200, request, env);
+  }
+  if (path === "/admin/feedback" && request.method === "DELETE") {
+    const { id } = await request.json().catch(() => ({}));
+    if (!id) return json({ error: "Thiếu id" }, 400, request, env);
+    await env.DB.prepare("DELETE FROM feedback WHERE id = ?").bind(id).run();
+    return json({ success: true }, 200, request, env);
+  }
+  if (path === "/admin/feedback" && request.method === "PUT") {
+    const { id, status } = await request.json().catch(() => ({}));
+    if (!id) return json({ error: "Thiếu id" }, 400, request, env);
+    await env.DB.prepare("UPDATE feedback SET status = ? WHERE id = ?").bind(status || "done", id).run();
+    return json({ success: true }, 200, request, env);
+  }
+
   // Dashboard stats
   if (path === "/admin/stats" && request.method === "GET") {
     const [users, channels, views, notifications] = await Promise.all([
@@ -2392,6 +2420,50 @@ async function handleHistory(request, env) {
     return json({ success: true }, 200, request, env);
   }
 
+  return json({ error: "Method not allowed" }, 405, request, env);
+}
+
+// ========== FEEDBACK (báo lỗi kênh 1 chạm) ==========
+async function handleFeedback(request, env) {
+  if (!hasDB(env)) return json({ success: true, local: true }, 200, request, env);
+  await ensureSchema(env);
+  if (request.method !== "POST") return json({ error: "Method not allowed" }, 405, request, env);
+  const auth = await getAuth(request, env);
+  const body = await request.json().catch(() => ({}));
+  const message = String(body.message || "").slice(0, 500).trim();
+  if (!message) return json({ error: "Thiếu nội dung" }, 400, request, env);
+  const clientInfo = JSON.stringify({
+    ua: (request.headers.get("User-Agent") || "").slice(0, 160),
+    upstreamUA: String(body.upstreamUA || "").slice(0, 120),
+    program: String(body.program || "").slice(0, 160),
+    at: new Date().toISOString(),
+  });
+  await env.DB.prepare("INSERT INTO feedback (user_id, channel_id, message, client_info) VALUES (?, ?, ?, ?)").bind(auth && auth.user ? auth.user.id : 0, String(body.channel_id || "").slice(0, 80), message, clientInfo).run();
+  return json({ success: true }, 200, request, env);
+}
+
+// ========== SESSIONS (thiết bị đăng nhập) ==========
+async function handleSessions(request, env) {
+  if (!hasDB(env)) return dbUnavailable();
+  await ensureSchema(env);
+  const auth = await getAuth(request, env);
+  if (!auth || !auth.user) return json({ error: "Chưa đăng nhập" }, 401, request, env);
+  const cur = (request.headers.get("Authorization") || "").slice(7);
+  if (request.method === "GET") {
+    const { results } = await env.DB.prepare("SELECT id, user_agent, expires_at, created_at FROM sessions WHERE user_id = ? AND expires_at > ? ORDER BY created_at DESC LIMIT 20").bind(auth.user.id, Date.now()).all();
+    let currentId = 0;
+    try {
+      const { results: me } = await env.DB.prepare("SELECT id FROM sessions WHERE token = ?").bind(cur).all();
+      currentId = me[0]?.id || 0;
+    } catch {}
+    return json({ success: true, sessions: results || [], currentId }, 200, request, env);
+  }
+  if (request.method === "DELETE") {
+    const { id } = await request.json().catch(() => ({}));
+    if (!id) return json({ error: "Thiếu id" }, 400, request, env);
+    await env.DB.prepare("DELETE FROM sessions WHERE id = ? AND user_id = ?").bind(id, auth.user.id).run();
+    return json({ success: true }, 200, request, env);
+  }
   return json({ error: "Method not allowed" }, 405, request, env);
 }
 

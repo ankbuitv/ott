@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { maskScores } from '../utils/spoiler';
 import { useI18n } from '../contexts/I18nContext';
 import { useDevice } from '../contexts/DeviceContext';
 import { useToast } from '../contexts/ToastContext';
@@ -485,7 +486,7 @@ const ProgrammeChip = React.memo(function ProgrammeChip({ prog, channel, nowTs, 
             </span>
           )}
         </div>
-        <h4 className="font-semibold text-[11px] text-slate-200 line-clamp-2 leading-snug">{prog.title}</h4>
+        <h4 className="font-semibold text-[11px] text-slate-200 line-clamp-2 leading-snug">{maskScores(prog.title)}</h4>
       </div>
       <p className="text-[10px] text-slate-500 line-clamp-1 mt-1.5">{prog.desc}</p>
     </>

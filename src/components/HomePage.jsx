@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
-import { Play, Heart, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Radio, SearchX } from 'lucide-react';
+import { Play, Heart, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Radio, SearchX, Info, History, ArrowDownAZ } from 'lucide-react';
+import { maskScores } from '../utils/spoiler';
 import { findEpgForChannel } from '../utils/epgMatch';
 import { parseEpgDate, calculateProgramProgress } from '../utils/dateUtils';
 import { useI18n } from '../contexts/I18nContext';
@@ -22,7 +23,7 @@ const SLIDE_GRADS = [
 const PAGE_SIZE = 12;
 
 // ===== Thẻ kênh dạng lưới =====
-const ChannelGridCard = React.memo(function ChannelGridCard({ ch, epg, onSelect, onToggleFavorite, isFav, liveLabel }) {
+const ChannelGridCard = React.memo(function ChannelGridCard({ ch, epg, onSelect, onPlayCatchup, onShowInfo, onToggleFavorite, isFav, liveLabel }) {
   const progress = epg?.now ? calculateProgramProgress(epg.now.start, epg.now.stop) : 0;
   return (
     <button
@@ -42,6 +43,21 @@ const ChannelGridCard = React.memo(function ChannelGridCard({ ch, epg, onSelect,
             <Play className="w-5 h-5 text-white fill-current ml-0.5" />
           </span>
         </span>
+        {/* Quick actions khi hover: xem lại + chi tiết */}
+        {(onPlayCatchup || onShowInfo) && (
+          <span className="absolute bottom-2 left-2 right-2 z-20 hidden group-hover:flex items-center justify-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            {onPlayCatchup && epg?.prev && (
+              <span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); onPlayCatchup(ch, epg.prev); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); onPlayCatchup(ch, epg.prev); } }} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-black/70 backdrop-blur text-[9px] font-bold text-cyan-300 hover:bg-cyan-600 hover:text-white transition-colors" title="Xem lại chương trình trước">
+                <History className="w-3 h-3" /> Xem lại
+              </span>
+            )}
+            {onShowInfo && (
+              <span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); onShowInfo(ch); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); onShowInfo(ch); } }} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-black/70 backdrop-blur text-[9px] font-bold text-slate-300 hover:bg-slate-600 hover:text-white transition-colors" title="Chi tiết kênh">
+                <Info className="w-3 h-3" /> Chi tiết
+              </span>
+            )}
+          </span>
+        )}
         <span className="absolute top-2 left-2 z-20 bg-black/70 backdrop-blur px-2 py-1 rounded-lg text-[9px] font-black tracking-wider text-[#ff9a3d] flex items-center gap-1">
           <span className="eq" style={{ transform: 'scale(.65)', transformOrigin: 'left bottom' }}><i></i><i></i><i></i></span> {liveLabel}
         </span>
@@ -68,7 +84,7 @@ const ChannelGridCard = React.memo(function ChannelGridCard({ ch, epg, onSelect,
         <h4 className="text-[13px] font-bold text-white truncate group-hover:text-[#ffb37a] transition-colors">{ch.name}</h4>
         <p className="text-[11px] text-stone-400 truncate mt-0.5">
           {epg?.now ? (
-            <>{fmtTime(epg.now.start)} · {epg.now.title}</>
+            <>{fmtTime(epg.now.start)} · {maskScores(epg.now.title)}</>
           ) : (ch.group_title || '')}
         </p>
       </div>
@@ -86,7 +102,7 @@ function fmtTime(s) {
 
 export default function HomePage({
   channels, epgData, favorites, watchHistory,
-  onSelectChannel, onPlayCatchup, onToggleFavorite,
+  onSelectChannel, onPlayCatchup, onToggleFavorite, onShowInfo,
   selectedCategory, setSelectedCategory, categories,
   searchQuery, setSearchQuery, isLoading,
 }) {
@@ -152,9 +168,9 @@ export default function HomePage({
   const searchResults = useMemo(() => {
     if (!searching) return [];
     const q = searchQuery.trim().toLowerCase();
-    return (channels || [])
+    return sortChans((channels || [])
       .filter(ch => (ch.name || '').toLowerCase().includes(q))
-      .filter(ch => isAllCategory(selectedCategory) || ch.group_title === selectedCategory)
+      .filter(ch => isAllCategory(selectedCategory) || ch.group_title === selectedCategory))
       .slice(0, 60);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channels, searchQuery, selectedCategory]);
@@ -166,6 +182,37 @@ export default function HomePage({
   }, [channels, watchHistory]);
 
   const favSet = useMemo(() => new Set(favorites || []), [favorites]);
+
+  // Sắp xếp kênh (nhớ lựa chọn)
+  const [sortMode, setSortMode] = useState(() => { try { return localStorage.getItem('chrtv_sort') || 'default'; } catch { return 'default'; } });
+  const changeSort = (m) => { setSortMode(m); try { localStorage.setItem('chrtv_sort', m); } catch {} };
+  const sortChans = useCallback((list) => {
+    if (sortMode === 'az') return [...list].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'vi'));
+    if (sortMode === 'live') return [...list].sort((a, b) => (getEpgNow(b)?.now ? 1 : 0) - (getEpgNow(a)?.now ? 1 : 0));
+    return list;
+  }, [sortMode, getEpgNow]);
+
+  // Gợi ý "Có thể bạn thích": cùng nhóm với kênh hay xem, chưa xem gần đây
+  const recoChannels = useMemo(() => {
+    if (!watchHistory?.length || !channels?.length) return [];
+    const recentIds = new Set(watchHistory.slice(0, 12).map(h => h.channel_id));
+    const topGroups = {};
+    watchHistory.slice(0, 20).forEach(h => {
+      const ch = channels.find(c => c.channel_id === h.channel_id);
+      if (ch?.group_title) topGroups[ch.group_title] = (topGroups[ch.group_title] || 0) + 1;
+    });
+    const ranked = Object.entries(topGroups).sort((a, b) => b[1] - a[1]).map(([g]) => g);
+    if (!ranked.length) return [];
+    const out = [];
+    for (const g of ranked) {
+      for (const ch of channels) {
+        if (out.length >= 12) break;
+        if (ch.group_title === g && !recentIds.has(ch.channel_id) && !favSet.has(ch.channel_id) && !out.includes(ch)) out.push(ch);
+      }
+      if (out.length >= 12) break;
+    }
+    return out;
+  }, [channels, watchHistory, favSet]);
 
   const toggleExpand = (g) => setExpanded(prev => ({ ...prev, [g]: !prev[g] }));
 
@@ -209,7 +256,7 @@ export default function HomePage({
             {heroEpg?.now && (
               <>
                 <div className="self-start max-w-full bg-white/10 backdrop-blur-md border border-white/15 rounded-2xl px-4 py-2.5 mb-5">
-                  <p className="text-[13px] md:text-[15px] font-bold text-white truncate">{heroEpg.now.title}</p>
+                  <p className="text-[13px] md:text-[15px] font-bold text-white truncate">{maskScores(heroEpg.now.title)}</p>
                   <p className="text-[11px] text-white/60 mt-0.5">{fmtTime(heroEpg.now.start)} - {fmtTime(heroEpg.now.stop)}</p>
                 </div>
               </>
@@ -260,6 +307,14 @@ export default function HomePage({
       {/* ===== LỌC THỂ LOẠI (pill) ===== */}
       <div className="sticky top-0 z-30 bg-[#0b0b0d]/90 backdrop-blur-md border-b border-white/[0.06] mt-4">
         <div className="max-w-[1400px] mx-auto px-5 md:px-8 py-3 flex items-center gap-2 overflow-x-auto scrollbar-none">
+          <span className="shrink-0 flex items-center gap-1 pl-1 pr-2 text-stone-500" title="Sắp xếp kênh">
+            <ArrowDownAZ className="w-4 h-4" />
+            <select value={sortMode} onChange={e => changeSort(e.target.value)} className="bg-white/[0.06] hover:bg-white/[0.12] text-stone-200 text-[12px] font-bold px-2.5 py-2 rounded-full border-none outline-none cursor-pointer">
+              <option value="default">Mặc định</option>
+              <option value="az">A → Z</option>
+              <option value="live">Đang phát trước</option>
+            </select>
+          </span>
           {(categories || []).map(cat => {
             const active = selectedCategory === cat;
             const label = (cat === 'Tất Cả' || cat === 'All') ? t('movies.genre.all') : cat;
@@ -298,7 +353,7 @@ export default function HomePage({
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3.5">
                 {searchResults.map(ch => (
-                  <ChannelGridCard key={ch.channel_id} ch={ch} epg={getEpgNow(ch)} onSelect={onSelectChannel} onToggleFavorite={onToggleFavorite} isFav={favSet.has(ch.channel_id)} liveLabel={t('player.live')} />
+                  <ChannelGridCard key={ch.channel_id} ch={ch} epg={getEpgNow(ch)} onSelect={onSelectChannel} onPlayCatchup={onPlayCatchup} onShowInfo={onShowInfo} onToggleFavorite={onToggleFavorite} isFav={favSet.has(ch.channel_id)} liveLabel={t('player.live')} />
                 ))}
               </div>
             )}
@@ -316,7 +371,24 @@ export default function HomePage({
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3.5">
               {recentChannels.map(ch => (
-                <ChannelGridCard key={ch.channel_id} ch={ch} epg={getEpgNow(ch)} onSelect={onSelectChannel} onToggleFavorite={onToggleFavorite} isFav={favSet.has(ch.channel_id)} liveLabel={t('player.live')} />
+                <ChannelGridCard key={ch.channel_id} ch={ch} epg={getEpgNow(ch)} onSelect={onSelectChannel} onPlayCatchup={onPlayCatchup} onShowInfo={onShowInfo} onToggleFavorite={onToggleFavorite} isFav={favSet.has(ch.channel_id)} liveLabel={t('player.live')} />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* ===== CÓ THỂ BẠN THÍCH (gợi ý theo thói quen) ===== */}
+        {!searching && recoChannels.length > 0 && (
+          <section className="anim-fade-up">
+            <div className="flex items-end justify-between mb-4">
+              <div>
+                <p className="text-[10px] text-[#ff9a3d] font-black uppercase tracking-widest mb-1">✨ Gợi ý cho bạn</p>
+                <h2 className="text-[20px] font-extrabold tracking-tight">Có thể bạn thích</h2>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3.5">
+              {recoChannels.map(ch => (
+                <ChannelGridCard key={ch.channel_id} ch={ch} epg={getEpgNow(ch)} onSelect={onSelectChannel} onPlayCatchup={onPlayCatchup} onShowInfo={onShowInfo} onToggleFavorite={onToggleFavorite} isFav={favSet.has(ch.channel_id)} liveLabel={t('player.live')} />
               ))}
             </div>
           </section>
@@ -325,7 +397,8 @@ export default function HomePage({
         {/* ===== NHÓM KÊNH (lưới) ===== */}
         {!searching && Object.entries(filteredGroups).map(([groupName, groupChannels], gi) => {
           const isOpen = !!expanded[groupName];
-          const visible = isOpen ? groupChannels : groupChannels.slice(0, PAGE_SIZE);
+          const sortedGroup = sortChans(groupChannels);
+          const visible = isOpen ? sortedGroup : sortedGroup.slice(0, PAGE_SIZE);
           return (
             <section key={groupName} className="anim-fade-up" style={{ animationDelay: `${Math.min(gi, 4) * 60}ms` }}>
               <div className="flex items-end justify-between mb-4">
@@ -349,7 +422,7 @@ export default function HomePage({
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3.5">
                 {visible.map(ch => (
-                  <ChannelGridCard key={ch.channel_id} ch={ch} epg={getEpgNow(ch)} onSelect={onSelectChannel} onToggleFavorite={onToggleFavorite} isFav={favSet.has(ch.channel_id)} liveLabel={t('player.live')} />
+                  <ChannelGridCard key={ch.channel_id} ch={ch} epg={getEpgNow(ch)} onSelect={onSelectChannel} onPlayCatchup={onPlayCatchup} onShowInfo={onShowInfo} onToggleFavorite={onToggleFavorite} isFav={favSet.has(ch.channel_id)} liveLabel={t('player.live')} />
                 ))}
               </div>
             </section>

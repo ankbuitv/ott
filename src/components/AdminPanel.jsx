@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Users, BarChart3, Bell, Radio, Send, Eye, TrendingUp, Calendar, Plus, Trash2, Save, X, ScrollText, Ban, KeyRound, ShieldCheck, ChevronDown } from 'lucide-react';
+import { Settings, Users, BarChart3, Bell, Radio, Send, Eye, TrendingUp, Calendar, Plus, Trash2, Save, X, ScrollText, Ban, KeyRound, ShieldCheck, ChevronDown, Flag } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { API_BASE } from '../services/config';
@@ -35,6 +35,7 @@ export default function AdminPanel({ onClose }) {
   const [audit, setAudit] = useState([]);
   const [creds, setCreds] = useState([]);
   const [credForm, setCredForm] = useState({ channel_id: '', upstream_token: '' });
+  const [feedback, setFeedback] = useState([]);
 
   // Notification form
   const [notifyTitle, setNotifyTitle] = useState('');
@@ -70,6 +71,7 @@ export default function AdminPanel({ onClose }) {
     fetch(`${BASE}/admin/users`, { headers }).then(r => r.json()).then(d => setUsers(d.users || [])).catch(() => {});
     fetch(`${BASE}/admin/audit`, { headers }).then(r => r.json()).then(d => setAudit(d.audit || [])).catch(() => {});
     fetch(`${BASE}/admin/stream-credentials`, { headers }).then(r => r.json()).then(d => setCreds(d.credentials || [])).catch(() => {});
+    fetch(`${BASE}/admin/feedback`, { headers }).then(r => r.json()).then(d => setFeedback(d.feedback || [])).catch(() => {});
   }, [token]);
 
   // ===== Quản lý user =====
@@ -221,7 +223,7 @@ export default function AdminPanel({ onClose }) {
         </div>
 
         <div className="flex border-b border-slate-800/40 overflow-x-auto">
-          {[{ id: 'stats', label: 'Thống kê', icon: BarChart3 }, { id: 'users', label: 'Người dùng', icon: Users }, { id: 'audit', label: 'Nhật ký', icon: ScrollText }, { id: 'notify', label: 'Thông báo', icon: Bell }, { id: 'broadcast', label: 'Broadcast', icon: Send }, { id: 'epg', label: 'EPG kênh', icon: Calendar }, { id: 'analytics', label: 'Analytics', icon: TrendingUp }, { id: 'credentials', label: 'Chìa khoá stream', icon: KeyRound }].map(t => (
+          {[{ id: 'stats', label: 'Thống kê', icon: BarChart3 }, { id: 'users', label: 'Người dùng', icon: Users }, { id: 'audit', label: 'Nhật ký', icon: ScrollText }, { id: 'notify', label: 'Thông báo', icon: Bell }, { id: 'broadcast', label: 'Broadcast', icon: Send }, { id: 'epg', label: 'EPG kênh', icon: Calendar }, { id: 'analytics', label: 'Analytics', icon: TrendingUp }, { id: 'credentials', label: 'Chìa khoá stream', icon: KeyRound }, { id: 'feedback', label: 'Báo lỗi', icon: Flag }].map(t => (
             <button key={t.id} onClick={() => setTab(t.id)} className={`flex items-center gap-1.5 px-4 py-2 text-[11px] font-semibold transition-all whitespace-nowrap ${tab === t.id ? 'text-[#ff9a3d] border-b-2 border-[#f36f21]' : 'text-slate-500 hover:text-white'}`}>
               <t.icon className="w-3 h-3" /> {t.label}
             </button>
@@ -459,6 +461,49 @@ export default function AdminPanel({ onClose }) {
             </div>
           )}
 
+          {tab === 'feedback' && (
+            <div className="space-y-2">
+              {feedback.length === 0 && <p className="text-xs text-slate-500 text-center py-4">Chưa có báo lỗi nào 🎉</p>}
+              {feedback.map((f) => {
+                let info = {};
+                try { info = JSON.parse(f.client_info || '{}'); } catch {}
+                return (
+                  <div key={f.id} className="bg-slate-900/40 rounded-lg px-3 py-2.5 border border-slate-800/30 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold text-white truncate">{f.channel_id || 'Kênh?'}</span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <select
+                          value={f.status || 'new'}
+                          onChange={async (e) => {
+                            const status = e.target.value;
+                            await fetch(`${BASE}/admin/feedback`, { method: 'PUT', headers, body: JSON.stringify({ id: f.id, status }) });
+                            setFeedback(prev => prev.map(x => x.id === f.id ? { ...x, status } : x));
+                          }}
+                          className="bg-slate-800 text-[10px] text-slate-200 px-2 py-1 rounded-lg border border-slate-700"
+                        >
+                          <option value="new">🆕 Mới</option>
+                          <option value="doing">🔧 Đang xử lý</option>
+                          <option value="done">✅ Xong</option>
+                        </select>
+                        <button
+                          onClick={async () => {
+                            if (!confirm('Xoá báo lỗi này?')) return;
+                            await fetch(`${BASE}/admin/feedback`, { method: 'DELETE', headers, body: JSON.stringify({ id: f.id }) });
+                            setFeedback(prev => prev.filter(x => x.id !== f.id));
+                          }}
+                          className="p-1.5 text-slate-500 hover:text-[#ff9a3d]" title="Xoá"
+                        ><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-slate-300 leading-relaxed">{f.message}</p>
+                    <p className="text-[9px] text-slate-600 font-mono break-all">
+                      {info.program ? `CT: ${info.program} · ` : ''}{info.upstreamUA ? `UA: ${info.upstreamUA} · ` : ''}{f.created_at ? new Date(typeof f.created_at === 'number' ? f.created_at * 1000 : f.created_at).toLocaleString('vi-VN') : ''}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
           {tab === 'credentials' && (
             <div className="space-y-3">
               <div className="rounded-lg border border-amber-600/30 bg-amber-950/20 p-3">

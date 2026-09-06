@@ -55,10 +55,12 @@ export async function fetchEPGData() {
 
 // Fallback: tải EPG trực tiếp từ epg.io.vn (và các nguồn thay thế) ngay trên trình duyệt
 async function fetchDirectEPG() {
-  const sources = [
-    "https://epg.io.vn/epgc.xml",
-    "https://lichphatsong.io.vn/epgc.xml",
-  ];
+  const sources = [];
+  try {
+    const custom = JSON.parse(localStorage.getItem("chrtv_settings") || "{}")?.epgSource;
+    if (custom && /^https?:\/\//i.test(custom)) sources.push(custom);
+  } catch {}
+  sources.push("https://epg.io.vn/epgc.xml", "https://lichphatsong.io.vn/epgc.xml");
   for (const url of sources) {
     try {
       const ctrl = new AbortController();

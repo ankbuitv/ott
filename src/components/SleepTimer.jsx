@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Timer, X, Clock } from 'lucide-react';
 
-export default function SleepTimer({ onExpired, onClose }) {
+export default function SleepTimer({ onExpired, onClose, programEnd = 0 }) {
   const [minutes, setMinutes] = useState(0);
   const [remaining, setRemaining] = useState(0);
   const timerRef = useRef(null);
@@ -31,6 +31,30 @@ export default function SleepTimer({ onExpired, onClose }) {
       onExpired && onExpired();
     }, ms);
   }, [onExpired]);
+
+  // Ngủ lúc hết chương trình đang xem
+  const startUntilProgramEnd = useCallback(() => {
+    if (!programEnd || programEnd <= Date.now()) return;
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    const ms = programEnd - Date.now();
+    setRemaining(ms);
+    setMinutes(Math.ceil(ms / 60000));
+    intervalRef.current = setInterval(() => {
+      const left = programEnd - Date.now();
+      if (left <= 0) {
+        clearInterval(intervalRef.current);
+        setRemaining(0);
+        onExpired && onExpired();
+      } else {
+        setRemaining(left);
+      }
+    }, 1000);
+    timerRef.current = setTimeout(() => {
+      clearInterval(intervalRef.current);
+      onExpired && onExpired();
+    }, ms);
+  }, [programEnd, onExpired]);
 
   const cancelTimer = () => {
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -72,6 +96,15 @@ export default function SleepTimer({ onExpired, onClose }) {
           <p className="text-[10px] text-slate-500 mt-1">Tự tắt sau {minutes} phút</p>
         </div>
       ) : (
+        <>
+        {programEnd > Date.now() && (
+          <button
+            onClick={startUntilProgramEnd}
+            className="w-full mb-1.5 px-2 py-2 rounded-lg text-[11px] font-bold bg-purple-600/80 hover:bg-purple-500 text-white transition-all"
+          >
+            📺 Hết chương trình ({Math.max(1, Math.round((programEnd - Date.now()) / 60000))}p nữa)
+          </button>
+        )}
         <div className="grid grid-cols-2 gap-1.5">
           {[15, 30, 60, 90, 120, 0].map(m => (
             <button
@@ -83,6 +116,7 @@ export default function SleepTimer({ onExpired, onClose }) {
             </button>
           ))}
         </div>
+        </>
       )}
     </div>
   );

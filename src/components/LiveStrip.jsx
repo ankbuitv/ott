@@ -1,3 +1,4 @@
+import { maskScores } from '../utils/spoiler';
 import React, { useMemo } from 'react';
 import { Radio } from 'lucide-react';
 import { useI18n } from '../contexts/I18nContext';
@@ -43,7 +44,7 @@ export default function LiveStrip({ channels = [], epgData = null, onSelect }) {
             )}
             <span className="min-w-0 max-w-[180px]">
               <span className="block text-[11px] font-bold text-white truncate">{ch.name}</span>
-              <span className="block text-[9px] text-stone-400 truncate">{prog.title}</span>
+              <span className="block text-[9px] text-stone-400 truncate">{maskScores(prog.title)}</span>
             </span>
           </button>
         ))}

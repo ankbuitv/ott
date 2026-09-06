@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { addWatch } from './services/achievements';
 import { initNavigation } from '@noriginmedia/react-spatial-navigation';
 
 import Sidebar from './components/Sidebar';
@@ -78,6 +79,25 @@ function AppContent() {
   const [isCatchupMode, setIsCatchupMode] = useState(false);
   const [catchupProgram, setCatchupProgram] = useState(null);
   const [isPlayerOpen, setIsPlayerOpen] = useState(false);
+  const [miniPlayer, setMiniPlayer] = useState(false);
+  const [miniPos, setMiniPos] = useState({ x: 0, y: 0 });
+  const miniDrag = useRef(null);
+  // Kéo thả mini-player (giữ thanh tiêu đề)
+  const onMiniPointerDown = (e) => {
+    if (!miniPlayer) return;
+    if (e.target.closest('button') || !e.target.closest('[data-mini-drag]')) return;
+    e.preventDefault();
+    miniDrag.current = { sx: e.clientX, sy: e.clientY, ox: miniPos.x, oy: miniPos.y };
+    const move = (ev) => {
+      const d = miniDrag.current; if (!d) return;
+      const nx = Math.max(-(window.innerWidth - 360), Math.min(0, d.ox + ev.clientX - d.sx));
+      const ny = Math.max(-(window.innerHeight - 280), Math.min(0, d.oy + ev.clientY - d.sy));
+      setMiniPos({ x: nx, y: ny });
+    };
+    const up = () => { miniDrag.current = null; window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
 
   const [showSettings, setShowSettings] = useState(false);
   const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
@@ -114,7 +134,9 @@ function AppContent() {
       document.body.style.backgroundColor = '#000';
       document.body.style.color = '#f1f5f9';
     }
-  }, [settings.theme]);
+    document.body.dataset.theme = settings.colorTheme || 'sunset';
+    root.classList.toggle('tvmode', !!settings.tvMode);
+  }, [settings.theme, settings.colorTheme, settings.tvMode]);
 
   useEffect(() => {
     async function init() {
@@ -162,8 +184,21 @@ function AppContent() {
 
   // P0-B: URL phát được xin TỪ SERVER (kèm JWT + kiểm tra gói phía server) —
   // client không còn giữ stream_url gốc, không tự build URL stream nữa.
+  // Giờ ngủ của bé: chặn mở kênh
+  const inBedtime = () => {
+    try {
+      if (!settings.kidBedtimeEnabled) return false;
+      const now = new Date();
+      const cur = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      const s = settings.kidBedtimeStart || '21:00', e = settings.kidBedtimeEnd || '06:00';
+      return s <= e ? (cur >= s && cur < e) : (cur >= s || cur < e);
+    } catch { return false; }
+  };
+
   const openChannel = useCallback(async (channel, { catchup = null, at = 0 } = {}) => {
     if (!channel) return;
+    if (inBedtime()) { addToast('🌙 Đang giờ ngủ của bé — tắt trong Cài đặt để xem tiếp', 'error'); return; }
+    setMiniPlayer(false);
     try {
       const url = await requestStreamAccess(channel, { at });
       if (!url) throw Object.assign(new Error('NO_URL'), { code: 'TOKEN_ERROR' });
@@ -173,6 +208,10 @@ function AppContent() {
       setCatchupProgram(catchup || null);
       setIsPlayerOpen(true);
       recordWatchHistory(channel.channel_id);
+      try {
+        const nb = addWatch(0, channel.channel_id);
+        nb.forEach(b => addToast(`🏆 Huy hiệu mới: ${b.name} — ${b.desc}`, 'success'));
+      } catch {}
       setWatchHistory(prev => {
         const updated = prev.filter(h => h.channel_id !== channel.channel_id);
         updated.unshift({ channel_id: channel.channel_id, position: 0, updated_at: new Date().toISOString() });
@@ -194,7 +233,7 @@ function AppContent() {
         addToast('Không tải được luồng kênh — thử lại nhé', 'error');
       }
     }
-  }, [addToast, promptLogin, t]);
+  }, [addToast, promptLogin, t, settings.kidBedtimeEnabled, settings.kidBedtimeStart, settings.kidBedtimeEnd]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSelectChannel = useCallback((channel) => {
     // GATING phía client (UX nhanh) — SERVER vẫn là nơi xác nhận cuối cùng (entitlement)
@@ -253,6 +292,25 @@ function AppContent() {
     if (!ch) return { now: null, next: null };
     return findEpgForChannel(epgData.programmes, ch);
   }, [epgData, channels]);
+
+  // Huy hiệu: cộng giờ xem mỗi 30s khi đang mở player
+  useEffect(() => {
+    if (!isPlayerOpen || !currentChannel) return undefined;
+    const iv = setInterval(() => {
+      try {
+        const nb = addWatch(30, currentChannel.channel_id);
+        nb.forEach(b => addToast(`🏆 Huy hiệu mới: ${b.name} — ${b.desc}`, 'success'));
+      } catch {}
+    }, 30000);
+    return () => clearInterval(iv);
+  }, [isPlayerOpen, currentChannel, addToast]);
+
+  // Mở modal chi tiết kênh (từ nút hover ở trang chủ)
+  const handleShowInfo = useCallback((ch) => {
+    if (!ch) return;
+    const epg = getEpgForChannel(ch.channel_id);
+    setChannelInfoModal({ channel: ch, epgNow: epg.now, epgNext: epg.next, isFav: favorites.includes(ch.channel_id) });
+  }, [getEpgForChannel, favorites]);
 
   useEffect(() => {
     window.__chrtv_select_channel = (ch) => handleSelectChannel(ch);
@@ -350,6 +408,7 @@ function AppContent() {
                   watchHistory={watchHistory}
                   onSelectChannel={handleSelectChannel}
                   onPlayCatchup={handlePlayCatchup}
+                  onShowInfo={handleShowInfo}
                   onToggleFavorite={handleToggleFavorite}
                   selectedCategory={selectedCategory}
                   setSelectedCategory={setSelectedCategory}
@@ -393,7 +452,11 @@ function AppContent() {
       </div>
 
       {isPlayerOpen && currentChannel && (
-        <div className="fixed inset-0 z-50 bg-black">
+        <div
+          className={miniPlayer ? 'fixed z-50 bg-black rounded-xl overflow-hidden shadow-2xl border border-slate-700/60' : 'fixed inset-0 z-50 bg-black'}
+          style={miniPlayer ? { width: 340, height: 240, right: 16, bottom: 16, transform: `translate(${miniPos.x}px, ${miniPos.y}px)` } : undefined}
+          onPointerDown={onMiniPointerDown}
+        >
           <VideoPlayer
             channel={currentChannel}
             streamUrl={activeStreamUrl}
@@ -403,7 +466,10 @@ function AppContent() {
             catchupProgram={catchupProgram}
             onNextChannel={handleNextChannel}
             onPrevChannel={handlePrevChannel}
-            onClose={() => setIsPlayerOpen(false)}
+            onClose={() => { setIsPlayerOpen(false); setMiniPlayer(false); }}
+            mini={miniPlayer}
+            onMinimize={() => setMiniPlayer(true)}
+            onMaximize={() => setMiniPlayer(false)}
             allChannels={channels}
             epgLookup={getEpgForChannel}
             initialPartyRoom={deepPartyRoom}

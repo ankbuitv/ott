@@ -259,3 +259,29 @@ input[type="range"]::-moz-range-thumb {
     transition-duration: .01ms !important;
   }
 }
+
+/* ===== COLOR THEMES (chọn trong Cài đặt) ===== */
+body[data-theme="ocean"] {
+  --orange: #0ea5e9;
+  --orange2: #22d3ee;
+  --cyan: #a5f3fc;
+  --cyan-deep: #0369a1;
+  --grad-brand: linear-gradient(135deg, #22d3ee 0%, #0ea5e9 40%, #2563eb 75%, #1e3a8a 100%);
+}
+body[data-theme="fire"] {
+  --orange: #f97316;
+  --orange2: #fdba74;
+  --cyan: #fbbf24;
+  --cyan-deep: #b45309;
+  --grad-brand: linear-gradient(135deg, #fde047 0%, #fb923c 40%, #f36f21 75%, #be123c 100%);
+}
+/* ===== TV MODE: chữ to, focus rõ cho TV/box ===== */
+html.tvmode { font-size: 112.5%; }
+html.tvmode .tv-focused {
+  transform: scale(1.06);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.8), 0 0 26px rgba(243, 111, 33, 0.55) !important;
+}
+
+/* Equalizer bars (radio mode) */
+@keyframes eqBounce { 0%, 100% { transform: scaleY(0.4); } 50% { transform: scaleY(1); } }
+.anim-eq { transform-origin: bottom; animation: eqBounce 0.9s ease-in-out infinite; }

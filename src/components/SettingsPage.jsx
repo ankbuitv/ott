@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, RotateCcw, Eye, EyeOff, Globe, Database, Shield, Monitor, Trash2, Languages, Moon, Sun, MapPin, Info, Cpu, Leaf, Copy, CheckCircle2, ShieldOff } from 'lucide-react';
+import { Settings, RotateCcw, Eye, EyeOff, Globe, Database, Shield, Monitor, Trash2, Languages, Moon, Sun, MapPin, Info, Cpu, Leaf, Copy, CheckCircle2, ShieldOff, Palette, Tv, Trophy, Smartphone, LogOut } from 'lucide-react';
+import { BADGES, getStats, fmtHours } from '../services/achievements';
 import { API_BASE } from '../services/config';
 import { useSettings } from '../contexts/SettingsContext';
 import { useDevice } from '../contexts/DeviceContext';
@@ -36,9 +37,33 @@ export default function SettingsPage({ onClose }) {
   const [twoFaSetup, setTwoFaSetup] = useState(null); // {secret, otpauth}
   const [twoFaCode, setTwoFaCode] = useState('');
   const [twoFaMsg, setTwoFaMsg] = useState('');
+  const [sessions, setSessions] = useState([]);
+  const [currentSessId, setCurrentSessId] = useState(0);
+  const [sessLoading, setSessLoading] = useState(false);
+  const [achStats, setAchStats] = useState(null);
   const [copied, setCopied] = useState(false);
 
   const { token } = useAuth();
+  // Phiên đăng nhập
+  const loadSessions = async () => {
+    if (!token) return;
+    setSessLoading(true);
+    try {
+      const r = await fetch(`${API_BASE}/auth/sessions`, { headers: { Authorization: `Bearer ${token}` } });
+      const d = await r.json();
+      setSessions(d.sessions || []);
+      setCurrentSessId(d.currentId || 0);
+    } catch {}
+    setSessLoading(false);
+  };
+  const revokeSession = async (id) => {
+    if (!token || !id) return;
+    try {
+      await fetch(`${API_BASE}/auth/sessions`, { method: 'DELETE', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ id }) });
+      loadSessions();
+    } catch {}
+  };
+  useEffect(() => { loadSessions(); setAchStats(getStats()); }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!token) return;
     fetch(`${API_BASE}/user/2fa/status`, { headers: { Authorization: `Bearer ${token}` } })
@@ -170,6 +195,27 @@ export default function SettingsPage({ onClose }) {
               ))}
             </div>
           </div>
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-slate-400 flex items-center gap-1.5"><Palette className="w-3.5 h-3.5 text-pink-400" /> Tông màu</span>
+            <div className="flex gap-1.5">
+              {[
+                { v: 'sunset', label: 'Cam', grad: 'linear-gradient(135deg,#f36f21,#ff9a3d)' },
+                { v: 'ocean', label: 'Biển', grad: 'linear-gradient(135deg,#0ea5e9,#6366f1)' },
+                { v: 'fire', label: 'Lửa', grad: 'linear-gradient(135deg,#ef4444,#f59e0b)' },
+              ].map(o => (
+                <button key={o.v} onClick={() => updateSetting('colorTheme', o.v)} className={`flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg font-medium transition-all ${settings.colorTheme === o.v ? 'bg-slate-700 text-white ring-1 ring-[#f36f21]' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>
+                  <span className="w-3.5 h-3.5 rounded-full" style={{ background: o.grad }}></span>{o.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-medium text-slate-200 flex items-center gap-1.5"><Tv className="w-3.5 h-3.5 text-cyan-400" /> Chế độ TV</p>
+              <p className="text-[10px] text-slate-500">Chữ to, nút to — dùng với điều khiển/từ xa</p>
+            </div>
+            <Toggle on={!!settings.tvMode} onClick={() => updateSetting('tvMode', !settings.tvMode)} label="TV mode" />
+          </div>
         </div>
 
         {/* ===== VIDEO ===== */}
@@ -249,6 +295,21 @@ export default function SettingsPage({ onClose }) {
             </div>
             <Toggle on={!!settings.dataSaver} onClick={() => updateSetting('dataSaver', !settings.dataSaver)} label="Data saver" />
           </div>
+          {settings.dataSaver && (
+            <div className="flex items-center justify-between pl-1">
+              <span className="text-xs text-slate-400">Giới hạn chất lượng tối đa</span>
+              <select
+                value={settings.dataSaverCap || 480}
+                onChange={e => updateSetting('dataSaverCap', parseInt(e.target.value) || 480)}
+                className="bg-slate-800 text-xs text-slate-200 px-3 py-2 rounded-lg border border-slate-700"
+              >
+                <option value={240}>240p (siêu tiết kiệm)</option>
+                <option value={360}>360p (tiết kiệm)</option>
+                <option value={480}>480p (cân bằng)</option>
+                <option value={720}>720p (vừa phải)</option>
+              </select>
+            </div>
+          )}
           {settings.parentalEnabled && (
             <div className="flex items-center gap-2">
               <span className="text-xs text-slate-400">PIN:</span>
@@ -265,6 +326,21 @@ export default function SettingsPage({ onClose }) {
                   {showPin ? <EyeOff className="w-3.5 h-3.5 text-slate-400" /> : <Eye className="w-3.5 h-3.5 text-slate-400" />}
                 </button>
               </div>
+            </div>
+          )}
+          <div className="flex items-center justify-between pt-2 border-t border-slate-800/40">
+            <div>
+              <p className="text-xs font-medium text-slate-200 flex items-center gap-1.5"><Moon className="w-3.5 h-3.5 text-indigo-400" /> 🌙 Giờ ngủ của bé</p>
+              <p className="text-[10px] text-slate-500">Trong khung giờ này app không mở kênh</p>
+            </div>
+            <Toggle on={!!settings.kidBedtimeEnabled} onClick={() => updateSetting('kidBedtimeEnabled', !settings.kidBedtimeEnabled)} label="Bedtime" />
+          </div>
+          {settings.kidBedtimeEnabled && (
+            <div className="flex items-center gap-2 pl-1">
+              <span className="text-xs text-slate-400">Từ</span>
+              <input type="time" value={settings.kidBedtimeStart || '21:00'} onChange={e => updateSetting('kidBedtimeStart', e.target.value)} className="bg-slate-800 text-xs text-slate-200 px-2 py-1.5 rounded-lg border border-slate-700" />
+              <span className="text-xs text-slate-400">đến</span>
+              <input type="time" value={settings.kidBedtimeEnd || '06:00'} onChange={e => updateSetting('kidBedtimeEnd', e.target.value)} className="bg-slate-800 text-xs text-slate-200 px-2 py-1.5 rounded-lg border border-slate-700" />
             </div>
           )}
           <div className="pt-2 border-t border-slate-800/40">
@@ -315,6 +391,72 @@ export default function SettingsPage({ onClose }) {
           <div className="space-y-2">
             <label className="text-xs text-slate-400 block"><Database className="w-3 h-3 inline mr-1" /> {t('settings.database_status')}</label>
             <p className="text-[10px] text-slate-600 leading-relaxed">{t('settings.database_desc')}</p>
+          </div>
+          <div className="flex items-center justify-between pt-1 border-t border-slate-800/40">
+            <div>
+              <p className="text-xs font-medium text-slate-200 flex items-center gap-1.5"><EyeOff className="w-3.5 h-3.5 text-purple-400" /> Ẩn tỉ số (chống spoil)</p>
+              <p className="text-[10px] text-slate-500">Che tỉ số trận đấu trên lịch & player — xem lại không lo lộ kết quả</p>
+            </div>
+            <Toggle on={!!settings.spoilerMask} onClick={() => updateSetting('spoilerMask', !settings.spoilerMask)} label="Spoiler mask" />
+          </div>
+        </div>
+
+        {/* ===== PHIÊN ĐĂNG NHẬP ===== */}
+        <div className="bg-[#13151c] border border-slate-800/40 rounded-xl p-5 space-y-3">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2"><Smartphone className="w-4 h-4 text-cyan-400" /> Phiên đăng nhập</h3>
+          {!token ? (
+            <p className="text-[11px] text-slate-500">Đăng nhập để xem các thiết bị đang dùng tài khoản.</p>
+          ) : sessLoading ? (
+            <p className="text-xs text-slate-500">Đang tải…</p>
+          ) : sessions.length === 0 ? (
+            <p className="text-[11px] text-slate-500">Không có phiên nào (server chưa cập nhật — cần deploy worker mới).</p>
+          ) : (
+            <div className="space-y-2 max-h-56 overflow-y-auto">
+              {sessions.map(s => {
+                const ua = s.user_agent || 'Thiết bị không rõ';
+                const isCur = s.id === currentSessId;
+                const dev = /mobile|android|iphone/i.test(ua) ? '📱' : /tv|smarttv|tizen|webos/i.test(ua) ? '📺' : '💻';
+                return (
+                  <div key={s.id} className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border ${isCur ? 'border-emerald-600/50 bg-emerald-950/20' : 'border-slate-800/60 bg-black/20'}`}>
+                    <span className="text-lg">{dev}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] text-slate-200 truncate">{ua}</p>
+                      <p className="text-[9px] text-slate-500">
+                        {isCur ? <span className="text-emerald-400 font-bold">● Thiết bị này · </span> : null}
+                        Hết hạn {new Date(s.expires_at).toLocaleDateString('vi-VN')}
+                      </p>
+                    </div>
+                    {!isCur && (
+                      <button onClick={() => revokeSession(s.id)} title="Đăng xuất thiết bị này" className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-950/40 transition-all">
+                        <LogOut className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* ===== HUY HIỆU ===== */}
+        <div className="bg-[#13151c] border border-slate-800/40 rounded-xl p-5 space-y-3">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2"><Trophy className="w-4 h-4 text-amber-400" /> Huy hiệu của bạn</h3>
+          {achStats && (
+            <p className="text-[11px] text-slate-400">
+              Đã xem <span className="text-white font-bold">{fmtHours(achStats.seconds)}</span> · {achStats.channels.size} kênh · chuỗi {achStats.streak} ngày · {achStats.badges.length}/{BADGES.length} huy hiệu
+            </p>
+          )}
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+            {BADGES.map(b => {
+              const got = achStats?.badges?.includes(b.id);
+              return (
+                <div key={b.id} title={`${b.name} — ${b.desc}`} className={`rounded-xl border px-2 py-2.5 text-center transition-all ${got ? 'border-amber-500/50 bg-amber-950/20' : 'border-slate-800/60 bg-black/20 opacity-45 grayscale'}`}>
+                  <div className="text-xl">{b.icon}</div>
+                  <div className="text-[9px] font-bold text-slate-200 mt-1 leading-tight">{b.name}</div>
+                  <div className="text-[8px] text-slate-500 leading-tight mt-0.5">{b.desc}</div>
+                </div>
+              );
+            })}
           </div>
         </div>
 

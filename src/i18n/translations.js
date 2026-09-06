@@ -267,6 +267,7 @@ const T = {
   'auth.qr.help':    { vi: 'Mở app trên điện thoại đã đăng nhập → Cài đặt → Quét QR, rồi quét mã này để đăng nhập ngay, khỏi gõ mật khẩu.', en: 'Open the app on your signed-in phone → Settings → Scan QR, then scan this code to sign in instantly.' },
   'auth.qr.waiting':  { vi: 'Đang chờ duyệt trên thiết bị kia', en: 'Waiting for approval on your other device' },
   'auth.qr.expired':  { vi: 'Mã đã hết hạn', en: 'Code expired' },
+  'auth.qr.failed': { vi: 'Không tạo được mã — kiểm tra mạng hoặc server chưa cập nhật', en: 'Could not create code — check network or outdated server' },
   'auth.qr.new':      { vi: 'Tạo mã mới', en: 'New code' },
   'auth.qr.hint':     { vi: 'Mã dùng 1 lần, hết hạn sau 2 phút. Không chia sẻ mã cho người lạ.', en: 'Single-use code, expires in 2 minutes. Never share it with strangers.' },
   'auth.qr.error':    { vi: 'Không tạo được mã QR — kiểm tra mạng rồi thử lại', en: 'Could not create QR code — check connection and retry' },

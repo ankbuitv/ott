@@ -37,7 +37,9 @@ export default function AuthModal({ open, onClose, initialView = 'login' }) {
   const [qrCode, setQrCode] = useState('');
   const [qrLeft, setQrLeft] = useState(0);
   const [qrBusy, setQrBusy] = useState(false);
+  const [qrErr, setQrErr] = useState(false);
   const pollRef = useRef(null);
+  const invalidRef = useRef(0);
   const stopQrPoll = useCallback(() => {
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
   }, []);
@@ -46,6 +48,8 @@ export default function AuthModal({ open, onClose, initialView = 'login' }) {
   const startQr = useCallback(async () => {
     stopQrPoll();
     setQrBusy(true);
+    setQrErr(false);
+    invalidRef.current = 0;
     try {
       const r = await fetch(`${API_BASE}/auth/qr/request`, { method: 'POST' });
       const d = await r.json();
@@ -61,15 +65,23 @@ export default function AuthModal({ open, onClose, initialView = 'login' }) {
             setAuth(pd.user, pd.token);
             addToast(t('auth.msg.login_ok'), 'success');
             onClose();
-          } else if (pd.status === 'expired' || pd.status === 'invalid') {
+          } else if (pd.status === 'expired') {
             stopQrPoll();
             setQrLeft(0);
+          } else if (pd.status === 'invalid') {
+            // invalid thoáng qua (mạng lag) thì bỏ qua — 3 lần liên tiếp mới huỷ mã
+            invalidRef.current += 1;
+            if (invalidRef.current >= 3) { stopQrPoll(); setQrLeft(0); }
+          } else {
+            invalidRef.current = 0;
           }
         } catch {}
       }, 2000);
     } catch (e) {
+      // Xin mã thất bại (server chưa deploy/không mạng) → báo lỗi server, KHÔNG báo "hết hạn"
       setQrCode('');
       setQrLeft(0);
+      setQrErr(true);
     } finally {
       setQrBusy(false);
     }
@@ -220,8 +232,10 @@ export default function AuthModal({ open, onClose, initialView = 'login' }) {
                   </div>
                 </>
               ) : (
-                <div className="text-center">
-                  <p className="text-[11px] text-stone-400 font-semibold mb-2.5">{t('auth.qr.expired')}</p>
+                <div className="text-center px-2">
+                  <p className={`text-[11px] font-semibold mb-2.5 leading-relaxed ${qrErr ? 'text-[#ff9a3d]' : 'text-stone-400'}`}>
+                    {qrErr ? t('auth.qr.failed') : t('auth.qr.expired')}
+                  </p>
                   <button onClick={startQr} className="px-4 py-2 rounded-xl btn-orange text-white text-xs font-bold inline-flex items-center gap-1.5">
                     <RefreshCw className="w-3.5 h-3.5" /> {t('auth.qr.new')}
                   </button>

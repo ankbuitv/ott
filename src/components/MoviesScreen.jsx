@@ -25,7 +25,8 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
   const device = useDevice();
   const { addToast } = useToast();
   const { currentProfile } = useProfile();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   // Xem PHIM => bắt buộc đăng nhập (khách chỉ xem kênh truyền hình)
   const ensureAuthed = useCallback(() => {
     if (isAuthenticated) return true;
@@ -125,9 +126,8 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
     setTMDBRegion(country); // ngôn ngữ + region TMDB theo quốc gia đang chọn
     (async () => {
       setLoading(true);
-      const [heroR, trR, npR, tR, tvR, upR, gR, tmR] = await Promise.all([
+      const [heroR, npR, tR, tvR, upR, gR, tmR] = await Promise.all([
         MovieAPI.hero(country),
-        MovieAPI.trending(),
         MovieAPI.nowPlaying(country),
         MovieAPI.topRated(country),
         MovieAPI.popularTV(country),
@@ -144,7 +144,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
       if (firstHero) {
         MovieAPI.trailer(firstHero).then((v) => { if (mounted && v?.key) setHeroTrailer(v.key); }).catch(() => {});
       }
-      setRows({ trending: trR.results || [], nowPlaying: npR.results || [], topRated: tR.results || [], popularTV: tvR.results || [], upcoming: upR.results || [] });
+      setRows({ trending: [], nowPlaying: npR.results || [], topRated: tR.results || [], popularTV: tvR.results || [], upcoming: upR.results || [] });
       setTopMonth((tmR.results || []).slice(0, 10));
       setGenres(gR.genres || []);
       setLoading(false);
@@ -328,7 +328,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
 
       {/* TOP 10 THÁNG NÀY — số viền trắng kiểu Netflix */}
       {!search.trim() && topMonth.length > 0 && (
-        <section className="relative z-20 px-6 md:px-8 -mt-16 mb-2">
+        <section className="relative z-20 px-6 md:px-8 mt-5 mb-2">
           <div className="max-w-7xl mx-auto">
             <div className="flex items-center gap-2 mb-3">
               <span className="w-8 h-8 rounded-xl grad-brand flex items-center justify-center shadow-lg shadow-[#f36f21]/30">
@@ -438,6 +438,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
                 </div>
               </>
             )}
+            {isAdmin && (
             <button
               onClick={() => setShowKeyBox(s => !s)}
               className={`ml-1 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-all ${isDefaultTMDBKey() ? 'border-amber-500/40 text-amber-400 hover:bg-amber-500/10' : 'border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10'}`}
@@ -445,11 +446,12 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
             >
               🔑 {isDefaultTMDBKey() ? t('mv.key_setup') : t('mv.key_done')}
             </button>
+            )}
           </div>
         </div>
 
         {/* Hộp nhập TMDB API key */}
-        {showKeyBox && (
+        {isAdmin && showKeyBox && (
           <div className="max-w-7xl mx-auto mt-3">
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 bg-amber-500/5 border border-amber-500/25 rounded-xl p-3">
               <div className="flex-1">
@@ -513,7 +515,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
             <div className="text-center py-16">
               <Film className="w-12 h-12 text-stone-700 mx-auto mb-3" />
               <p className="text-stone-500 text-sm">{t('mv.no_result')}</p>
-              {isDefaultTMDBKey() && !showKeyBox && (
+              {isAdmin && isDefaultTMDBKey() && !showKeyBox && (
                 <button
                   onClick={() => setShowKeyBox(true)}
                   className="mt-4 px-4 py-2 rounded-lg bg-amber-500/15 border border-amber-500/40 text-amber-400 text-xs font-bold hover:bg-amber-500/25 transition"
@@ -539,7 +541,6 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
             <MovieRow title={`❤️ ${t('mv.my_list')}`} items={myList} gridCls={gridCls} onClick={openDetail} loading={false} />
           )}
           {/* Rows — nội dung đổi theo quốc gia người xem */}
-          <MovieRow title={t('movies.row.trending')} items={rows.trending} gridCls={gridCls} onClick={openDetail} loading={loading} />
           <MovieRow title={t('movies.row.now_playing_in', { country: `${countryInfo.flag} ${countryInfo.name}` })} items={rows.nowPlaying} gridCls={gridCls} onClick={openDetail} loading={loading} />
           <MovieRow title={t('movies.row.top_rated')} items={rows.topRated} gridCls={gridCls} onClick={openDetail} loading={loading} />
           <MovieRow title={t('movies.row.upcoming')} items={rows.upcoming} gridCls={gridCls} onClick={openDetail} loading={loading} />

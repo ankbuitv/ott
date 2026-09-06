@@ -599,7 +599,19 @@ async function getAuth(request, env) {
       const row = results[0];
       if (!row) return null;
       if (row.banned) return null; // tài khoản bị khoá => coi như chưa đăng nhập
-      return { user: row, guest: false, plan: row.plan || "standard" };
+      let plan = row.plan || "standard";
+      // Hết hạn gói trả phí/gift => rớt về standard (user_plans do payments/gifts ghi)
+      try {
+        const { results: pr } = await env.DB.prepare("SELECT plan, expires_at FROM user_plans WHERE user_id = ?").bind(row.id).all();
+        if (pr && pr[0] && pr[0].expires_at && pr[0].expires_at < Math.floor(Date.now() / 1000)) {
+          plan = "standard";
+          try {
+            await env.DB.prepare("UPDATE users SET plan = 'standard' WHERE id = ?").bind(row.id).run();
+            await env.DB.prepare("UPDATE user_plans SET plan = 'standard' WHERE user_id = ?").bind(row.id).run();
+          } catch {}
+        } else if (pr && pr[0] && pr[0].plan) plan = pr[0].plan;
+      } catch {}
+      return { user: row, guest: false, plan };
     } catch {
       const { results: r2 } = await env.DB.prepare("SELECT id, username, email, display_name, avatar_url, role, email_verified FROM users WHERE id = ?").bind(payload.userId).all();
       const row = r2[0];
@@ -663,6 +675,24 @@ const SCHEMA_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_analytics_event ON analytics(event, created_at)`,
   `CREATE INDEX IF NOT EXISTS idx_program_reminders_user ON program_reminders(user_id)`,
   `CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token)`,
+  `CREATE TABLE IF NOT EXISTS watch_counters (channel_id TEXT PRIMARY KEY, views INTEGER DEFAULT 0, seconds INTEGER DEFAULT 0, updated_at INTEGER DEFAULT 0)`,
+  `CREATE TABLE IF NOT EXISTS presence (sid TEXT PRIMARY KEY, user_id INTEGER DEFAULT 0, name TEXT DEFAULT '', kind TEXT DEFAULT '', ref_id TEXT DEFAULT '', ref_name TEXT DEFAULT '', updated_at INTEGER DEFAULT 0)`,
+  `CREATE INDEX IF NOT EXISTS idx_presence_upd ON presence(updated_at)`,
+  `CREATE TABLE IF NOT EXISTS user_xp (user_id INTEGER PRIMARY KEY, xp INTEGER DEFAULT 0, watch_sec INTEGER DEFAULT 0, updated_at INTEGER DEFAULT 0)`,
+  `CREATE TABLE IF NOT EXISTS public_profiles (user_id INTEGER PRIMARY KEY, handle TEXT UNIQUE, bio TEXT DEFAULT '', avatar_url TEXT DEFAULT '', is_public INTEGER DEFAULT 0)`,
+  `CREATE TABLE IF NOT EXISTS comments (id INTEGER PRIMARY KEY AUTOINCREMENT, target TEXT NOT NULL, user_id INTEGER NOT NULL, name TEXT DEFAULT '', body TEXT NOT NULL, status TEXT DEFAULT 'visible', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE INDEX IF NOT EXISTS idx_comments_target ON comments(target, status, id)`,
+  `CREATE TABLE IF NOT EXISTS fan_groups (id INTEGER PRIMARY KEY AUTOINCREMENT, target TEXT UNIQUE NOT NULL, name TEXT NOT NULL, created_by INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS fan_members (group_id INTEGER NOT NULL, user_id INTEGER NOT NULL, name TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(group_id, user_id))`,
+  `CREATE TABLE IF NOT EXISTS gift_codes (code TEXT PRIMARY KEY, plan TEXT DEFAULT 'vip', days INTEGER DEFAULT 30, max_uses INTEGER DEFAULT 1, used INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1, note TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS gift_redemptions (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL, user_id INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS user_plans (user_id INTEGER PRIMARY KEY, plan TEXT DEFAULT 'standard', expires_at INTEGER DEFAULT 0, updated_at INTEGER DEFAULT 0)`,
+  `CREATE TABLE IF NOT EXISTS payments (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, username TEXT DEFAULT '', plan TEXT NOT NULL, amount INTEGER DEFAULT 0, order_code TEXT UNIQUE NOT NULL, status TEXT DEFAULT 'pending', payload TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, paid_at DATETIME DEFAULT NULL)`,
+  `CREATE TABLE IF NOT EXISTS payment_config (id INTEGER PRIMARY KEY CHECK (id = 1), bank_id TEXT DEFAULT '', account_no TEXT DEFAULT '', account_name TEXT DEFAULT '', template TEXT DEFAULT 'compact2', sepay_token TEXT DEFAULT '', note TEXT DEFAULT '')`,
+  `CREATE TABLE IF NOT EXISTS ads (id INTEGER PRIMARY KEY AUTOINCREMENT, slot TEXT DEFAULT 'banner', title TEXT DEFAULT '', image_url TEXT DEFAULT '', link_url TEXT DEFAULT '', video_url TEXT DEFAULT '', starts_at TEXT DEFAULT '', ends_at TEXT DEFAULT '', is_active INTEGER DEFAULT 1, sort_order INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS scheduled_posts (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, title TEXT DEFAULT '', body TEXT DEFAULT '', link_type TEXT DEFAULT 'none', link_value TEXT DEFAULT '', image_url TEXT DEFAULT '', publish_at TEXT NOT NULL, is_done INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS predictions (user_id INTEGER NOT NULL, event_key TEXT NOT NULL, league TEXT DEFAULT '', home TEXT DEFAULT '', away TEXT DEFAULT '', ph INTEGER DEFAULT 0, pa INTEGER DEFAULT 0, points INTEGER DEFAULT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(user_id, event_key))`,
+  `CREATE INDEX IF NOT EXISTS idx_predictions_key ON predictions(event_key)`,
 ];
 
 let schemaReady = false;
@@ -795,6 +825,14 @@ async function handleAPI(path, request, env, ctx) {
   if (path === "/api/channels") return await handleChannels(env);
   if (path === "/api/search") return await handleSearch(request, env);
   if (path === "/api/analytics") return await handleAnalytics(request, env);
+  if (path === "/api/stats/beat" || path === "/api/stats/top" || path === "/api/stats/top-fans") return await handleStats(path, request, env);
+  if (path === "/api/profile" || path === "/api/u") return await handlePublicProfile(path, request, env);
+  if (path === "/api/comments") return await handleComments(request, env);
+  if (path === "/api/fan-groups") return await handleFanGroups(request, env);
+  if (path === "/api/gifts/redeem") return await handleGiftRedeem(request, env);
+  if (path === "/api/payments/config" || path === "/api/payments/order" || path === "/api/payments/claim" || path === "/api/payments/sepay-webhook") return await handlePayments(path, request, env);
+  if (path === "/api/ads") return await handleAds(request, env);
+  if (path === "/api/predictions") return await handlePredictions(request, env);
   return json({ error: "Not found" }, 404, request, env);
 }
 
@@ -1244,10 +1282,10 @@ function safeOrigin(u) {
 async function proxyResponse(resp, targetUrl, proxyBase, request, env) {
   const ct = (resp.headers.get("Content-Type") || "").toLowerCase();
   const isPlaylist = ct.includes("mpegurl") || /\.m3u8(\?|$)/i.test(targetUrl.toString());
-  const headers = new Headers(resp.headers);
-  headers.delete("Content-Encoding");
-  headers.delete("Content-Length");
+  const headers = new Headers();
   Object.entries(corsHeadersFor(request, env)).forEach(([k, v]) => headers.set(k, v));
+  const upCT = resp.headers.get("Content-Type");
+  if (upCT) headers.set("Content-Type", upCT.split(";")[0]);
 
   if (!isPlaylist) return new Response(resp.body, { status: resp.status, headers });
 
@@ -1277,8 +1315,11 @@ function rewriteM3U8(text, targetUrl, proxyBase) {
 //  - Playback token TÁCH HOÀN TOÀN khỏi admin token: HMAC-SHA256 ký bằng
 //    STREAM_TOKEN_SECRET (server-only, wrangler secret — KHÔNG hardcode).
 //  - Token bind theo (URL stream + origin + thư mục + user id + sid theo IP/UA).
+//    OPAQUE ROLLING TOKEN (AES-GCM): URL gốc KHÔNG BAO GIỜ xuất hiện ở client
+//    (kể cả trong query ?u= — đã xoá hoàn toàn). Mỗi token là 1 blob mã hoá chứa
+//    URL đích + scope + bind + TTL 60s, IV ngẫu nhiên nên KHÔNG BAO GIỜ trùng nhau.
 //    TTL 60 giây, tự động xoay: client xoay manifest token; worker sinh SEGMENT
-//    token MỚI (TTL 60s) cho từng lần phát playlist.
+//    token MỚI (TTL 60s, duy nhất theo từng URI) cho mỗi lần phát playlist.
 //  - /api/stream/token: BẮT BUỘC JWT (user hoặc guest). Entitlement kiểm tra
 //    PHÍA SERVER theo gói — không tin flag client. X-CHRTV-Client chỉ là phiên bản.
 //  - /api/stream/proxy: verify token + scope + sid + user, inject upstream
@@ -1313,22 +1354,37 @@ async function sha256hex(str) {
   return [...new Uint8Array(d)].map((x) => x.toString(16).padStart(2, "0")).join("");
 }
 
-async function signStreamToken(payload, env) {
-  const key = await streamHmacKey(env);
-  const body = b64uEncode(new TextEncoder().encode(JSON.stringify(payload)));
-  const mac = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body)));
-  return body + "." + b64uEncode(mac);
+// ---- OPAQUE TOKEN: AES-GCM-256 seal/open. Payload (gồm URL gốc) nằm TRONG
+// blob mã hoá — client/tool sniff chỉ thấy chuỗi mờ vô nghĩa. IV ngẫu nhiên
+// mỗi lần seal => token rolling, không bao giờ lặp lại dù cùng nội dung.
+let _aesKeyCache = null;
+let _aesKeyFor = null;
+async function streamAesKey(env) {
+  const secret = streamTokenSecret(env) + "|aes-gcm-v1";
+  if (_aesKeyFor === secret && _aesKeyCache) return _aesKeyCache;
+  const raw = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret));
+  _aesKeyCache = await crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+  _aesKeyFor = secret;
+  return _aesKeyCache;
 }
-async function verifyStreamToken(token, env) {
+async function sealStreamToken(payload, env) {
+  const key = await streamAesKey(env);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv }, key, new TextEncoder().encode(JSON.stringify(payload))));
+  return "v1." + b64uEncode(iv) + "." + b64uEncode(ct);
+}
+async function openStreamToken(token, env) {
   try {
-    const i = String(token || "").indexOf(".");
-    if (i <= 0) return null;
-    const body = token.slice(0, i);
-    const macB64 = token.slice(i + 1);
-    const key = await streamHmacKey(env);
-    const ok = await crypto.subtle.verify("HMAC", key, b64uDecode(macB64), new TextEncoder().encode(body));
-    if (!ok) return null;
-    return JSON.parse(new TextDecoder().decode(b64uDecode(body)));
+    const parts = String(token || "").split(".");
+    if (parts.length !== 3 || parts[0] !== "v1") return null;
+    const key = await streamAesKey(env);
+    const pt = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: b64uDecode(parts[1]) }, key, b64uDecode(parts[2]));
+    const payload = JSON.parse(new TextDecoder().decode(pt));
+    if (!payload || typeof payload.exp !== "number") return null;
+    if (payload.exp < Math.floor(Date.now() / 1000)) return "EXPIRED";
+    return payload;
   } catch { return null; }
 }
 
@@ -1552,13 +1608,13 @@ async function handleStreamToken(request, env) {
     iat: now,
     exp: now + STREAM_TOKEN_TTL,
   };
-  const t = await signStreamToken(payload, env);
+  const t = await sealStreamToken(payload, env);
   return json({
     success: true,
     t,
     iat: now, exp: payload.exp,
     rotate_at: payload.exp - 20, ttl: STREAM_TOKEN_TTL,
-    proxy_url: `/api/stream/proxy?u=${encodeURIComponent(targetUrl)}&t=${t}`,
+    proxy_url: `/api/stream/proxy?t=${t}`,
   }, 200, request, env);
 }
 
@@ -1567,15 +1623,16 @@ async function handleStreamProxy(request, env) {
   if (blocked) return streamErr({ error: "Client bị chặn", reason: blocked }, 403, request, env);
 
   const q = new URL(request.url).searchParams;
-  const tu = q.get("u") || "";
   const tok = q.get("t") || "";
-  if (!tu || !tok) return json({ error: "Thiếu u/t" }, 400, request, env);
+  // Format cũ ?u=<url gốc>&t=... BỊ CHẶN — URL gốc không được phép đi qua client nữa
+  if (q.get("u")) return streamErr({ error: "LEGACY_FORMAT_BLOCKED", message: "Phiên bản app quá cũ — tải lại trang." }, 410, request, env);
+  if (!tok) return json({ error: "Thiếu token" }, 400, request, env);
 
-  // 1) Verify token (HMAC + TTL 60s)
-  const payload = await verifyStreamToken(tok, env);
+  // 1) Mở opaque token (AES-GCM + TTL 60s). URL đích nằm TRONG token.
+  const payload = await openStreamToken(tok, env);
+  if (payload === "EXPIRED") return streamErr({ error: "TOKEN_EXPIRED" }, 403, request, env);
   if (!payload) return streamErr({ error: "TOKEN_INVALID" }, 401, request, env);
   const nowS = Math.floor(Date.now() / 1000);
-  if (payload.exp < nowS) return streamErr({ error: "TOKEN_EXPIRED" }, 403, request, env);
 
   // 2) Bind: cùng IP/UA (sid) + cùng user.
   //    Token HMAC đã bind (uid + sid + TTL 60s) — JWT là lớp thêm: nếu request
@@ -1588,9 +1645,11 @@ async function handleStreamProxy(request, env) {
   const uid = auth ? (auth.user ? auth.user.id : 0) : payload.uid;
   if (auth && uid !== payload.uid) return streamErr({ error: "TOKEN_USER_MISMATCH" }, 403, request, env);
 
-  // 3) Scope: target cùng origin + cùng thư mục với URL đã cấp (chống biến thành open relay)
+  // 3) Scope: URL đích lấy TỪ TRONG token (client không được chọn URL).
+  // Token xác thực => đích hợp lệ; vẫn re-check origin/dir để chống token ghép.
   let target;
-  try { target = new URL(tu); } catch { return json({ error: "Bad u" }, 400, request, env); }
+  try { target = new URL(payload.u || ""); } catch { return streamErr({ error: "TOKEN_SCOPE" }, 403, request, env); }
+  const tu = target.toString();
   const dir = payload.p || "/";
   const inDir = dir === "/" ? target.pathname.startsWith("/") : target.pathname.startsWith(dir + "/");
   if (target.origin !== payload.o || !inDir) {
@@ -1643,45 +1702,72 @@ async function handleStreamProxy(request, env) {
 
   const ct = (resp.headers.get("Content-Type") || "").toLowerCase();
   const isPlaylist = ct.includes("mpegurl") || /\.m3u8(\?|$)/i.test(target.pathname);
-  const headers = new Headers(resp.headers);
-  headers.delete("Content-Encoding"); headers.delete("Content-Length");
+  // Header TỐI THIỂU tự build — KHÔNG copy header upstream (chặn rò rỉ Server/Via/X-*)
+  const headers = new Headers();
   Object.entries(corsHeadersFor(request, env)).forEach(([k, v]) => headers.set(k, v));
+  Object.entries(SECURITY_HEADERS).forEach(([k, v]) => headers.set(k, v));
   if (isPlaylist) {
     headers.set("Content-Type", "application/vnd.apple.mpegurl");
     headers.set("Cache-Control", "no-store");
     const text = await resp.text();
-    // SEGMENT TOKEN MỚI cho mỗi lần phát playlist (TTL 60s, bind user+sid+scope) — tự động xoay (P0-A.2)
-    const segTok = await signStreamToken({
-      k: "seg",
-      u: target.toString(),
-      o: target.origin,
-      p: dir,
-      cid: payload.cid || "",
-      uid: payload.uid,
-      sid: payload.sid,
-      iat: nowS,
-      exp: nowS + SEGMENT_TOKEN_TTL,
-    }, env);
+    // Mỗi URI con => 1 OPAQUE TOKEN RIÊNG (IV ngẫu nhiên, TTL 60s, đúng 1 URL) —
+    // rolling theo từng lần phát playlist, URL gốc không lộ đi đâu.
     const proxyBase = new URL(request.url).origin + "/api/stream/proxy";
-    return new Response(rewriteM3U8Secure(text, target, proxyBase, segTok), { status: resp.status, headers });
+    const body = await rewriteM3U8Sealed(text, target, proxyBase, {
+      o: target.origin, p: dir, cid: payload.cid || "", uid: payload.uid, sid: payload.sid,
+    }, env);
+    return new Response(body, { status: resp.status, headers });
   }
+  // Segment: chỉ giữ lại Content-Type + range headers cần cho phát lại
+  const upCT = resp.headers.get("Content-Type");
+  if (upCT && /^(video\/|audio\/|application\/octet-stream|binary)/i.test(upCT)) headers.set("Content-Type", upCT.split(";")[0]);
+  else headers.set("Content-Type", "video/MP2T");
+  for (const h of ["Content-Range", "Accept-Ranges", "Content-Length"]) {
+    const v = resp.headers.get(h);
+    if (v) headers.set(h, v);
+  }
+  const rangeReq = request.headers.get("Range");
   headers.set("Cache-Control", "private, max-age=30");
-  return new Response(resp.body, { status: resp.status, headers });
+  return new Response(resp.body, { status: rangeReq && resp.status === 206 ? 206 : (resp.status === 206 ? 206 : 200), headers });
 }
 
-function rewriteM3U8Secure(text, targetUrl, proxyBase, tok) {
-  const toProxy = (raw) => {
+// Playlist rewrite: mỗi URI con được seal thành 1 opaque token riêng.
+// (async vì mỗi URI = 1 lần AES-GCM với IV ngẫu nhiên)
+async function rewriteM3U8Sealed(text, targetUrl, proxyBase, ctx, env) {
+  const nowS = Math.floor(Date.now() / 1000);
+  const cache = new Map(); // cùng URI trong 1 playlist => dùng chung token
+  const toProxy = async (raw) => {
     try {
       const abs = new URL(raw, targetUrl).toString();
-      return proxyBase + "?u=" + encodeURIComponent(abs) + "&t=" + tok;
+      if (!/^https?:\/\//i.test(abs)) return raw;
+      if (!cache.has(abs)) {
+        const t = await sealStreamToken({
+          k: "seg", u: abs, o: ctx.o, p: ctx.p, cid: ctx.cid,
+          uid: ctx.uid, sid: ctx.sid, iat: nowS, exp: nowS + SEGMENT_TOKEN_TTL,
+        }, env);
+        cache.set(abs, proxyBase + "?t=" + t);
+      }
+      return cache.get(abs);
     } catch { return raw; }
   };
-  return text.split(/\r?\n/).map((line) => {
+  const out = [];
+  for (const line of text.split(/\r?\n/)) {
     const l = line.trim();
-    if (!l) return line;
-    if (l.startsWith("#")) return line.replace(/URI="([^"]+)"/g, (_m, uri) => 'URI="' + toProxy(uri) + '"');
-    return toProxy(l);
-  }).join("\n");
+    if (!l) { out.push(line); continue; }
+    if (l.startsWith("#")) {
+      // URI="..." (KEY/MAP/SESSION-DATA...) — thay từng cái (async)
+      const parts = l.split(/URI="([^"]+)"/g);
+      if (parts.length === 1) { out.push(line); continue; }
+      let rebuilt = parts[0];
+      for (let i = 1; i < parts.length; i += 2) {
+        rebuilt += 'URI="' + (await toProxy(parts[i])) + '"' + (parts[i + 1] || "");
+      }
+      out.push(rebuilt);
+      continue;
+    }
+    out.push(await toProxy(l));
+  }
+  return out.join("\n");
 }
 
 // ========== AUTH ==========
@@ -2567,6 +2653,184 @@ async function handleAdmin(path, request, env, ctx) {
     return json({ success: true, viewsByDay: viewsByDay.results, loginsByDay: loginsByDay.results, topChannels: topChannels.results, byEvent: byEvent.results }, 200, request, env);
   }
 
+  // ========== PRESENCE REALTIME (ai đang xem gì) ==========
+  if (path === "/admin/presence" && request.method === "GET") {
+    const { results } = await env.DB.prepare("SELECT * FROM presence WHERE updated_at > ? ORDER BY updated_at DESC LIMIT 100").bind(Math.floor(Date.now() / 1000) - 90).all();
+    return json({ success: true, viewers: results || [] }, 200, request, env);
+  }
+
+  // ========== GIFT CODE ==========
+  if (path === "/admin/gifts" && request.method === "GET") {
+    const { results } = await env.DB.prepare("SELECT * FROM gift_codes ORDER BY created_at DESC LIMIT 200").all();
+    return json({ success: true, gifts: results || [] }, 200, request, env);
+  }
+  if (path === "/admin/gifts" && request.method === "POST") {
+    const b = await request.json().catch(() => ({}));
+    let code = String(b.code || "").trim().toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 32);
+    if (!code) {
+      const abc = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+      const rnd = new Uint8Array(12);
+      crypto.getRandomValues(rnd);
+      code = "CHRTV-" + [...rnd].map((x) => abc[x % abc.length]).join("").slice(0, 8);
+    }
+    try {
+      await env.DB.prepare("INSERT INTO gift_codes (code, plan, days, max_uses, note) VALUES (?, ?, ?, ?, ?)").bind(code, ["vip", "recreational", "standard"].includes(b.plan) ? b.plan : "vip", Math.max(1, Math.min(3650, parseInt(b.days) || 30)), Math.max(1, Math.min(100000, parseInt(b.max_uses) || 1)), String(b.note || "").slice(0, 200)).run();
+    } catch (e) {
+      if (String(e?.message || "").includes("UNIQUE")) return json({ error: "Mã đã tồn tại" }, 409, request, env);
+      throw e;
+    }
+    await logAudit(env, adminUser?.id || 0, "gift.create", { code });
+    return json({ success: true, code }, 200, request, env);
+  }
+  if (path === "/admin/gifts" && request.method === "PUT") {
+    const b = await request.json().catch(() => ({}));
+    if (!b.code) return json({ error: "Thiếu code" }, 400, request, env);
+    await env.DB.prepare("UPDATE gift_codes SET is_active = ? WHERE code = ?").bind(b.is_active ? 1 : 0, String(b.code)).run();
+    return json({ success: true }, 200, request, env);
+  }
+  if (path === "/admin/gifts" && request.method === "DELETE") {
+    const b = await request.json().catch(() => ({}));
+    if (!b.code) return json({ error: "Thiếu code" }, 400, request, env);
+    await env.DB.prepare("DELETE FROM gift_codes WHERE code = ?").bind(String(b.code)).run();
+    return json({ success: true }, 200, request, env);
+  }
+
+  // ========== THANH TOÁN ==========
+  if (path === "/admin/payments" && request.method === "GET") {
+    const { results } = await env.DB.prepare("SELECT * FROM payments ORDER BY id DESC LIMIT 200").all();
+    return json({ success: true, payments: results || [] }, 200, request, env);
+  }
+  if (path === "/admin/payments" && request.method === "PUT") {
+    const b = await request.json().catch(() => ({}));
+    const order = String(b.order_code || "");
+    if (!order || !["paid", "rejected", "pending"].includes(b.status)) return json({ error: "Thiếu order/status" }, 400, request, env);
+    const { results } = await env.DB.prepare("SELECT * FROM payments WHERE order_code = ?").bind(order).all();
+    const pm = results[0];
+    if (!pm) return json({ error: "Không tìm thấy đơn" }, 404, request, env);
+    await env.DB.prepare("UPDATE payments SET status = ?, paid_at = ? WHERE order_code = ?").bind(b.status, b.status === "paid" ? new Date().toISOString().slice(0, 19).replace("T", " ") : null, order).run();
+    let exp = 0;
+    if (b.status === "paid" && pm.status !== "paid") exp = await activatePlan(env, pm.user_id, pm.plan, 30);
+    await logAudit(env, adminUser?.id || 0, "payment." + b.status, { order });
+    return json({ success: true, expires_at: exp }, 200, request, env);
+  }
+  if (path === "/admin/payment-config" && request.method === "GET") {
+    const { results } = await env.DB.prepare("SELECT bank_id, account_no, account_name, template, note, (sepay_token != '') AS has_sepay FROM payment_config WHERE id = 1").all();
+    return json({ success: true, config: results[0] || {} }, 200, request, env);
+  }
+  if (path === "/admin/payment-config" && request.method === "PUT") {
+    const b = await request.json().catch(() => ({}));
+    const cur = await env.DB.prepare("SELECT sepay_token FROM payment_config WHERE id = 1").all();
+    const token = b.sepay_token ? String(b.sepay_token).slice(0, 200) : (cur.results[0]?.sepay_token || "");
+    await env.DB.prepare("INSERT INTO payment_config (id, bank_id, account_no, account_name, template, sepay_token, note) VALUES (1, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET bank_id = ?, account_no = ?, account_name = ?, template = ?, sepay_token = ?, note = ?").bind(String(b.bank_id || "").slice(0, 20), String(b.account_no || "").slice(0, 30), String(b.account_name || "").slice(0, 60), String(b.template || "compact2").slice(0, 20), token, String(b.note || "").slice(0, 200), String(b.bank_id || "").slice(0, 20), String(b.account_no || "").slice(0, 30), String(b.account_name || "").slice(0, 60), String(b.template || "compact2").slice(0, 20), token, String(b.note || "").slice(0, 200)).run();
+    return json({ success: true }, 200, request, env);
+  }
+
+  // ========== QUẢNG CÁO ==========
+  if (path === "/admin/ads" && request.method === "GET") {
+    const { results } = await env.DB.prepare("SELECT * FROM ads ORDER BY sort_order ASC, id DESC LIMIT 100").all();
+    return json({ success: true, ads: results || [] }, 200, request, env);
+  }
+  if (path === "/admin/ads" && request.method === "POST") {
+    const b = await request.json().catch(() => ({}));
+    await env.DB.prepare("INSERT INTO ads (slot, title, image_url, link_url, video_url, starts_at, ends_at, sort_order, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(String(b.slot || "banner").slice(0, 30), String(b.title || "").slice(0, 120), String(b.image_url || "").slice(0, 500), String(b.link_url || "").slice(0, 500), String(b.video_url || "").slice(0, 500), String(b.starts_at || "").slice(0, 19), String(b.ends_at || "").slice(0, 19), parseInt(b.sort_order) || 0, b.is_active === 0 ? 0 : 1).run();
+    return json({ success: true }, 200, request, env);
+  }
+  if (path === "/admin/ads" && request.method === "PUT") {
+    const b = await request.json().catch(() => ({}));
+    if (!b.id) return json({ error: "Thiếu id" }, 400, request, env);
+    await env.DB.prepare("UPDATE ads SET slot = ?, title = ?, image_url = ?, link_url = ?, video_url = ?, starts_at = ?, ends_at = ?, sort_order = ?, is_active = ? WHERE id = ?").bind(String(b.slot || "banner").slice(0, 30), String(b.title || "").slice(0, 120), String(b.image_url || "").slice(0, 500), String(b.link_url || "").slice(0, 500), String(b.video_url || "").slice(0, 500), String(b.starts_at || "").slice(0, 19), String(b.ends_at || "").slice(0, 19), parseInt(b.sort_order) || 0, b.is_active === 0 ? 0 : 1, b.id).run();
+    return json({ success: true }, 200, request, env);
+  }
+  if (path === "/admin/ads" && request.method === "DELETE") {
+    const b = await request.json().catch(() => ({}));
+    if (!b.id) return json({ error: "Thiếu id" }, 400, request, env);
+    await env.DB.prepare("DELETE FROM ads WHERE id = ?").bind(b.id).run();
+    return json({ success: true }, 200, request, env);
+  }
+
+  // ========== LỊCH ĐĂNG ==========
+  if (path === "/admin/scheduled" && request.method === "GET") {
+    const { results } = await env.DB.prepare("SELECT * FROM scheduled_posts ORDER BY publish_at DESC LIMIT 100").all();
+    return json({ success: true, posts: results || [] }, 200, request, env);
+  }
+  if (path === "/admin/scheduled" && request.method === "POST") {
+    const b = await request.json().catch(() => ({}));
+    if (!["broadcast", "notify", "event"].includes(b.kind) || !b.publish_at) return json({ error: "Thiếu kind/publish_at" }, 400, request, env);
+    await env.DB.prepare("INSERT INTO scheduled_posts (kind, title, body, link_type, link_value, image_url, publish_at) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(b.kind, String(b.title || "").slice(0, 160), String(b.body || "").slice(0, 1000), String(b.link_type || "none").slice(0, 20), String(b.link_value || "").slice(0, 200), String(b.image_url || "").slice(0, 500), String(b.publish_at).slice(0, 19).replace("T", " ")).run();
+    return json({ success: true }, 200, request, env);
+  }
+  if (path === "/admin/scheduled" && request.method === "DELETE") {
+    const b = await request.json().catch(() => ({}));
+    if (!b.id) return json({ error: "Thiếu id" }, 400, request, env);
+    await env.DB.prepare("DELETE FROM scheduled_posts WHERE id = ?").bind(b.id).run();
+    return json({ success: true }, 200, request, env);
+  }
+
+  // ========== KIỂM DUYỆT BÌNH LUẬN ==========
+  if (path === "/admin/comments" && request.method === "GET") {
+    const { results } = await env.DB.prepare("SELECT * FROM comments ORDER BY id DESC LIMIT 200").all();
+    return json({ success: true, comments: results || [] }, 200, request, env);
+  }
+  if (path === "/admin/comments" && request.method === "PUT") {
+    const b = await request.json().catch(() => ({}));
+    const ids = Array.isArray(b.ids) ? b.ids.map((x) => parseInt(x) || 0).filter(Boolean).slice(0, 100) : (b.id ? [parseInt(b.id) || 0] : []);
+    if (!ids.length || !["visible", "hidden"].includes(b.status)) return json({ error: "Thiếu ids/status" }, 400, request, env);
+    for (const id of ids) await env.DB.prepare("UPDATE comments SET status = ? WHERE id = ?").bind(b.status, id).run();
+    await logAudit(env, adminUser?.id || 0, "comments." + b.status, { count: ids.length });
+    return json({ success: true, count: ids.length }, 200, request, env);
+  }
+  if (path === "/admin/comments" && request.method === "DELETE") {
+    const b = await request.json().catch(() => ({}));
+    const ids = Array.isArray(b.ids) ? b.ids.map((x) => parseInt(x) || 0).filter(Boolean).slice(0, 100) : (b.id ? [parseInt(b.id) || 0] : []);
+    if (!ids.length) return json({ error: "Thiếu ids" }, 400, request, env);
+    for (const id of ids) await env.DB.prepare("DELETE FROM comments WHERE id = ?").bind(id).run();
+    await logAudit(env, adminUser?.id || 0, "comments.delete", { count: ids.length });
+    return json({ success: true, count: ids.length }, 200, request, env);
+  }
+
+  // ========== DỰ ĐOÁN: chốt kết quả ==========
+  if (path === "/admin/predictions" && request.method === "GET") {
+    const { results } = await env.DB.prepare("SELECT event_key, league, home, away, COUNT(*) AS n, SUM(CASE WHEN points IS NOT NULL THEN 1 ELSE 0 END) AS settled FROM predictions GROUP BY event_key ORDER BY MAX(created_at) DESC LIMIT 100").all();
+    return json({ success: true, events: results || [] }, 200, request, env);
+  }
+  if (path === "/admin/predictions" && request.method === "POST") {
+    const b = await request.json().catch(() => ({}));
+    const key = String(b.event_key || "");
+    const hs = parseInt(b.hs), cs = parseInt(b.as);
+    if (!key || !(hs >= 0) || !(cs >= 0)) return json({ error: "Thiếu event_key/hs/as" }, 400, request, env);
+    const n = await settlePredictions(env, key, hs, cs);
+    await logAudit(env, adminUser?.id || 0, "predict.settle", { key, hs, cs, n });
+    return json({ success: true, settled: n }, 200, request, env);
+  }
+
+  // ========== BÁO CÁO + XUẤT EXCEL (CSV) ==========
+  if (path === "/admin/reports/summary" && request.method === "GET") {
+    const [rev, users, views, xp] = await Promise.all([
+      env.DB.prepare("SELECT COALESCE(SUM(amount), 0) AS total, COUNT(*) AS n FROM payments WHERE status = 'paid'").all(),
+      env.DB.prepare("SELECT COUNT(*) AS n FROM users").all(),
+      env.DB.prepare("SELECT COALESCE(SUM(views), 0) AS v, COALESCE(SUM(seconds), 0) AS s FROM watch_counters").all(),
+      env.DB.prepare("SELECT COALESCE(SUM(xp), 0) AS x FROM user_xp").all(),
+    ]);
+    const revByDay = await env.DB.prepare("SELECT DATE(paid_at) AS d, COALESCE(SUM(amount), 0) AS total, COUNT(*) AS n FROM payments WHERE status = 'paid' AND paid_at IS NOT NULL GROUP BY d ORDER BY d DESC LIMIT 30").all();
+    return json({ success: true, revenue: rev.results[0], users: users.results[0]?.n || 0, views: views.results[0], xp: xp.results[0]?.x || 0, revByDay: revByDay.results || [] }, 200, request, env);
+  }
+  if (path === "/admin/reports/export" && request.method === "GET") {
+    const kind = String(new URL(request.url).searchParams.get("kind") || "payments");
+    const esc = (v) => '"' + String(v ?? "").replace(/"/g, '""') + '"';
+    let csv = "";
+    if (kind === "payments") {
+      const { results } = await env.DB.prepare("SELECT id, username, plan, amount, order_code, status, created_at, paid_at FROM payments ORDER BY id DESC LIMIT 2000").all();
+      csv = "id,username,plan,amount,order_code,status,created_at,paid_at\n" + (results || []).map((r) => [r.id, esc(r.username), r.plan, r.amount, r.order_code, r.status, esc(r.created_at), esc(r.paid_at)].join(",")).join("\n");
+    } else if (kind === "views") {
+      const { results } = await env.DB.prepare("SELECT w.channel_id, c.name, w.views, w.seconds FROM watch_counters w LEFT JOIN channels c ON c.channel_id = w.channel_id ORDER BY w.seconds DESC LIMIT 2000").all();
+      csv = "channel_id,name,views,seconds\n" + (results || []).map((r) => [esc(r.channel_id), esc(r.name), r.views, r.seconds].join(",")).join("\n");
+    } else {
+      const { results } = await env.DB.prepare("SELECT id, username, email, display_name, role, plan, created_at FROM users ORDER BY id DESC LIMIT 2000").all();
+      csv = "id,username,email,display_name,role,plan,created_at\n" + (results || []).map((r) => [r.id, esc(r.username), esc(r.email), esc(r.display_name), r.role, r.plan, esc(r.created_at)].join(",")).join("\n");
+    }
+    return new Response("﻿" + csv, { status: 200, headers: { ...jsonHeaders(request, env), "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="chrtv-${kind}.csv"` } });
+  }
+
   return json({ error: "Not found" }, 404, request, env);
 }
 
@@ -2800,6 +3064,7 @@ async function handleRating(request, env) {
 
 // ========== NOTIFICATIONS ==========
 async function handleNotifications(request, env) {
+  await evalScheduled(env);
   if (!hasDB(env)) return json({ success: true, notifications: [] }, 200, request, env);
   await ensureSchema(env);
   const user = await getUser(request, env);
@@ -2844,6 +3109,7 @@ async function handleReminders(request, env) {
 
 // ========== BROADCASTS ==========
 async function handleBroadcasts(env, request) {
+  await evalScheduled(env);
   if (!hasDB(env)) return json({ success: true, broadcasts: [] }, 200, request, env);
   await ensureSchema(env);
   const { results } = await env.DB.prepare("SELECT * FROM broadcasts WHERE is_active = 1 AND (expires_at = 0 OR expires_at > ?) ORDER BY created_at DESC LIMIT 5").bind(Math.floor(Date.now() / 1000)).all();
@@ -3042,6 +3308,401 @@ async function handleParty(path, request, env) {
   }
 
   return json({ error: "Not found" }, 404, request, env);
+}
+
+// ========== STATS / PRESENCE / XP (BXH kênh xem nhiều, fan cứng, dashboard realtime) ==========
+async function handleStats(path, request, env) {
+  if (!hasDB(env)) return dbUnavailable();
+  await ensureSchema(env);
+  const nowS = Math.floor(Date.now() / 1000);
+  if (path === "/api/stats/beat" && request.method === "POST") {
+    const b = await request.json().catch(() => ({}));
+    const auth = await getAuth(request, env);
+    const uid = auth && auth.user ? auth.user.id : 0;
+    const name = String(b.name || (auth && auth.user ? (auth.user.display_name || auth.user.username) : "Khách") || "Khách").slice(0, 40);
+    const sid = String(b.sid || "").slice(0, 48) || ("u" + uid + "_" + (request.headers.get("CF-Connecting-IP") || "local"));
+    const kind = ["channel", "movie", "short", "sport"].includes(b.kind) ? b.kind : "channel";
+    const refId = String(b.ref_id || "").slice(0, 80);
+    const refName = String(b.ref_name || "").slice(0, 80);
+    const sec = Math.max(0, Math.min(600, parseInt(b.seconds) || 0));
+    try {
+      // presence (ghi đè theo tab) + dọn hàng cũ > 5 phút
+      await env.DB.prepare("INSERT OR REPLACE INTO presence (sid, user_id, name, kind, ref_id, ref_name, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(sid, uid, name, kind, refId, refName, nowS).run();
+      await env.DB.prepare("DELETE FROM presence WHERE updated_at < ?").bind(nowS - 300).run();
+      if (kind === "channel" && refId) {
+        await env.DB.prepare("INSERT INTO watch_counters (channel_id, views, seconds, updated_at) VALUES (?, 0, ?, ?) ON CONFLICT(channel_id) DO UPDATE SET seconds = seconds + ?, updated_at = ?").bind(refId, sec, nowS, sec, nowS).run();
+        if (b.viewed) await env.DB.prepare("UPDATE watch_counters SET views = views + 1 WHERE channel_id = ?").bind(refId).run();
+      }
+      if (uid && sec > 0) {
+        const xp = Math.floor(sec / 60); // 1 phút xem = 1 XP
+        await env.DB.prepare("INSERT INTO user_xp (user_id, xp, watch_sec, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET xp = xp + ?, watch_sec = watch_sec + ?, updated_at = ?").bind(uid, xp, sec, nowS, xp, sec, nowS).run();
+      }
+    } catch {}
+    return json({ success: true }, 200, request, env);
+  }
+  if (path === "/api/stats/top" && request.method === "GET") {
+    try {
+      const { results } = await env.DB.prepare("SELECT w.channel_id, w.views, w.seconds, c.name, c.logo, c.group_title FROM watch_counters w LEFT JOIN channels c ON c.channel_id = w.channel_id ORDER BY w.seconds DESC, w.views DESC LIMIT 10").all();
+      return json({ success: true, top: results || [] }, 200, request, env);
+    } catch { return json({ success: true, top: [] }, 200, request, env); }
+  }
+  if (path === "/api/stats/top-fans" && request.method === "GET") {
+    try {
+      const { results } = await env.DB.prepare("SELECT x.user_id, x.xp, x.watch_sec, COALESCE(u.display_name, u.username, '') AS name, u.avatar_url FROM user_xp x LEFT JOIN users u ON u.id = x.user_id ORDER BY x.xp DESC LIMIT 20").all();
+      return json({ success: true, fans: results || [] }, 200, request, env);
+    } catch { return json({ success: true, fans: [] }, 200, request, env); }
+  }
+  return json({ error: "Not found" }, 404, request, env);
+}
+
+// ========== HỒ SƠ CÔNG KHAI + HUY HIỆU ==========
+function serverBadges(xp, watchSec, predPoints) {
+  const hrs = (watchSec || 0) / 3600;
+  const out = [];
+  if (xp > 0) out.push({ id: "first_watch", icon: "📺", name: "Chào sân" });
+  if (hrs >= 1) out.push({ id: "hour1", icon: "⏱️", name: "Mọt phim 1h" });
+  if (hrs >= 10) out.push({ id: "hour10", icon: "🔥", name: "Cày 10 giờ" });
+  if (hrs >= 50) out.push({ id: "hour50", icon: "🚀", name: "Cày 50 giờ" });
+  if (hrs >= 100) out.push({ id: "hour100", icon: "👑", name: "Huyền thoại 100h" });
+  if (xp >= 100) out.push({ id: "xp100", icon: "⭐", name: "Ngôi sao 100 XP" });
+  if (xp >= 500) out.push({ id: "xp500", icon: "💎", name: "Kim cương 500 XP" });
+  if ((predPoints || 0) >= 10) out.push({ id: "oracle", icon: "🔮", name: "Thầy bói" });
+  return out;
+}
+async function handlePublicProfile(path, request, env) {
+  if (!hasDB(env)) return dbUnavailable();
+  await ensureSchema(env);
+  const q = new URL(request.url).searchParams;
+  if (path === "/api/profile" && request.method === "GET") {
+    const auth = await getAuth(request, env);
+    if (!auth || !auth.user) return json({ error: "LOGIN_REQUIRED" }, 401, request, env);
+    const { results } = await env.DB.prepare("SELECT handle, bio, avatar_url, is_public FROM public_profiles WHERE user_id = ?").bind(auth.user.id).all();
+    return json({ success: true, profile: results[0] || { handle: "", bio: "", avatar_url: auth.user.avatar_url || "", is_public: 0 } }, 200, request, env);
+  }
+  if (path === "/api/profile" && (request.method === "PUT" || request.method === "POST")) {
+    const auth = await getAuth(request, env);
+    if (!auth || !auth.user) return json({ error: "LOGIN_REQUIRED" }, 401, request, env);
+    const b = await request.json().catch(() => ({}));
+    const handle = String(b.handle || "").trim().toLowerCase().replace(/[^a-z0-9_.]/g, "").slice(0, 20);
+    if (!handle || handle.length < 3) return json({ error: "Tên hiển thị cần ≥ 3 ký tự (chữ/số/_/.)" }, 400, request, env);
+    const bio = String(b.bio || "").slice(0, 200);
+    const avatar = String(b.avatar_url || "").slice(0, 300);
+    const pub = b.is_public ? 1 : 0;
+    try {
+      await env.DB.prepare("INSERT INTO public_profiles (user_id, handle, bio, avatar_url, is_public) VALUES (?, ?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET handle = ?, bio = ?, avatar_url = ?, is_public = ?").bind(auth.user.id, handle, bio, avatar, pub, handle, bio, avatar, pub).run();
+    } catch (e) {
+      if (String(e?.message || "").includes("UNIQUE")) return json({ error: "Tên này đã có người dùng" }, 409, request, env);
+      throw e;
+    }
+    return json({ success: true, handle }, 200, request, env);
+  }
+  if (path === "/api/u" && request.method === "GET") {
+    const handle = String(q.get("handle") || "").trim().toLowerCase();
+    if (!handle) return json({ error: "Thiếu handle" }, 400, request, env);
+    const { results } = await env.DB.prepare("SELECT p.*, COALESCE(u.display_name, u.username, '') AS name FROM public_profiles p LEFT JOIN users u ON u.id = p.user_id WHERE p.handle = ? AND p.is_public = 1").bind(handle).all();
+    const p = results[0];
+    if (!p) return json({ error: "Không tìm thấy hồ sơ" }, 404, request, env);
+    let xp = 0, watchSec = 0, predPoints = 0;
+    try {
+      const { results: xr } = await env.DB.prepare("SELECT xp, watch_sec FROM user_xp WHERE user_id = ?").bind(p.user_id).all();
+      xp = xr[0]?.xp || 0; watchSec = xr[0]?.watch_sec || 0;
+      const { results: pr } = await env.DB.prepare("SELECT COALESCE(SUM(points), 0) AS s FROM predictions WHERE user_id = ? AND points IS NOT NULL").bind(p.user_id).all();
+      predPoints = pr[0]?.s || 0;
+    } catch {}
+    return json({ success: true, profile: { handle: p.handle, name: p.name, bio: p.bio, avatar_url: p.avatar_url, xp, watch_sec: watchSec, pred_points: predPoints, badges: serverBadges(xp, watchSec, predPoints) } }, 200, request, env);
+  }
+  return json({ error: "Not found" }, 404, request, env);
+}
+
+// ========== BÌNH LUẬN (phim/kênh) ==========
+async function handleComments(request, env) {
+  if (!hasDB(env)) return dbUnavailable();
+  await ensureSchema(env);
+  const q = new URL(request.url).searchParams;
+  if (request.method === "GET") {
+    const target = String(q.get("target") || "").slice(0, 100);
+    if (!target) return json({ error: "Thiếu target" }, 400, request, env);
+    const { results } = await env.DB.prepare("SELECT id, user_id, name, body, created_at FROM comments WHERE target = ? AND status = 'visible' ORDER BY id DESC LIMIT 50").bind(target).all();
+    return json({ success: true, comments: results || [] }, 200, request, env);
+  }
+  const auth = await getAuth(request, env);
+  if (!auth || !auth.user) return json({ error: "LOGIN_REQUIRED" }, 401, request, env);
+  if (request.method === "POST") {
+    try {
+      const rl = await rateLimitCheck(env, "comment:u:" + auth.user.id, 10, 60);
+      if (!rl.allowed) return json({ error: "Bình luận quá nhanh — thử lại sau.", code: "RATE_LIMITED" }, 429, request, env);
+    } catch {}
+    const b = await request.json().catch(() => ({}));
+    const target = String(b.target || "").slice(0, 100);
+    const body = String(b.body || "").trim().slice(0, 500);
+    if (!target || !body) return json({ error: "Thiếu nội dung" }, 400, request, env);
+    const name = String(auth.user.display_name || auth.user.username || "Bạn xem").slice(0, 40);
+    const r = await env.DB.prepare("INSERT INTO comments (target, user_id, name, body) VALUES (?, ?, ?, ?)").bind(target, auth.user.id, name, body).run();
+    try { await env.DB.prepare("INSERT INTO user_xp (user_id, xp, watch_sec, updated_at) VALUES (?, 2, 0, ?) ON CONFLICT(user_id) DO UPDATE SET xp = xp + 2").bind(auth.user.id, Math.floor(Date.now() / 1000)).run(); } catch {}
+    return json({ success: true, id: r.meta?.last_row_id || 0 }, 200, request, env);
+  }
+  if (request.method === "DELETE") {
+    const b = await request.json().catch(() => ({}));
+    const id = parseInt(b.id) || 0;
+    if (!id) return json({ error: "Thiếu id" }, 400, request, env);
+    const isAdmin = auth.user.role === "admin";
+    if (isAdmin) await env.DB.prepare("DELETE FROM comments WHERE id = ?").bind(id).run();
+    else await env.DB.prepare("DELETE FROM comments WHERE id = ? AND user_id = ?").bind(id, auth.user.id).run();
+    return json({ success: true }, 200, request, env);
+  }
+  return json({ error: "Not found" }, 404, request, env);
+}
+
+// ========== NHÓM FAN (theo phim/kênh) ==========
+async function handleFanGroups(request, env) {
+  if (!hasDB(env)) return dbUnavailable();
+  await ensureSchema(env);
+  const q = new URL(request.url).searchParams;
+  if (request.method === "GET") {
+    const target = String(q.get("target") || "").slice(0, 100);
+    if (!target) return json({ error: "Thiếu target" }, 400, request, env);
+    const { results } = await env.DB.prepare("SELECT * FROM fan_groups WHERE target = ?").bind(target).all();
+    const g = results[0] || null;
+    let members = [], joined = false;
+    if (g) {
+      const m = await env.DB.prepare("SELECT user_id, name FROM fan_members WHERE group_id = ? ORDER BY id DESC LIMIT 50").all();
+      members = m.results || [];
+      const auth = await getAuth(request, env);
+      if (auth && auth.user) joined = members.some((x) => x.user_id === auth.user.id);
+    }
+    return json({ success: true, group: g, members, member_count: g ? members.length : 0, joined }, 200, request, env);
+  }
+  const auth = await getAuth(request, env);
+  if (!auth || !auth.user) return json({ error: "LOGIN_REQUIRED" }, 401, request, env);
+  const b = await request.json().catch(() => ({}));
+  const target = String(b.target || "").slice(0, 100);
+  if (!target) return json({ error: "Thiếu target" }, 400, request, env);
+  const name = String(auth.user.display_name || auth.user.username || "Bạn xem").slice(0, 40);
+  if (request.method === "POST") {
+    const gname = String(b.name || "").slice(0, 60) || ("Fan " + target);
+    let g;
+    const { results } = await env.DB.prepare("SELECT * FROM fan_groups WHERE target = ?").bind(target).all();
+    if (results[0]) g = results[0];
+    else {
+      const r = await env.DB.prepare("INSERT INTO fan_groups (target, name, created_by) VALUES (?, ?, ?)").bind(target, gname, auth.user.id).run();
+      g = { id: r.meta?.last_row_id || 0, target, name: gname };
+    }
+    await env.DB.prepare("INSERT OR IGNORE INTO fan_members (group_id, user_id, name) VALUES (?, ?, ?)").bind(g.id, auth.user.id, name).run();
+    return json({ success: true, group: g, joined: true }, 200, request, env);
+  }
+  if (request.method === "DELETE") {
+    const { results } = await env.DB.prepare("SELECT id FROM fan_groups WHERE target = ?").bind(target).all();
+    if (results[0]) await env.DB.prepare("DELETE FROM fan_members WHERE group_id = ? AND user_id = ?").bind(results[0].id, auth.user.id).run();
+    return json({ success: true, joined: false }, 200, request, env);
+  }
+  return json({ error: "Not found" }, 404, request, env);
+}
+
+// Kích hoạt gói cho user (payments/gift/admin dùng chung)
+async function activatePlan(env, userId, plan, days) {
+  const p = ["vip", "recreational", "standard"].includes(String(plan)) ? String(plan) : "vip";
+  const d = Math.max(1, Math.min(3650, parseInt(days) || 30));
+  const nowS = Math.floor(Date.now() / 1000);
+  let base = nowS;
+  try {
+    const { results } = await env.DB.prepare("SELECT expires_at, plan FROM user_plans WHERE user_id = ?").bind(userId).all();
+    if (results[0] && results[0].expires_at > nowS && results[0].plan === p) base = results[0].expires_at;
+  } catch {}
+  const exp = base + d * 86400;
+  await env.DB.prepare("INSERT INTO user_plans (user_id, plan, expires_at, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET plan = ?, expires_at = ?, updated_at = ?").bind(userId, p, exp, nowS, p, exp, nowS).run();
+  await env.DB.prepare("UPDATE users SET plan = ? WHERE id = ?").bind(p, userId).run();
+  return exp;
+}
+
+// ========== GIFT CODE ==========
+async function handleGiftRedeem(request, env) {
+  if (!hasDB(env)) return dbUnavailable();
+  await ensureSchema(env);
+  if (request.method !== "POST") return json({ error: "Not found" }, 404, request, env);
+  const auth = await getAuth(request, env);
+  if (!auth || !auth.user) return json({ error: "LOGIN_REQUIRED" }, 401, request, env);
+  try {
+    const rl = await rateLimitCheck(env, "gift:u:" + auth.user.id, 10, 3600);
+    if (!rl.allowed) return json({ error: "Nhập sai quá nhiều — thử lại sau 1 giờ.", code: "RATE_LIMITED" }, 429, request, env);
+  } catch {}
+  const b = await request.json().catch(() => ({}));
+  const code = String(b.code || "").trim().toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 32);
+  if (!code) return json({ error: "Thiếu mã quà tặng" }, 400, request, env);
+  const { results } = await env.DB.prepare("SELECT * FROM gift_codes WHERE code = ?").bind(code).all();
+  const g = results[0];
+  if (!g || !g.is_active) return json({ error: "Mã không tồn tại hoặc đã tắt" }, 404, request, env);
+  if (g.used >= g.max_uses) return json({ error: "Mã đã hết lượt dùng" }, 410, request, env);
+  const { results: mine } = await env.DB.prepare("SELECT id FROM gift_redemptions WHERE code = ? AND user_id = ?").bind(code, auth.user.id).all();
+  if (mine.length) return json({ error: "Bạn đã dùng mã này rồi" }, 409, request, env);
+  await env.DB.prepare("UPDATE gift_codes SET used = used + 1 WHERE code = ?").bind(code).run();
+  await env.DB.prepare("INSERT INTO gift_redemptions (code, user_id) VALUES (?, ?)").bind(code, auth.user.id).run();
+  const exp = await activatePlan(env, auth.user.id, g.plan, g.days);
+  try { await logAudit(env, auth.user.id, "gift.redeem", { code, plan: g.plan }); } catch {}
+  return json({ success: true, plan: g.plan, days: g.days, expires_at: exp }, 200, request, env);
+}
+
+// ========== THANH TOÁN (VietQR + SePay webhook + duyệt tay) ==========
+async function handlePayments(path, request, env) {
+  if (!hasDB(env)) return dbUnavailable();
+  await ensureSchema(env);
+  const nowS = Math.floor(Date.now() / 1000);
+  if (path === "/api/payments/config" && request.method === "GET") {
+    let cfg = null;
+    try {
+      const { results } = await env.DB.prepare("SELECT bank_id, account_no, account_name, template, note FROM payment_config WHERE id = 1").all();
+      cfg = results[0] || null;
+    } catch {}
+    let plans = [];
+    try {
+      const { results } = await env.DB.prepare("SELECT code, name, price, price_text, tagline, color FROM plans WHERE is_active = 1 AND price > 0 ORDER BY rank ASC").all();
+      plans = results || [];
+    } catch {}
+    return json({ success: true, config: cfg, plans }, 200, request, env);
+  }
+  if (path === "/api/payments/order" && request.method === "POST") {
+    const auth = await getAuth(request, env);
+    if (!auth || !auth.user) return json({ error: "LOGIN_REQUIRED" }, 401, request, env);
+    const b = await request.json().catch(() => ({}));
+    const plan = String(b.plan || "").toLowerCase();
+    const { results } = await env.DB.prepare("SELECT code, price FROM plans WHERE code = ? AND is_active = 1").bind(plan).all();
+    if (!results[0] || !(results[0].price > 0)) return json({ error: "Gói không bán online" }, 400, request, env);
+    const order = ("CHRTV" + auth.user.id + Date.now().toString(36)).toUpperCase().slice(0, 24);
+    await env.DB.prepare("INSERT INTO payments (user_id, username, plan, amount, order_code, status) VALUES (?, ?, ?, ?, ?, 'pending')").bind(auth.user.id, auth.user.username || "", plan, results[0].price, order).run();
+    return json({ success: true, order_code: order, amount: results[0].price, plan }, 200, request, env);
+  }
+  if (path === "/api/payments/claim" && request.method === "POST") {
+    const auth = await getAuth(request, env);
+    if (!auth || !auth.user) return json({ error: "LOGIN_REQUIRED" }, 401, request, env);
+    const b = await request.json().catch(() => ({}));
+    const order = String(b.order_code || "").trim().toUpperCase().slice(0, 32);
+    if (!order) return json({ error: "Thiếu mã đơn" }, 400, request, env);
+    const { results } = await env.DB.prepare("SELECT * FROM payments WHERE order_code = ? AND user_id = ?").bind(order, auth.user.id).all();
+    const pm = results[0];
+    if (!pm) return json({ error: "Không tìm thấy đơn" }, 404, request, env);
+    if (pm.status === "paid") return json({ success: true, status: "paid" }, 200, request, env);
+    await env.DB.prepare("UPDATE payments SET status = 'claimed' WHERE order_code = ?").bind(order).run();
+    return json({ success: true, status: "claimed" }, 200, request, env);
+  }
+  // Webhook SePay: POST kèm Authorization: Apikey <SEPAY_TOKEN> (khớp payment_config.sepay_token)
+  // Body mẫu SePay: { content, transferType, transferAmount, referenceCode, ... }
+  if (path === "/api/payments/sepay-webhook" && request.method === "POST") {
+    const b = await request.json().catch(() => ({}));
+    let cfgToken = "";
+    try {
+      const { results } = await env.DB.prepare("SELECT sepay_token FROM payment_config WHERE id = 1").all();
+      cfgToken = results[0]?.sepay_token || "";
+    } catch {}
+    const got = String(request.headers.get("Authorization") || "").replace(/^Apikey\s+/i, "").trim();
+    if (!cfgToken || got !== cfgToken) return json({ error: "Forbidden" }, 403, request, env);
+    if (String(b.transferType || "").toLowerCase() === "out") return json({ success: true, skipped: "out" }, 200, request, env);
+    const content = String(b.content || b.description || "");
+    const m = content.toUpperCase().match(/CHRTV[A-Z0-9]{3,24}/);
+    const amount = parseInt(b.transferAmount ?? b.amount ?? 0) || 0;
+    if (!m) return json({ success: false, error: "NO_ORDER" }, 200, request, env);
+    const order = m[0];
+    const { results } = await env.DB.prepare("SELECT * FROM payments WHERE order_code = ?").bind(order).all();
+    const pm = results[0];
+    if (!pm || pm.status === "paid") return json({ success: true, skipped: pm ? "done" : "unknown" }, 200, request, env);
+    if (amount < pm.amount) {
+      await env.DB.prepare("UPDATE payments SET status = 'underpaid', payload = ? WHERE order_code = ?").bind(JSON.stringify(b).slice(0, 1000), order).run();
+      return json({ success: true, skipped: "underpaid" }, 200, request, env);
+    }
+    await env.DB.prepare("UPDATE payments SET status = 'paid', paid_at = datetime('now'), payload = ? WHERE order_code = ?").bind(JSON.stringify(b).slice(0, 1000), order).run();
+    const exp = await activatePlan(env, pm.user_id, pm.plan, 30);
+    try { await logAudit(env, pm.user_id, "payment.auto", { order, plan: pm.plan, amount }); } catch {}
+    return json({ success: true, order, expires_at: exp }, 200, request, env);
+  }
+  return json({ error: "Not found" }, 404, request, env);
+}
+
+// ========== QUẢNG CÁO (kích hoạt lười theo starts_at/ends_at — như events) ==========
+async function handleAds(request, env) {
+  if (!hasDB(env)) return dbUnavailable();
+  await ensureSchema(env);
+  if (request.method !== "GET") return json({ error: "Not found" }, 404, request, env);
+  const slot = String(new URL(request.url).searchParams.get("slot") || "").slice(0, 30);
+  try {
+    const now = new Date().toISOString().slice(0, 19).replace("T", " ");
+    let sql = "SELECT id, slot, title, image_url, link_url, video_url FROM ads WHERE is_active = 1 AND (starts_at = '' OR starts_at IS NULL OR starts_at <= ?) AND (ends_at = '' OR ends_at IS NULL OR ends_at >= ?)";
+    const args = [now, now];
+    if (slot) { sql += " AND slot = ?"; args.push(slot); }
+    sql += " ORDER BY sort_order ASC, id DESC LIMIT 10";
+    const { results } = await env.DB.prepare(sql).bind(...args).all();
+    return json({ success: true, ads: results || [] }, 200, request, env);
+  } catch { return json({ success: true, ads: [] }, 200, request, env); }
+}
+
+// ========== DỰ ĐOÁN TỈ SỐ ==========
+async function handlePredictions(request, env) {
+  if (!hasDB(env)) return dbUnavailable();
+  await ensureSchema(env);
+  if (request.method === "GET") {
+    const q = new URL(request.url).searchParams;
+    const key = String(q.get("event") || "").slice(0, 60);
+    const auth = await getAuth(request, env);
+    let mine = null;
+    if (key && auth && auth.user) {
+      const { results } = await env.DB.prepare("SELECT ph, pa, points FROM predictions WHERE user_id = ? AND event_key = ?").bind(auth.user.id, key).all();
+      mine = results[0] || null;
+    }
+    // BXH dự đoán: tổng điểm
+    let board = [];
+    try {
+      const { results } = await env.DB.prepare("SELECT p.user_id, COALESCE(u.display_name, u.username, '') AS name, COALESCE(SUM(p.points), 0) AS pts, COUNT(*) AS n FROM predictions p LEFT JOIN users u ON u.id = p.user_id WHERE p.points IS NOT NULL GROUP BY p.user_id ORDER BY pts DESC LIMIT 20").all();
+      board = results || [];
+    } catch {}
+    return json({ success: true, mine, board }, 200, request, env);
+  }
+  if (request.method === "POST") {
+    const auth = await getAuth(request, env);
+    if (!auth || !auth.user) return json({ error: "LOGIN_REQUIRED" }, 401, request, env);
+    const b = await request.json().catch(() => ({}));
+    const key = String(b.event_key || "").slice(0, 60);
+    const ph = Math.max(0, Math.min(20, parseInt(b.ph ?? -1)));
+    const pa = Math.max(0, Math.min(20, parseInt(b.pa ?? -1)));
+    if (!key || ph < 0 || pa < 0) return json({ error: "Thiếu dự đoán" }, 400, request, env);
+    // Khoá khi đã chấm điểm
+    const { results } = await env.DB.prepare("SELECT points FROM predictions WHERE user_id = ? AND event_key = ?").bind(auth.user.id, key).all();
+    if (results[0] && results[0].points !== null) return json({ error: "Trận này đã chốt kết quả" }, 409, request, env);
+    await env.DB.prepare("INSERT INTO predictions (user_id, event_key, league, home, away, ph, pa) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(user_id, event_key) DO UPDATE SET ph = ?, pa = ?").bind(auth.user.id, key, String(b.league || "").slice(0, 40), String(b.home || "").slice(0, 60), String(b.away || "").slice(0, 60), ph, pa, ph, pa).run();
+    return json({ success: true }, 200, request, env);
+  }
+  return json({ error: "Not found" }, 404, request, env);
+}
+// Chấm điểm 1 trận: đúng tỉ số = 3, đúng cửa thắng/hoà/thua = 1 (+XP tương ứng)
+async function settlePredictions(env, eventKey, hs, cs) {
+  const { results } = await env.DB.prepare("SELECT user_id, ph, pa FROM predictions WHERE event_key = ? AND points IS NULL").bind(eventKey).all();
+  const out = (a, b) => (a > b ? 1 : a < b ? -1 : 0);
+  let n = 0;
+  for (const r of results || []) {
+    const pts = (r.ph === hs && r.pa === cs) ? 3 : (out(r.ph, r.pa) === out(hs, cs) ? 1 : 0);
+    await env.DB.prepare("UPDATE predictions SET points = ? WHERE user_id = ? AND event_key = ?").bind(pts, r.user_id, eventKey).run();
+    if (pts > 0) {
+      try { await env.DB.prepare("INSERT INTO user_xp (user_id, xp, watch_sec, updated_at) VALUES (?, ?, 0, ?) ON CONFLICT(user_id) DO UPDATE SET xp = xp + ?").bind(r.user_id, pts, Math.floor(Date.now() / 1000), pts).run(); } catch {}
+    }
+    n++;
+  }
+  return n;
+}
+
+// ========== LỊCH ĐĂNG (lazy): tới giờ => đẩy vào broadcasts/notifications ==========
+async function evalScheduled(env) {
+  try {
+    const now = new Date().toISOString().slice(0, 19).replace("T", " ");
+    const { results } = await env.DB.prepare("SELECT * FROM scheduled_posts WHERE is_done = 0 AND publish_at <= ? ORDER BY publish_at ASC LIMIT 20").bind(now).all();
+    for (const p of results || []) {
+      try {
+        if (p.kind === "broadcast") {
+          await env.DB.prepare("INSERT INTO broadcasts (message, type, is_active) VALUES (?, 'info', 1)").bind(String(p.title ? p.title + " — " : "") + String(p.body || "")).run();
+        } else if (p.kind === "notify") {
+          await env.DB.prepare("INSERT INTO notifications (title, body, type, url, target) VALUES (?, ?, 'promo', ?, 'all')").bind(p.title || "Thông báo", p.body || "", p.link_value || "").run();
+        } else if (p.kind === "event") {
+          await env.DB.prepare("INSERT INTO events (title, subtitle, image_url, link_type, link_value, is_active) VALUES (?, ?, ?, ?, ?, 1)").bind(p.title || "", p.body || "", p.image_url || "", p.link_type || "none", p.link_value || "").run();
+        }
+        await env.DB.prepare("UPDATE scheduled_posts SET is_done = 1 WHERE id = ?").bind(p.id).run();
+      } catch {}
+    }
+  } catch {}
 }
 
 // ========== WEBSOCKET (Watch Party + Reactions + Presence) ==========

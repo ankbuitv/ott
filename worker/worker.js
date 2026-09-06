@@ -626,6 +626,8 @@ const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, avatar_url TEXT DEFAULT '', display_name TEXT DEFAULT '', role TEXT DEFAULT 'user', email_verified INTEGER DEFAULT 0, verify_code TEXT DEFAULT '', verify_expires INTEGER DEFAULT 0, reset_token TEXT DEFAULT '', reset_expires INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, token TEXT UNIQUE NOT NULL, expires_at INTEGER NOT NULL, user_agent TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS feedback (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER DEFAULT 0, channel_id TEXT DEFAULT '', message TEXT NOT NULL, client_info TEXT DEFAULT '', status TEXT DEFAULT 'new', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS shorts (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT DEFAULT '', caption TEXT DEFAULT '', video_url TEXT NOT NULL, thumb_url TEXT DEFAULT '', duration INTEGER DEFAULT 0, author TEXT DEFAULT '', views INTEGER DEFAULT 0, likes INTEGER DEFAULT 0, status TEXT DEFAULT 'live', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS qr_logins (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE NOT NULL, user_id INTEGER DEFAULT 0, status TEXT DEFAULT 'pending', device_info TEXT DEFAULT '', created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)`, 
   `CREATE TABLE IF NOT EXISTS user_settings (user_id INTEGER PRIMARY KEY, theme TEXT DEFAULT 'dark', default_quality TEXT DEFAULT 'auto', buffer_goal INTEGER DEFAULT 10, language TEXT DEFAULT 'vi', parental_pin TEXT DEFAULT '', parental_enabled INTEGER DEFAULT 0, settings_json TEXT DEFAULT '{}', updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS user_favorites (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, channel_id TEXT NOT NULL, sort_order INTEGER DEFAULT 0, group_name TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, channel_id))`,
   `CREATE TABLE IF NOT EXISTS watch_history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, channel_id TEXT NOT NULL, last_position INTEGER DEFAULT 0, watch_count INTEGER DEFAULT 1, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, channel_id))`,
@@ -747,6 +749,9 @@ async function handleAPI(path, request, env, ctx) {
   if (path === "/api/tmdb") return await handleTMDBProxy(request, env);
   if (path === "/api/reminders") return await handleReminders(request, env);
   if (path === "/api/feedback") return await handleFeedback(request, env);
+  if (path === "/api/shorts") return await handleShorts(request, env);
+  if (path === "/api/shorts/react") return await handleShortReact(request, env);
+  if (path === "/auth/qr/request" || path === "/auth/qr/approve" || path === "/auth/qr/poll") return await handleQrLogin(request, env);
   if (path === "/api/broadcasts") return await handleBroadcasts(env, request);
   if (path === "/api/channels") return await handleChannels(env);
   if (path === "/api/search") return await handleSearch(request, env);
@@ -1683,7 +1688,9 @@ async function handleAuth(path, request, env) {
 
   // Login
   if (path === "/auth/login") {
-    const { login, password } = body;
+    let { login, password } = body;
+    login = String(login || "").trim();
+    password = String(password || "");
     if (!login || !password) return json({ error: "Thiếu thông tin" }, 400, request, env);
 
     // RATE LIMIT: sai ≥5 lần trong 15 phút (theo tài khoản hoặc IP) → khoá tạm
@@ -1698,20 +1705,35 @@ async function handleAuth(path, request, env) {
 
     try {
       // FIX VIP: SELECT phải kèm plan để client biết gói sau khi đăng nhập lại
+      // So sánh email/username KHÔNG phân biệt hoa thường (người dùng hay gõ sai case)
       let results = [];
       try {
-        const r = await env.DB.prepare("SELECT id, username, email, display_name, avatar_url, role, email_verified, banned, totp_secret, totp_enabled, plan FROM users WHERE (email = ? OR username = ?) AND password_hash = ?").bind(login, login, hash).all();
+        const r = await env.DB.prepare("SELECT id, username, email, display_name, avatar_url, role, email_verified, banned, totp_secret, totp_enabled, plan, password_hash FROM users WHERE (LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?))").bind(login, login).all();
         results = r.results || [];
       } catch {
-        const r2 = await env.DB.prepare("SELECT id, username, email, display_name, avatar_url, role, email_verified, banned, totp_secret, totp_enabled FROM users WHERE (email = ? OR username = ?) AND password_hash = ?").bind(login, login, hash).all();
+        const r2 = await env.DB.prepare("SELECT id, username, email, display_name, avatar_url, role, email_verified, banned, totp_secret, totp_enabled, password_hash FROM users WHERE (LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?))").bind(login, login).all();
         results = r2.results || [];
       }
       if (results.length === 0) {
-        // Ghi nhận lần sai để rate limit
         try { await env.DB.prepare("INSERT INTO login_attempts (login, ip) VALUES (?, ?)").bind(login, ip).run(); } catch {}
-        return json({ error: "Sai tài khoản hoặc mật khẩu" }, 401, request, env);
+        return json({ error: "Tài khoản không tồn tại — kiểm tra lại tên đăng nhập/email.", code: "NO_ACCOUNT" }, 401, request, env);
       }
       const user = results[0];
+      // Kiểm tra mật khẩu: hash hiện tại + fallback hash đời cũ (tự nâng cấp khi khớp)
+      let pwOk = user.password_hash === hash;
+      if (!pwOk) {
+        try {
+          const legacy = sha256(password); // tài khoản tạo trước khi có JWT_SECRET
+          if (user.password_hash === legacy) {
+            pwOk = true;
+            try { await env.DB.prepare("UPDATE users SET password_hash = ? WHERE id = ?").bind(hash, user.id).run(); } catch {}
+          }
+        } catch {}
+      }
+      if (!pwOk) {
+        try { await env.DB.prepare("INSERT INTO login_attempts (login, ip) VALUES (?, ?)").bind(login, ip).run(); } catch {}
+        return json({ error: "Sai mật khẩu — thử lại hoặc bấm Quên mật khẩu.", code: "WRONG_PASSWORD" }, 401, request, env);
+      }
 
       // Tài khoản bị admin khoá
       if (user.banned) {
@@ -1755,7 +1777,7 @@ async function handleAuth(path, request, env) {
       try { await env.DB.prepare("INSERT INTO analytics (event, user_id, data) VALUES ('login', ?, ?)").bind(user.id, JSON.stringify({ login })).run(); } catch {}
 
       if (!user.plan) user.plan = "standard";
-      try { delete user.totp_secret; } catch {}
+      try { delete user.totp_secret; delete user.password_hash; } catch {}
       return json({ success: true, token, user }, 200, request, env);
     } catch (e) {
       return json({ error: "Lỗi đăng nhập" }, 500, request, env);
@@ -2147,6 +2169,29 @@ async function handleAdmin(path, request, env, ctx) {
     await env.DB.prepare("DELETE FROM feedback WHERE id = ?").bind(id).run();
     return json({ success: true }, 200, request, env);
   }
+  // Shorts do admin đăng
+  if (path === "/admin/shorts" && request.method === "GET") {
+    const { results } = await env.DB.prepare("SELECT * FROM shorts ORDER BY created_at DESC LIMIT 200").all();
+    return json({ success: true, shorts: results || [] }, 200, request, env);
+  }
+  if (path === "/admin/shorts" && request.method === "POST") {
+    const b = await request.json().catch(() => ({}));
+    if (!b.video_url) return json({ error: "Thiếu video_url" }, 400, request, env);
+    await env.DB.prepare("INSERT INTO shorts (title, caption, video_url, thumb_url, duration, author, status) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(String(b.title || "").slice(0, 120), String(b.caption || "").slice(0, 500), String(b.video_url).slice(0, 500), String(b.thumb_url || "").slice(0, 500), parseInt(b.duration) || 0, String(b.author || "").slice(0, 80), b.status === "hidden" ? "hidden" : "live").run();
+    return json({ success: true }, 200, request, env);
+  }
+  if (path === "/admin/shorts" && request.method === "PUT") {
+    const b = await request.json().catch(() => ({}));
+    if (!b.id) return json({ error: "Thiếu id" }, 400, request, env);
+    await env.DB.prepare("UPDATE shorts SET title = COALESCE(?, title), caption = COALESCE(?, caption), video_url = COALESCE(?, video_url), thumb_url = COALESCE(?, thumb_url), author = COALESCE(?, author), status = COALESCE(?, status) WHERE id = ?").bind(b.title ?? null, b.caption ?? null, b.video_url ?? null, b.thumb_url ?? null, b.author ?? null, b.status ?? null, b.id).run();
+    return json({ success: true }, 200, request, env);
+  }
+  if (path === "/admin/shorts" && request.method === "DELETE") {
+    const { id } = await request.json().catch(() => ({}));
+    if (!id) return json({ error: "Thiếu id" }, 400, request, env);
+    await env.DB.prepare("DELETE FROM shorts WHERE id = ?").bind(id).run();
+    return json({ success: true }, 200, request, env);
+  }
   if (path === "/admin/feedback" && request.method === "PUT") {
     const { id, status } = await request.json().catch(() => ({}));
     if (!id) return json({ error: "Thiếu id" }, 400, request, env);
@@ -2465,6 +2510,110 @@ async function handleSessions(request, env) {
     return json({ success: true }, 200, request, env);
   }
   return json({ error: "Method not allowed" }, 405, request, env);
+}
+
+
+// ========== SHORTS (do admin đăng) ==========
+async function handleShorts(request, env) {
+  if (!hasDB(env)) return json({ success: true, shorts: [] }, 200, request, env);
+  await ensureSchema(env);
+  if (request.method !== "GET") return json({ error: "Method not allowed" }, 405, request, env);
+  const url = new URL(request.url);
+  const limit = Math.min(parseInt(url.searchParams.get("limit")) || 30, 100);
+  const { results } = await env.DB.prepare("SELECT id, title, caption, video_url, thumb_url, duration, author, views, likes, created_at FROM shorts WHERE status = 'live' ORDER BY created_at DESC LIMIT ?").bind(limit).all();
+  return json({ success: true, shorts: results || [] }, 200, request, env);
+}
+
+async function handleShortReact(request, env) {
+  if (!hasDB(env)) return json({ success: true }, 200, request, env);
+  await ensureSchema(env);
+  if (request.method !== "POST") return json({ error: "Method not allowed" }, 405, request, env);
+  const { id, action } = await request.json().catch(() => ({}));
+  if (!id) return json({ error: "Thiếu id" }, 400, request, env);
+  if (action === "like") await env.DB.prepare("UPDATE shorts SET likes = likes + 1 WHERE id = ?").bind(id).run();
+  else await env.DB.prepare("UPDATE shorts SET views = views + 1 WHERE id = ?").bind(id).run();
+  return json({ success: true }, 200, request, env);
+}
+
+// ========== QR LOGIN (quét từ thiết bị đã đăng nhập) ==========
+const QR_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // không lẫn 0/O, 1/I/L
+function genQrCode() {
+  const bytes = crypto.getRandomValues(new Uint8Array(6));
+  let s = "";
+  for (const b of bytes) s += QR_ALPHABET[b % QR_ALPHABET.length];
+  return s;
+}
+
+async function handleQrLogin(request, env) {
+  if (!hasDB(env)) return json({ error: "Server chưa sẵn sàng" }, 503, request, env);
+  await ensureSchema(env);
+  const url = new URL(request.url);
+  const now = Date.now();
+
+  // Thiết bị MỚI xin mã QR
+  if (url.pathname === "/auth/qr/request") {
+    if (request.method !== "POST") return json({ error: "Method not allowed" }, 405, request, env);
+    try { await env.DB.prepare("DELETE FROM qr_logins WHERE expires_at < ?").bind(now).run(); } catch {}
+    const code = genQrCode();
+    const device = (request.headers.get("User-Agent") || "").slice(0, 120);
+    try {
+      await env.DB.prepare("INSERT INTO qr_logins (code, device_info, created_at, expires_at) VALUES (?, ?, ?, ?)").bind(code, device, now, now + 120000).run();
+    } catch {
+      return json({ error: "Thử lại" }, 500, request, env);
+    }
+    return json({ success: true, code, expiresIn: 120 }, 200, request, env);
+  }
+
+  // Thiết bị ĐÃ ĐĂNG NHẬP quét/duyệt mã
+  if (url.pathname === "/auth/qr/approve") {
+    if (request.method !== "POST") return json({ error: "Method not allowed" }, 405, request, env);
+    const auth = await getAuth(request, env);
+    if (!auth || !auth.user) return json({ error: "Chưa đăng nhập" }, 401, request, env);
+    const { code } = await request.json().catch(() => ({}));
+    const c = String(code || "").trim().toUpperCase();
+    if (!c) return json({ error: "Thiếu mã" }, 400, request, env);
+    const { results } = await env.DB.prepare("SELECT id, status, expires_at FROM qr_logins WHERE code = ?").bind(c).all();
+    const row = results && results[0];
+    if (!row) return json({ error: "Mã không đúng — kiểm tra lại." }, 404, request, env);
+    if (row.expires_at < now) return json({ error: "Mã đã hết hạn — tạo mã mới." }, 410, request, env);
+    if (row.status !== "pending") return json({ error: "Mã này đã được dùng." }, 409, request, env);
+    await env.DB.prepare("UPDATE qr_logins SET user_id = ?, status = 'approved' WHERE id = ?").bind(auth.user.id, row.id).run();
+    return json({ success: true }, 200, request, env);
+  }
+
+  // Thiết bị MỚI poll chờ duyệt
+  if (url.pathname === "/auth/qr/poll") {
+    const c = String(url.searchParams.get("code") || "").trim().toUpperCase();
+    if (!c) return json({ error: "Thiếu mã" }, 400, request, env);
+    const { results } = await env.DB.prepare("SELECT id, user_id, status, expires_at FROM qr_logins WHERE code = ?").bind(c).all();
+    const row = results && results[0];
+    if (!row) return json({ success: false, status: "invalid" }, 200, request, env);
+    if (row.expires_at < now) return json({ success: false, status: "expired" }, 200, request, env);
+    if (row.status !== "approved" || !row.user_id) return json({ success: false, status: "pending" }, 200, request, env);
+    // Đã duyệt → cấp session như login thường, thu hồi mã (dùng 1 lần)
+    await env.DB.prepare("UPDATE qr_logins SET status = 'consumed' WHERE id = ?").bind(row.id).run();
+    let user = null;
+    try {
+      const r = await env.DB.prepare("SELECT id, username, email, display_name, avatar_url, role, email_verified, banned, plan FROM users WHERE id = ?").bind(row.user_id).all();
+      user = (r.results || [])[0] || null;
+    } catch {
+      const r2 = await env.DB.prepare("SELECT id, username, email, display_name, avatar_url, role, email_verified, banned FROM users WHERE id = ?").bind(row.user_id).all();
+      user = (r2.results || [])[0] || null;
+    }
+    if (!user || user.banned) return json({ success: false, status: "invalid" }, 200, request, env);
+    if (!user.plan) user.plan = "standard";
+    const token = generateJWT(user.id, env);
+    const expires = Date.now() + 30 * 24 * 3600 * 1000;
+    try {
+      await env.DB.prepare("INSERT INTO sessions (user_id, token, expires_at, user_agent) VALUES (?, ?, ?, ?)").bind(user.id, token, expires, ("QR:" + (request.headers.get("User-Agent") || "")).slice(0, 160)).run();
+    } catch {
+      await env.DB.prepare("INSERT INTO sessions (user_id, token, expires_at) VALUES (?, ?, ?)").bind(user.id, token, expires).run();
+    }
+    try { await env.DB.prepare("INSERT INTO analytics (event, user_id, data) VALUES ('login_qr', ?, '{}')").bind(user.id).run(); } catch {}
+    return json({ success: true, token, user }, 200, request, env);
+  }
+
+  return json({ error: "Not found" }, 404, request, env);
 }
 
 // ========== RATING ==========

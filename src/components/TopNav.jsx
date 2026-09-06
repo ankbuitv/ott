@@ -32,30 +32,31 @@ function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, s
   const startVoice = async () => {
     if (listening) return;
     setListening(true);
-    setVoiceMsg('Đang nghe... nói tên kênh, VD: "mở VTV1"');
+    setVoiceMsg(t('voice.listening'));
     try {
       const text = await listenOnce('vi-VN');
-      setVoiceMsg(`Nghe: "${text}"`);
+      setVoiceMsg(t('voice.heard', { text }));
       const cmd = parseVoiceCommand(text);
-      if (cmd.action === 'tab' && setActiveTab) {
+      if (cmd.type === 'tab' && setActiveTab) {
         setActiveTab(cmd.tab);
-        setVoiceMsg(`Đã chuyển: ${cmd.tab}`);
-      } else if (cmd.action === 'channel') {
+        const tabLabel = { channels: t('nav.home'), epg: 'EPG', movies: t('nav.movies'), shorts: t('nav.shortcuts'), plans: t('nav.plans'), favorites: t('app.favorites'), history: t('voice.history') }[cmd.tab] || cmd.tab;
+        setVoiceMsg(t('voice.switched', { tab: tabLabel }));
+      } else if (cmd.type === 'open-channel') {
         const ch = findChannelByVoice(channels || [], cmd.query);
         if (ch && onSelectChannel) {
           setSearchQuery(''); setSearchFocused(false);
           onSelectChannel(ch);
-          setVoiceMsg(`Đang mở: ${ch.name}`);
+          setVoiceMsg(t('voice.opening', { name: ch.name }));
         } else {
-          setVoiceMsg(`Không tìm thấy kênh "${cmd.query}"`);
+          setVoiceMsg(t('voice.not_found', { q: cmd.query }));
         }
       } else {
-        setSearchQuery(cmd.query);
+        setSearchQuery(cmd.query || '');
         setSearchFocused(true);
-        if (setActiveTab) setActiveTab('home');
+        if (setActiveTab) setActiveTab('channels');
       }
     } catch (e) {
-      setVoiceMsg(e?.message === 'NO_MIC' ? 'Trình duyệt chưa cấp quyền micro' : (e?.message === 'NO_SR' ? 'Trình duyệt không hỗ trợ nhận diện giọng nói' : 'Không nghe rõ, thử lại nhé'));
+      setVoiceMsg(e?.message === 'NO_MIC' ? t('voice.no_mic') : (e?.message === 'NO_SR' ? t('voice.no_sr') : t('voice.retry')));
     } finally {
       setListening(false);
       setTimeout(() => setVoiceMsg(''), 4000);
@@ -101,11 +102,11 @@ function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, s
   const togglePush = async () => {
     if (pushOn) {
       const r = await disablePush();
-      if (r.ok) { setPushOn(false); alert('Đã tắt thông báo đẩy.'); }
+      if (r.ok) { setPushOn(false); alert(t('voice.push_off')); }
     } else {
       const r = await enablePush();
       if (r.ok) setPushOn(true);
-      else alert(r.reason || 'Không bật được push.');
+      else alert(r.reason || t('voice.push_fail'));
     }
   };
 
@@ -168,7 +169,7 @@ function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, s
               onFocus={() => setSearchFocused(true)}
               onKeyDown={e => { if (e.key === 'Escape') setSearchFocused(false); }}
             />
-            <button onClick={startVoice} title="Tìm bằng giọng nói (VD: mở VTV1)" className={`shrink-0 p-1.5 rounded-full transition-all ${listening ? 'bg-red-600 text-white animate-pulse' : 'text-stone-400 hover:text-white hover:bg-white/10'}`}>
+            <button onClick={startVoice} title={t('voice.title')} className={`shrink-0 p-1.5 rounded-full transition-all ${listening ? 'bg-red-600 text-white animate-pulse' : 'text-stone-400 hover:text-white hover:bg-white/10'}`}>
               <Mic className="w-3.5 h-3.5" />
             </button>
             {searchingMovies ? (
@@ -340,7 +341,7 @@ function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, s
 
         {isAuthenticated && currentProfile ? (
           <div className="flex items-center gap-2">
-            <div className="relative cursor-pointer" title={`Gói ${(effectivePlan || 'standard').toUpperCase()}`}>
+            <div className="relative cursor-pointer" title={`${t('voice.plan')}: ${(effectivePlan || 'standard').toUpperCase()}`}>
               <div className={`w-9 h-9 rounded-full bg-gradient-to-br from-amber-500 to-[#f36f21] flex items-center justify-center font-bold text-white text-sm ${effectivePlan === 'vip' ? 'ring-2 ring-amber-300 shadow-[0_0_12px_rgba(251,191,36,.7)]' : effectivePlan === 'recreational' ? 'ring-2 ring-purple-400 shadow-[0_0_10px_rgba(192,132,252,.6)]' : 'ring-1 ring-white/20'}`}>
                 {currentProfile.name[0].toUpperCase()}
               </div>

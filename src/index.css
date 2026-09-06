@@ -248,9 +248,27 @@ input[type="range"]::-moz-range-thumb {
 .anim-zoom-fade { animation: zoomFade .5s ease both; }
 .anim-glow { animation: glowPulse 2.4s ease-in-out infinite; }
 .anim-float { animation: floatY 3.5s ease-in-out infinite; }
-/* Chuẩn cho mọi modal: nền mờ dần + hộp thoại nảy lên */
-.modal-backdrop { animation: fadeIn .25s ease both; }
-.modal-panel { animation: popIn .36s cubic-bezier(.22,1.25,.36,1) both; }
+/* Chuẩn cho mọi modal/popup: nền tối blur + hộp thoại nảy lên */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 120;
+  background: rgba(2,2,4,.74);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 1rem; overflow-y: auto;
+  animation: fadeIn .25s ease both;
+}
+.modal-panel {
+  position: relative;
+  background: linear-gradient(180deg, #191a22 0%, #101116 100%);
+  border: 1px solid rgba(255,255,255,.11);
+  border-radius: 1.4rem;
+  box-shadow: 0 30px 80px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.07);
+  animation: popIn .36s cubic-bezier(.22,1.25,.36,1) both;
+  max-height: 92vh;
+}
+/* Tia quét khung QR */
+@keyframes scanY { 0%, 100% { transform: translateY(4px); opacity: 1; } 50% { transform: translateY(196px); opacity: .55; } }
+.anim-scan { animation: scanY 2.2s ease-in-out infinite; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

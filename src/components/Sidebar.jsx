@@ -1,6 +1,7 @@
 import React from 'react';
 import { useProfile } from '../contexts/ProfileContext';
 import { useI18n } from '../contexts/I18nContext';
+import { useAuth } from '../contexts/AuthContext';
 
 function HomeIcon() { return <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><path d="m9 9 5 12 1.774-5.226L21 14 9 3l-2 5.226z"/></svg>; }
 function CalendarIcon() { return <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>; }
@@ -14,6 +15,8 @@ function SettingsIcon() { return <svg className="w-4 h-4" fill="none" stroke="cu
 export default function Sidebar({ activeTab, setActiveTab, onShowSettings, onShowAdmin }) {
   const { currentProfile } = useProfile();
   const { t } = useI18n();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
 
   // Tạo navItems bên trong component để dùng được t()
   const navItems = [
@@ -59,7 +62,7 @@ export default function Sidebar({ activeTab, setActiveTab, onShowSettings, onSho
             <SettingsIcon />
           </button>
         )}
-        {onShowAdmin && (
+        {onShowAdmin && isAdmin && (
           <button
             onClick={onShowAdmin}
             className="nav-btn w-10 h-10 hover:bg-white/5 rounded-full flex items-center justify-center text-stone-500 hover:text-white transition-all"

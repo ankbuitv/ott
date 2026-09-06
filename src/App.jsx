@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { addWatch } from './services/achievements';
+import { addWatch, badgeName, badgeDesc } from './services/achievements';
 import { initNavigation } from '@noriginmedia/react-spatial-navigation';
 
 import Sidebar from './components/Sidebar';
@@ -8,7 +8,7 @@ import AuthModal from './components/AuthModal';
 
 // Khách vãng lai (chưa đăng nhập): vẫn vào web + xem kênh VN bình thường (mức Standard).
 // Xem chương trình đã phát (catchup), phim, hoặc kênh vượt gói => mới yêu cầu đăng nhập.
-const GUEST_USER = { id: 0, username: 'khach', display_name: 'Khách', role: 'guest', plan: '', guest: true };
+const GUEST_USER = { id: 0, username: 'khach', display_name: 'Guest', role: 'guest', plan: '', guest: true };
 import { planAllows } from './services/plans';
 import TopNav from './components/TopNav';
 import VideoPlayer from './components/VideoPlayer';
@@ -50,7 +50,7 @@ function AppContent() {
   const { addToast } = useToast();
   const { user, isAuthenticated, token, effectivePlan } = useAuth();
   const { currentProfile } = useProfile();
-  const { hasPicked, resetPicker, t } = useI18n();
+  const { hasPicked, resetPicker, t, lang } = useI18n();
   const guestMode = !isAuthenticated || !user;
   const effUser = guestMode ? GUEST_USER : user;
   const effPlan = guestMode ? 'standard' : (effectivePlan || user?.plan || 'standard');
@@ -197,7 +197,7 @@ function AppContent() {
 
   const openChannel = useCallback(async (channel, { catchup = null, at = 0 } = {}) => {
     if (!channel) return;
-    if (inBedtime()) { addToast('🌙 Đang giờ ngủ của bé — tắt trong Cài đặt để xem tiếp', 'error'); return; }
+    if (inBedtime()) { addToast(t('app.bedtime_block'), 'error'); return; }
     setMiniPlayer(false);
     try {
       const url = await requestStreamAccess(channel, { at });
@@ -210,7 +210,7 @@ function AppContent() {
       recordWatchHistory(channel.channel_id);
       try {
         const nb = addWatch(0, channel.channel_id);
-        nb.forEach(b => addToast(`🏆 Huy hiệu mới: ${b.name} — ${b.desc}`, 'success'));
+        nb.forEach(b => addToast(t('app.new_badge', { n: badgeName(b, lang), d: badgeDesc(b, lang) }), 'success'));
       } catch {}
       setWatchHistory(prev => {
         const updated = prev.filter(h => h.channel_id !== channel.channel_id);
@@ -224,13 +224,13 @@ function AppContent() {
       const code = e?.code || String(e?.message || '');
       if (code === 'LOGIN_REQUIRED') {
         promptLogin(catchup
-          ? 'Xem chương trình đã phát cần đăng nhập — miễn phí nhé!'
-          : `"${channel.name}" cần đăng nhập để xem — đăng ký miễn phí nhé!`);
+          ? t('app.need_login_catchup')
+          : t('app.need_login_ch', { name: channel.name }));
       } else if (code === 'PLAN_REQUIRED') {
-        addToast(`"${channel.name}" thuộc gói cao hơn — vào Mua Gói kích hoạt (tạm miễn phí)`, 'error');
+        addToast(t('app.plan_needed', { name: channel.name }), 'error');
         setActiveTab('plans');
       } else if (code !== 'NO_SESSION') {
-        addToast('Không tải được luồng kênh — thử lại nhé', 'error');
+        addToast(t('app.stream_fail'), 'error');
       }
     }
   }, [addToast, promptLogin, t, settings.kidBedtimeEnabled, settings.kidBedtimeStart, settings.kidBedtimeEnd]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -238,11 +238,11 @@ function AppContent() {
   const handleSelectChannel = useCallback((channel) => {
     // GATING phía client (UX nhanh) — SERVER vẫn là nơi xác nhận cuối cùng (entitlement)
     if (channel && guestMode && !planAllows('standard', channel.group_title)) {
-      promptLogin(`"${channel.name}" cần đăng nhập để xem — đăng ký miễn phí nhé!`);
+      promptLogin(t('app.need_login_ch', { name: channel.name }));
       return;
     }
     if (channel && !guestMode && !planAllows(effPlan, channel.group_title)) {
-      addToast(`"${channel.name}" thuộc gói cao hơn — vào Mua Gói kích hoạt (tạm miễn phí)`, 'error');
+      addToast(t('app.plan_needed', { name: channel.name }), 'error');
       setActiveTab('plans');
       return;
     }
@@ -252,12 +252,12 @@ function AppContent() {
   const handlePlayCatchup = useCallback((channel, program) => {
     // Xem CHƯƠNG TRÌNH đã phát (catchup) => bắt buộc đăng nhập
     if (guestMode) {
-      promptLogin('Xem chương trình đã phát cần đăng nhập — miễn phí nhé!');
+      promptLogin(t('app.need_login_catchup'));
       return;
     }
     // Catchup cũng phải đúng gói của kênh đó
     if (!planAllows(effPlan, channel?.group_title)) {
-      addToast(`"${channel.name}" thuộc gói cao hơn — vào Mua Gói kích hoạt (tạm miễn phí)`, 'error');
+      addToast(t('app.plan_needed', { name: channel.name }), 'error');
       setActiveTab('plans');
       return;
     }
@@ -271,7 +271,7 @@ function AppContent() {
     const updatedFavs = await toggleFavoriteApi(channelId, !isFav);
     setFavoritesState(updatedFavs);
     saveFavs(updatedFavs);
-    addToast(isFav ? 'Đã bỏ yêu thích' : 'Đã thêm yêu thích', 'success');
+    addToast(isFav ? t('app.unfav') : t('app.faved'), 'success');
   }, [favorites, addToast]);
 
   const handleNextChannel = useCallback(() => {
@@ -299,7 +299,7 @@ function AppContent() {
     const iv = setInterval(() => {
       try {
         const nb = addWatch(30, currentChannel.channel_id);
-        nb.forEach(b => addToast(`🏆 Huy hiệu mới: ${b.name} — ${b.desc}`, 'success'));
+        nb.forEach(b => addToast(t('app.new_badge', { n: badgeName(b, lang), d: badgeDesc(b, lang) }), 'success'));
       } catch {}
     }, 30000);
     return () => clearInterval(iv);
@@ -311,6 +311,18 @@ function AppContent() {
     const epg = getEpgForChannel(ch.channel_id);
     setChannelInfoModal({ channel: ch, epgNow: epg.now, epgNext: epg.next, isFav: favorites.includes(ch.channel_id) });
   }, [getEpgForChannel, favorites]);
+
+  // Trang admin riêng: mở qua #admin (chỉ tài khoản admin)
+  useEffect(() => {
+    const check = () => {
+      try {
+        if (window.location.hash === '#admin' && user?.role === 'admin') setShowAdmin(true);
+      } catch {}
+    };
+    check();
+    window.addEventListener('hashchange', check);
+    return () => window.removeEventListener('hashchange', check);
+  }, [user]);
 
   useEffect(() => {
     window.__chrtv_select_channel = (ch) => handleSelectChannel(ch);
@@ -356,7 +368,7 @@ function AppContent() {
         <div className="flex flex-1 overflow-hidden">
           <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onShowSettings={() => setShowSettings(true)} onShowAdmin={() => setShowAdmin(true)} />
           <main className="flex-1 flex flex-col h-full overflow-y-auto pb-16 md:pb-0">
-            {showSettings ? <SettingsPage onClose={() => setShowSettings(false)} /> : <MoviesScreen openMovie={movieToOpen} onOpenMovieHandled={() => setMovieToOpen(null)} onRequireLogin={() => promptLogin('Đăng nhập để xem phim nhé — miễn phí!')} />}
+            {showSettings ? <SettingsPage onClose={() => setShowSettings(false)} /> : <MoviesScreen openMovie={movieToOpen} onOpenMovieHandled={() => setMovieToOpen(null)} onRequireLogin={() => promptLogin(t('app.need_login_movie'))} />}
           </main>
         </div>
       </div>
@@ -473,7 +485,7 @@ function AppContent() {
             allChannels={channels}
             epgLookup={getEpgForChannel}
             initialPartyRoom={deepPartyRoom}
-            currentUserName={currentProfile?.name || effUser?.display_name || effUser?.username || 'Khách'}
+            currentUserName={currentProfile?.name || effUser?.display_name || effUser?.username || t('app.guest')}
           />
         </div>
       )}
@@ -483,7 +495,7 @@ function AppContent() {
       )}
       <KeyboardShortcuts open={showKeyboardShortcuts} onClose={() => setShowKeyboardShortcuts(false)} />
       <AuthModal open={showAuth} onClose={() => setShowAuth(false)} />
-      {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
+      {showAdmin && user?.role === 'admin' && <AdminPanel onClose={() => { setShowAdmin(false); try { history.replaceState(null, '', location.pathname); } catch {} }} />}
       <OnboardingTour onLogin={isAuthenticated} />
     </div>
   );

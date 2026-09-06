@@ -32,7 +32,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
     onRequireLogin?.();
     return false;
   }, [isAuthenticated, onRequireLogin]);
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
 
   // Quốc gia người xem → poster/khối phim đổi theo vùng.
   // Lần đầu: đoán từ timezone; ngay sau đó /api/geo (Cloudflare geo theo IP) chốt lại.
@@ -201,20 +201,20 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
   // Lưu TMDB API key người dùng dán vào (lưu localStorage, dùng ngay)
   const saveTMDBKey = async () => {
     const k = keyInput.trim();
-    if (!k) { setKeyMsg({ ok: false, text: 'Chưa nhập key.' }); return; }
+    if (!k) { setKeyMsg({ ok: false, text: t('mv.key_empty') }); return; }
     setKeyChecking(true);
     setKeyMsg(null);
-    const v = await MovieAPI.verifyKey(k).catch(() => ({ ok: false, error: 'Lỗi mạng' }));
+    const v = await MovieAPI.verifyKey(k).catch(() => ({ ok: false, error: t('mv.net_err') }));
     setKeyChecking(false);
     if (v.ok) {
       setTMDBKey(k);
       setKeyInput('');
       setShowKeyBox(false);
-      setKeyMsg({ ok: true, text: '✅ Key hợp lệ! Đã lưu — tìm kiếm toàn bộ TMDB ngay bây giờ.' });
+      setKeyMsg({ ok: true, text: t('mv.key_ok') });
       setSearchNonce(n => n + 1); // ép tìm lại với key mới
       addToast(t('toast.tmdb_ok'), 'success');
     } else {
-      setKeyMsg({ ok: false, text: `❌ Key không hợp lệ (HTTP ${v.status || '?'}): ${v.status_message || v.error || 'thử key khác'}` });
+      setKeyMsg({ ok: false, text: t('mv.key_invalid', { s: v.status || '?', m: v.status_message || v.error || t('mv.key_try_other') }) });
     }
   };
 
@@ -243,8 +243,8 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
       <div className="h-full flex items-center justify-center p-8 text-center">
         <div>
           <div className="text-6xl mb-3">🔒</div>
-          <h2 className="text-2xl font-black mb-2">Nội dung bị giới hạn</h2>
-          <p className="text-sm text-stone-400">Hồ sơ trẻ em không thể truy cập khu vực Phim ảnh.</p>
+          <h2 className="text-2xl font-black mb-2">{t('mv.restricted')}</h2>
+          <p className="text-sm text-stone-400">{t('mv.kid_blocked')}</p>
         </div>
       </div>
     );
@@ -340,7 +340,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
           </div>
           <div className="flex items-center gap-2 text-[11px] text-stone-500 shrink-0 relative">
             <SlidersHorizontal className="w-3.5 h-3.5" />
-            <span className="hidden lg:inline">{catalog.length > 0 ? `${catalog.length.toLocaleString('vi-VN')} phim & TV show` : 'Đang nạp kho phim…'}</span>
+            <span className="hidden lg:inline">{catalog.length > 0 ? t('mv.n_titles', { n: catalog.length.toLocaleString(lang === 'vi' ? 'vi-VN' : 'en-US') }) : t('mv.loading_lib')}</span>
             {/* Chọn khu vực phim — mặc định tự theo vị trí địa lý của người xem */}
             <button
               onClick={() => setRegionOpen(s => !s)}
@@ -383,9 +383,9 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
             <button
               onClick={() => setShowKeyBox(s => !s)}
               className={`ml-1 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition-all ${isDefaultTMDBKey() ? 'border-amber-500/40 text-amber-400 hover:bg-amber-500/10' : 'border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10'}`}
-              title="Dán TMDB API key của bạn để tìm toàn bộ phim trên TMDB"
+              title={t('mv.key_title')}
             >
-              🔑 {isDefaultTMDBKey() ? 'Cài TMDB key' : 'Key TMDB ✓'}
+              🔑 {isDefaultTMDBKey() ? t('mv.key_setup') : t('mv.key_done')}
             </button>
           </div>
         </div>
@@ -396,13 +396,13 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 bg-amber-500/5 border border-amber-500/25 rounded-xl p-3">
               <div className="flex-1">
                 <div className="text-[11px] font-bold text-amber-400 mb-1">
-                  {isDefaultTMDBKey() ? '⚠️ Bạn đang dùng key mặc định — chỉ tìm được trong 68 phim có sẵn. Dán key TMDB thật để tìm TOÀN BỘ phim:' : 'Thay đổi TMDB API key (lưu trên trình duyệt này):'}
+                  {isDefaultTMDBKey() ? t('mv.key_warn') : t('mv.key_change')}
                 </div>
                 <input
                   type="text" value={keyInput}
                   onChange={e => { setKeyInput(e.target.value); setKeyMsg(null); }}
                   onKeyDown={e => { if (e.key === 'Enter') saveTMDBKey(); }}
-                  placeholder="Dán key TMDB vào đây (vd: 1a2b3c4d...)" 
+                  placeholder={t('mv.key_ph')} 
                   className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-lg text-xs text-white placeholder:text-stone-600 focus:outline-none focus:border-amber-500"
                 />
               </div>
@@ -411,13 +411,13 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
                 disabled={keyChecking}
                 className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-black text-xs font-black disabled:opacity-50 whitespace-nowrap"
               >
-                {keyChecking ? 'Đang kiểm tra…' : 'Lưu key & tìm lại'}
+                {keyChecking ? t('mv.key_checking') : t('mv.key_save')}
               </button>
             </div>
             {keyMsg && (
               <p className={`text-[11px] mt-1.5 ${keyMsg.ok ? 'text-emerald-400' : 'text-[#ff9a3d]'}`}>{keyMsg.text}</p>
             )}
-            <p className="text-[10px] text-stone-600 mt-1">Key miễn phí tại <span className="text-stone-500">themoviedb.org/settings/api</span> — dán vào đây, app lưu ngay trên trình duyệt bạn.</p>
+            <p className="text-[10px] text-stone-600 mt-1">{t('mv.key_free_at')} <span className="text-stone-500">themoviedb.org/settings/api</span> {t('mv.key_free_at2')}</p>
           </div>
         )}
 
@@ -454,13 +454,13 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
           {searchResults.length === 0 ? (
             <div className="text-center py-16">
               <Film className="w-12 h-12 text-stone-700 mx-auto mb-3" />
-              <p className="text-stone-500 text-sm">Không tìm thấy phim nào. Thử từ khóa khác.</p>
+              <p className="text-stone-500 text-sm">{t('mv.no_result')}</p>
               {isDefaultTMDBKey() && !showKeyBox && (
                 <button
                   onClick={() => setShowKeyBox(true)}
                   className="mt-4 px-4 py-2 rounded-lg bg-amber-500/15 border border-amber-500/40 text-amber-400 text-xs font-bold hover:bg-amber-500/25 transition"
                 >
-                  🔑 Dán TMDB API key để tìm toàn bộ phim trên TMDB
+                  🔑 {t('mv.key_cta')}
                 </button>
               )}
             </div>
@@ -474,11 +474,11 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
         <div className="pb-20 space-y-10 pt-6">
           {/* Tiếp tục xem phim (local) */}
           {movieHistory.length > 0 && (
-            <MovieRow title="⏪ Tiếp tục xem" items={movieHistory} gridCls={gridCls} onClick={openDetail} loading={false} />
+            <MovieRow title={`⏪ ${t('mv.continue')}`} items={movieHistory} gridCls={gridCls} onClick={openDetail} loading={false} />
           )}
           {/* Danh sách của tôi (My List) */}
           {myList.length > 0 && (
-            <MovieRow title="❤️ Danh sách của tôi" items={myList} gridCls={gridCls} onClick={openDetail} loading={false} />
+            <MovieRow title={`❤️ ${t('mv.my_list')}`} items={myList} gridCls={gridCls} onClick={openDetail} loading={false} />
           )}
           {/* Rows — nội dung đổi theo quốc gia người xem */}
           <MovieRow title={t('movies.row.trending')} items={rows.trending} gridCls={gridCls} onClick={openDetail} loading={loading} />
@@ -494,11 +494,11 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
           <section className="px-6 md:px-8">
             <div className="flex items-end justify-between mb-4">
               <div>
-                <p className="text-[10px] text-[#ff9a3d] font-bold uppercase tracking-widest mb-1">Thư viện</p>
+                <p className="text-[10px] text-[#ff9a3d] font-bold uppercase tracking-widest mb-1">{t('mv.library')}</p>
                 <h3 className="text-xl md:text-2xl font-black tracking-tight">
-                  {selectedGenre === 'all' ? 'Tất Cả Phim & TV Shows' : genres.find(g => String(g.id) === selectedGenre)?.name || 'Phim'}
+                  {selectedGenre === 'all' ? t('mv.all_titles') : genres.find(g => String(g.id) === selectedGenre)?.name || t('nav.movies')}
                 </h3>
-                <p className="text-xs text-stone-500 mt-1">{filteredCatalog.length.toLocaleString('vi-VN')} tựa đề</p>
+                <p className="text-xs text-stone-500 mt-1">{t('mv.n_titles2', { n: filteredCatalog.length.toLocaleString(lang === 'vi' ? 'vi-VN' : 'en-US') })}</p>
               </div>
             </div>
 
@@ -668,7 +668,7 @@ function MovieDetailModal({ movie, trailer, trailerLoading, onClose, onPlay, onM
               <div className="flex items-center gap-3 text-xs text-stone-400 mb-3 flex-wrap">
                 {movie.vote_average > 0 && <span className="text-amber-400 font-bold flex items-center gap-1"><Star className="w-3 h-3 fill-current" />{movie.vote_average.toFixed(1)}</span>}
                 {(movie.release_date || movie.first_air_date) && <span className="flex items-center gap-1"><Calendar className="w-3 h-3" />{movie.release_date || movie.first_air_date}</span>}
-                {movie.runtime > 0 && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{movie.runtime} phút</span>}
+                {movie.runtime > 0 && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{t('mv.n_min', { n: movie.runtime })}</span>}
                 {movie.media_type === 'tv' && <span className="flex items-center gap-1"><Tv className="w-3 h-3" /> TV Show</span>}
               </div>
               <p className="text-sm text-stone-300 leading-relaxed">{movie.overview}</p>
@@ -687,10 +687,10 @@ function MovieDetailModal({ movie, trailer, trailerLoading, onClose, onPlay, onM
               <button
                 onClick={toggleList}
                 className={`px-4 py-3 font-bold rounded-xl flex items-center gap-2 border transition ${inList ? 'bg-[#f36f21]/20 text-[#ff9a3d] border-[#f36f21]/40' : 'bg-white/5 text-stone-300 border-white/10 hover:bg-white/10'}`}
-                title={inList ? 'Bỏ khỏi Danh sách của tôi' : 'Thêm vào Danh sách của tôi'}
+                title={inList ? t('mv.remove_list') : t('mv.add_list')}
               >
                 {inList ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-                {inList ? 'Đang theo dõi' : 'My List'}
+                {inList ? t('mv.following') : 'My List'}
               </button>
             </div>
             {!trailer && !trailerLoading && (
@@ -698,7 +698,7 @@ function MovieDetailModal({ movie, trailer, trailerLoading, onClose, onPlay, onM
                 onClick={onClose}
                 className="w-full px-6 py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 text-stone-300 font-semibold rounded-xl transition"
               >
-                Quay lại
+                {t('common.back')}
               </button>
             )}
           </div>
@@ -706,7 +706,7 @@ function MovieDetailModal({ movie, trailer, trailerLoading, onClose, onPlay, onM
           {/* Cast */}
           {cast.length > 0 && (
             <div className="mt-6">
-              <h4 className="text-[10px] text-stone-500 font-bold uppercase tracking-widest mb-2">Diễn viên</h4>
+              <h4 className="text-[10px] text-stone-500 font-bold uppercase tracking-widest mb-2">{t('mv.cast')}</h4>
               <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-none">
                 {cast.map((c) => (
                   <button key={`${c.id}-${c.credit_id}`} onClick={() => { c.id && getPerson(c.id).then((p) => setPerson(p)).catch(() => {}); }} className="w-20 shrink-0 text-center group">
@@ -727,7 +727,7 @@ function MovieDetailModal({ movie, trailer, trailerLoading, onClose, onPlay, onM
           {/* Collection (franchise) */}
           {collection && (
             <div className="mt-6">
-              <h4 className="text-[10px] text-stone-500 font-bold uppercase tracking-widest mb-2">📚 Thuộc series: {movie.belongs_to_collection?.name}</h4>
+              <h4 className="text-[10px] text-stone-500 font-bold uppercase tracking-widest mb-2">📚 {t('mv.part_of', { name: movie.belongs_to_collection?.name })}</h4>
               <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-none">
                 {collection.parts.filter((m) => m.poster_path).sort((a, b) => (a.release_date || '').localeCompare(b.release_date || '')).map((m) => (
                   <button key={m.id} onClick={() => onMovieChange?.({ ...m, media_type: 'movie', overview: m.overview || '' })} className="w-24 shrink-0 group">
@@ -742,7 +742,7 @@ function MovieDetailModal({ movie, trailer, trailerLoading, onClose, onPlay, onM
           {/* Recommendations */}
           {recs.length > 0 && (
             <div className="mt-6">
-              <h4 className="text-[10px] text-stone-500 font-bold uppercase tracking-widest mb-2">Có thể bạn cũng thích</h4>
+              <h4 className="text-[10px] text-stone-500 font-bold uppercase tracking-widest mb-2">{t('mv.similar')}</h4>
               <div className="flex gap-2.5 overflow-x-auto pb-2 scrollbar-none">
                 {recs.map((m) => (
                   <button key={`${m.media_type || 'movie'}-${m.id}`} onClick={() => onMovieChange?.({ ...m, media_type: m.media_type || (m.title ? 'movie' : 'tv'), overview: m.overview || '' })} className="w-24 shrink-0 group">
@@ -791,15 +791,15 @@ function PersonModal({ person, onClose, onMovieChange }) {
             </button>
             <h2 className="text-2xl font-black tracking-tight mb-1">{person.name}</h2>
             <p className="text-[11px] text-stone-500 mb-2">
-              {person.known_for_department === 'Acting' ? 'Diễn viên' : person.known_for_department || 'Nghệ sĩ'}
-              {person.birthday && ` · sinh ${person.birthday}`}
+              {person.known_for_department === 'Acting' ? t('mv.actor') : person.known_for_department || t('mv.artist')}
+              {person.birthday && t('mv.born', { d: person.birthday })}
               {person.place_of_birth && ` · ${person.place_of_birth}`}
             </p>
-            <p className="text-xs text-stone-300 leading-relaxed line-clamp-6">{person.biography || 'Chưa có tiểu sử.'}</p>
+            <p className="text-xs text-stone-300 leading-relaxed line-clamp-6">{person.biography || t('mv.no_bio')}</p>
           </div>
         </div>
         <div className="px-6 pb-6">
-          <h4 className="text-[10px] text-stone-500 font-bold uppercase tracking-widest mb-2">Phim đã tham gia</h4>
+          <h4 className="text-[10px] text-stone-500 font-bold uppercase tracking-widest mb-2">{t('mv.filmography')}</h4>
           {credits.length === 0 ? (
             <p className="text-[11px] text-stone-500">Đang tải…</p>
           ) : (

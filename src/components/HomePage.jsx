@@ -47,13 +47,13 @@ const ChannelGridCard = React.memo(function ChannelGridCard({ ch, epg, onSelect,
         {(onPlayCatchup || onShowInfo) && (
           <span className="absolute bottom-2 left-2 right-2 z-20 hidden group-hover:flex items-center justify-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
             {onPlayCatchup && epg?.prev && (
-              <span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); onPlayCatchup(ch, epg.prev); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); onPlayCatchup(ch, epg.prev); } }} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-black/70 backdrop-blur text-[9px] font-bold text-cyan-300 hover:bg-cyan-600 hover:text-white transition-colors" title="Xem lại chương trình trước">
-                <History className="w-3 h-3" /> Xem lại
+              <span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); onPlayCatchup(ch, epg.prev); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); onPlayCatchup(ch, epg.prev); } }} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-black/70 backdrop-blur text-[9px] font-bold text-cyan-300 hover:bg-cyan-600 hover:text-white transition-colors" title={t('home.quick_replay')}>
+                <History className="w-3 h-3" /> {t('epg.back')}
               </span>
             )}
             {onShowInfo && (
-              <span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); onShowInfo(ch); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); onShowInfo(ch); } }} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-black/70 backdrop-blur text-[9px] font-bold text-slate-300 hover:bg-slate-600 hover:text-white transition-colors" title="Chi tiết kênh">
-                <Info className="w-3 h-3" /> Chi tiết
+              <span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); onShowInfo(ch); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); onShowInfo(ch); } }} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-black/70 backdrop-blur text-[9px] font-bold text-slate-300 hover:bg-slate-600 hover:text-white transition-colors" title={t('home.quick_info')}>
+                <Info className="w-3 h-3" /> {t('home.quick_info_btn')}
               </span>
             )}
           </span>
@@ -68,7 +68,7 @@ const ChannelGridCard = React.memo(function ChannelGridCard({ ch, epg, onSelect,
             onClick={(e) => { e.stopPropagation(); onToggleFavorite(ch.channel_id); }}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); onToggleFavorite(ch.channel_id); } }}
             className="absolute top-2 right-2 z-20 p-1.5 rounded-full bg-black/60 backdrop-blur hover:bg-black/80 transition-colors"
-            title="Yêu thích"
+            title={t('app.favorites')}
           >
             <Heart className={`w-3.5 h-3.5 ${isFav ? 'fill-[#f36f21] text-[#f36f21]' : 'text-slate-400'}`} />
           </span>
@@ -273,7 +273,7 @@ export default function HomePage({
                 className="flex items-center gap-2 bg-white/10 hover:bg-white/15 backdrop-blur text-white font-bold text-[14px] px-6 py-3 rounded-2xl border border-white/15 transition-all active:scale-95"
               >
                 <Heart className={`w-4 h-4 ${favSet.has(heroCh.channel_id) ? 'fill-[#f36f21] text-[#f36f21]' : ''}`} />
-                {favSet.has(heroCh.channel_id) ? 'Đã thích' : t('app.favorites')}
+                {favSet.has(heroCh.channel_id) ? t('home.liked') : t('app.favorites')}
               </button>
             </div>
           </div>
@@ -281,10 +281,10 @@ export default function HomePage({
           {/* Mũi tên chuyển slide */}
           {heroChannels.length > 1 && (
             <>
-              <button onClick={() => setHeroIdx((heroIdx - 1 + heroChannels.length) % heroChannels.length)} className="absolute left-3 top-1/2 -translate-y-1/2 z-20 p-2 rounded-full bg-black/40 hover:bg-black/70 text-white transition-all" aria-label="Trước">
+              <button onClick={() => setHeroIdx((heroIdx - 1 + heroChannels.length) % heroChannels.length)} className="absolute left-3 top-1/2 -translate-y-1/2 z-20 p-2 rounded-full bg-black/40 hover:bg-black/70 text-white transition-all" aria-label={t('home.prev')}>
                 <ChevronLeft className="w-5 h-5" />
               </button>
-              <button onClick={() => setHeroIdx((heroIdx + 1) % heroChannels.length)} className="absolute right-3 top-1/2 -translate-y-1/2 z-20 p-2 rounded-full bg-black/40 hover:bg-black/70 text-white transition-all" aria-label="Sau">
+              <button onClick={() => setHeroIdx((heroIdx + 1) % heroChannels.length)} className="absolute right-3 top-1/2 -translate-y-1/2 z-20 p-2 rounded-full bg-black/40 hover:bg-black/70 text-white transition-all" aria-label={t('home.next')}>
                 <ChevronRight className="w-5 h-5" />
               </button>
               <div className="absolute right-5 bottom-4 z-20 flex items-center gap-2">
@@ -307,12 +307,12 @@ export default function HomePage({
       {/* ===== LỌC THỂ LOẠI (pill) ===== */}
       <div className="sticky top-0 z-30 bg-[#0b0b0d]/90 backdrop-blur-md border-b border-white/[0.06] mt-4">
         <div className="max-w-[1400px] mx-auto px-5 md:px-8 py-3 flex items-center gap-2 overflow-x-auto scrollbar-none">
-          <span className="shrink-0 flex items-center gap-1 pl-1 pr-2 text-stone-500" title="Sắp xếp kênh">
+          <span className="shrink-0 flex items-center gap-1 pl-1 pr-2 text-stone-500" title={t('home.sort')}>
             <ArrowDownAZ className="w-4 h-4" />
             <select value={sortMode} onChange={e => changeSort(e.target.value)} className="bg-white/[0.06] hover:bg-white/[0.12] text-stone-200 text-[12px] font-bold px-2.5 py-2 rounded-full border-none outline-none cursor-pointer">
-              <option value="default">Mặc định</option>
+              <option value="default">{t('home.sort_default')}</option>
               <option value="az">A → Z</option>
-              <option value="live">Đang phát trước</option>
+              <option value="live">{t('home.sort_live')}</option>
             </select>
           </span>
           {(categories || []).map(cat => {
@@ -341,14 +341,14 @@ export default function HomePage({
           <section className="anim-fade-up">
             <div className="flex items-end justify-between mb-4">
               <div>
-                <p className="text-[10px] text-[#ff9a3d] font-black uppercase tracking-widest mb-1">Tìm kiếm</p>
-                <h2 className="text-[20px] font-extrabold tracking-tight">"{searchQuery.trim()}" — {searchResults.length} kênh</h2>
+                <p className="text-[10px] text-[#ff9a3d] font-black uppercase tracking-widest mb-1">{t('home.searching')}</p>
+                <h2 className="text-[20px] font-extrabold tracking-tight">"{searchQuery.trim()}" — {t('home.n_channels', { n: searchResults.length })}</h2>
               </div>
             </div>
             {searchResults.length === 0 ? (
               <div className="text-center py-14 bg-white/[0.02] rounded-3xl border border-white/[0.05]">
                 <SearchX className="w-10 h-10 text-stone-600 mx-auto mb-3" />
-                <p className="text-sm text-stone-400">Không tìm thấy kênh nào khớp.</p>
+                <p className="text-sm text-stone-400">{t('home.no_match')}</p>
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3.5">
@@ -365,7 +365,7 @@ export default function HomePage({
           <section className="anim-fade-up">
             <div className="flex items-end justify-between mb-4">
               <div>
-                <p className="text-[10px] text-[#ff9a3d] font-black uppercase tracking-widest mb-1">Tiếp tục xem</p>
+                <p className="text-[10px] text-[#ff9a3d] font-black uppercase tracking-widest mb-1">{t('home.continue')}</p>
                 <h2 className="text-[20px] font-extrabold tracking-tight">{t('home.picked_for_you')}</h2>
               </div>
             </div>
@@ -382,8 +382,8 @@ export default function HomePage({
           <section className="anim-fade-up">
             <div className="flex items-end justify-between mb-4">
               <div>
-                <p className="text-[10px] text-[#ff9a3d] font-black uppercase tracking-widest mb-1">✨ Gợi ý cho bạn</p>
-                <h2 className="text-[20px] font-extrabold tracking-tight">Có thể bạn thích</h2>
+                <p className="text-[10px] text-[#ff9a3d] font-black uppercase tracking-widest mb-1">✨ {t('home.reco_for_you')}</p>
+                <h2 className="text-[20px] font-extrabold tracking-tight">{t('home.reco_title')}</h2>
               </div>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3.5">
@@ -408,7 +408,7 @@ export default function HomePage({
                   </span>
                   <div>
                     <h2 className="text-[20px] font-extrabold tracking-tight leading-tight">{groupName}</h2>
-                    <p className="text-[11px] text-stone-500">{groupChannels.length} {t('home.channels')}</p>
+                    <p className="text-[11px] text-stone-500">{t('home.n_channels', { n: groupChannels.length })}</p>
                   </div>
                 </div>
                 {groupChannels.length > PAGE_SIZE && (
@@ -416,7 +416,7 @@ export default function HomePage({
                     onClick={() => toggleExpand(groupName)}
                     className="flex items-center gap-1 px-3.5 py-2 rounded-full bg-white/[0.06] hover:bg-white/[0.12] text-[12px] font-bold text-stone-200 transition-all active:scale-95"
                   >
-                    {isOpen ? <>Thu gọn <ChevronUp className="w-3.5 h-3.5" /></> : <>Xem thêm ({groupChannels.length - PAGE_SIZE}) <ChevronDown className="w-3.5 h-3.5" /></>}
+                    {isOpen ? <>{t('home.collapse')} <ChevronUp className="w-3.5 h-3.5" /></> : <>{t('home.expand', { n: groupChannels.length - PAGE_SIZE })} <ChevronDown className="w-3.5 h-3.5" /></>}
                   </button>
                 )}
               </div>
@@ -433,7 +433,7 @@ export default function HomePage({
         {!searching && !isLoading && Object.keys(filteredGroups).length === 0 && (
           <div className="text-center py-16 bg-white/[0.02] rounded-3xl border border-white/[0.05]">
             <Radio className="w-10 h-10 text-stone-600 mx-auto mb-3" />
-            <p className="text-sm text-stone-400">Chưa có kênh nào trong mục này.</p>
+            <p className="text-sm text-stone-400">{t('home.empty_cat')}</p>
           </div>
         )}
       </div>

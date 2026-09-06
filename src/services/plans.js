@@ -9,21 +9,27 @@ export const SUPPORT_EMAIL = "support@ankb.qzz.io";
 export const PLANS = [
   {
     code: "standard", name: "STANDARD", rank: 1,
-    tagline: "Kênh Việt Nam", color: "#42a5f5",
+    tagline: "Kênh Việt Nam", tagline_en: "Vietnamese channels", color: "#42a5f5",
     allows: ["Kênh truyền hình Việt Nam (VTV, HTV, THVL, SCTV...)"],
+    allows_en: ["Vietnamese TV channels (VTV, HTV, THVL, SCTV...)"],
     not: ["Kênh Phim / Giải trí", "Kênh Thể thao & Quốc tế"],
+    not_en: ["Movie / Entertainment channels", "Sports & International channels"],
   },
   {
     code: "recreational", name: "RECREATIONAL", rank: 2,
-    tagline: "Kênh VN + Kênh Phim", color: "#ab47bc",
+    tagline: "Kênh VN + Kênh Phim", tagline_en: "VN + Movie channels", color: "#ab47bc",
     allows: ["Toàn bộ kênh Việt Nam", "Các kênh Phim / Giải trí (BOX, HBO, AXN...)"],
+    allows_en: ["All Vietnamese channels", "Movie / Entertainment channels (BOX, HBO, AXN...)"],
     not: ["Kênh Thể thao & Quốc tế"],
+    not_en: ["Sports & International channels"],
   },
   {
     code: "vip", name: "VIP", rank: 3,
-    tagline: "Xem hết — tất cả kênh", color: "#f36f21",
+    tagline: "Xem hết — tất cả kênh", tagline_en: "Everything — all channels", color: "#f36f21",
     allows: ["Toàn bộ kênh VN + Phim + Thể thao", "Kênh Quốc tế & đặc biệt", "Ưu tiên hỗ trợ 24/7"],
+    allows_en: ["All VN + Movies + Sports channels", "International & special channels", "Priority 24/7 support"],
     not: [],
+    not_en: [],
   },
 ];
 

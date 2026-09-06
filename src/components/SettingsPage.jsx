@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, RotateCcw, Eye, EyeOff, Globe, Database, Shield, Monitor, Trash2, Languages, Moon, Sun, MapPin, Info, Cpu, Leaf, Copy, CheckCircle2, ShieldOff, Palette, Tv, Trophy, Smartphone, LogOut } from 'lucide-react';
-import { BADGES, getStats, fmtHours } from '../services/achievements';
+import { Settings, RotateCcw, Eye, EyeOff, Globe, Database, Shield, Monitor, Trash2, Languages, Moon, Sun, MapPin, Info, Cpu, Leaf, Copy, CheckCircle2, ShieldOff, Palette, Tv, Trophy, Smartphone, LogOut, QrCode } from 'lucide-react';
+import QrScanner from './QrScanner';
+import { BADGES, getStats, fmtHours, badgeName, badgeDesc } from '../services/achievements';
 import { API_BASE } from '../services/config';
 import { useSettings } from '../contexts/SettingsContext';
 import { useDevice } from '../contexts/DeviceContext';
@@ -24,8 +25,7 @@ function Toggle({ on, onClick, label }) {
 }
 
 export default function SettingsPage({ onClose }) {
-  const { t } = useI18n();
-  const { lang, setLang, languages, detectedLang } = useI18n();
+  const { t, lang, setLang, languages, detectedLang } = useI18n();
   const { settings, updateSetting, resetSettings } = useSettings();
   const device = useDevice();
   const [pin, setPin] = useState('');
@@ -43,7 +43,9 @@ export default function SettingsPage({ onClose }) {
   const [achStats, setAchStats] = useState(null);
   const [copied, setCopied] = useState(false);
 
-  const { token } = useAuth();
+  const { token, user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  const [showQr, setShowQr] = useState(false);
   // Phiên đăng nhập
   const loadSessions = async () => {
     if (!token) return;
@@ -78,8 +80,8 @@ export default function SettingsPage({ onClose }) {
       const r = await fetch(`${API_BASE}/user/2fa/setup`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
       const d = await r.json();
       if (d.success) setTwoFaSetup(d);
-      else setTwoFaMsg(d.error || 'Lỗi tạo secret');
-    } catch { setTwoFaMsg('Lỗi kết nối server'); }
+      else setTwoFaMsg(d.error || t('settings.2fa_err'));
+    } catch { setTwoFaMsg(t('settings.2fa_net')); }
   };
 
   const confirm2Fa = async () => {
@@ -88,8 +90,8 @@ export default function SettingsPage({ onClose }) {
       const r = await fetch(`${API_BASE}/user/2fa/verify`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ code: twoFaCode }) });
       const d = await r.json();
       if (d.success) { setTwoFa({ loading: false, enabled: true }); setTwoFaSetup(null); setTwoFaCode(''); setTwoFaMsg('Đã bật 2FA! ✅'); }
-      else setTwoFaMsg(d.error || 'Mã sai');
-    } catch { setTwoFaMsg('Lỗi kết nối server'); }
+      else setTwoFaMsg(d.error || t('settings.2fa_wrong'));
+    } catch { setTwoFaMsg(t('settings.2fa_net')); }
   };
 
   const disable2Fa = async () => {
@@ -98,8 +100,8 @@ export default function SettingsPage({ onClose }) {
       const r = await fetch(`${API_BASE}/user/2fa/disable`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ code: twoFaCode }) });
       const d = await r.json();
       if (d.success) { setTwoFa({ loading: false, enabled: false }); setTwoFaCode(''); setTwoFaMsg('Đã tắt 2FA.'); }
-      else setTwoFaMsg(d.error || 'Mã sai');
-    } catch { setTwoFaMsg('Lỗi kết nối server'); }
+      else setTwoFaMsg(d.error || t('settings.2fa_wrong'));
+    } catch { setTwoFaMsg(t('settings.2fa_net')); }
   };
 
   const country = detectCountry();
@@ -123,6 +125,7 @@ export default function SettingsPage({ onClose }) {
 
   return (
     <div className="p-5 md:p-7 space-y-5 max-w-6xl mx-auto">
+      {showQr && token && <QrScanner onClose={() => setShowQr(false)} />}
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -140,7 +143,7 @@ export default function SettingsPage({ onClose }) {
 
       <div className="grid md:grid-cols-2 gap-5">
         {/* ===== NGÔN NGỮ ===== */}
-        <div className="bg-[#13151c] border border-slate-800/40 rounded-xl p-5 space-y-4 md:col-span-2">
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 space-y-4 md:col-span-2">
           <h3 className="text-sm font-bold text-white flex items-center gap-2"><Languages className="w-4 h-4 text-[#ff9a3d]" /> {t('settings.language')}</h3>
           <div className="flex flex-wrap gap-2.5">
             {languages.map(l => {
@@ -176,7 +179,7 @@ export default function SettingsPage({ onClose }) {
         </div>
 
         {/* ===== GIAO DIỆN ===== */}
-        <div className="bg-[#13151c] border border-slate-800/40 rounded-xl p-5 space-y-4">
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 space-y-4">
           <h3 className="text-sm font-bold text-white flex items-center gap-2"><Moon className="w-4 h-4 text-blue-400" /> {t('settings.appearance')}</h3>
           <div className="flex items-center justify-between">
             <span className="text-xs text-slate-400">{t('settings.theme')}</span>
@@ -196,12 +199,12 @@ export default function SettingsPage({ onClose }) {
             </div>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-xs text-slate-400 flex items-center gap-1.5"><Palette className="w-3.5 h-3.5 text-pink-400" /> Tông màu</span>
+            <span className="text-xs text-slate-400 flex items-center gap-1.5"><Palette className="w-3.5 h-3.5 text-pink-400" /> {t('settings.color_theme')}</span>
             <div className="flex gap-1.5">
               {[
-                { v: 'sunset', label: 'Cam', grad: 'linear-gradient(135deg,#f36f21,#ff9a3d)' },
-                { v: 'ocean', label: 'Biển', grad: 'linear-gradient(135deg,#0ea5e9,#6366f1)' },
-                { v: 'fire', label: 'Lửa', grad: 'linear-gradient(135deg,#ef4444,#f59e0b)' },
+                { v: 'sunset', label: t('settings.theme_sunset'), grad: 'linear-gradient(135deg,#f36f21,#ff9a3d)' },
+                { v: 'ocean', label: t('settings.theme_ocean'), grad: 'linear-gradient(135deg,#0ea5e9,#6366f1)' },
+                { v: 'fire', label: t('settings.theme_fire'), grad: 'linear-gradient(135deg,#ef4444,#f59e0b)' },
               ].map(o => (
                 <button key={o.v} onClick={() => updateSetting('colorTheme', o.v)} className={`flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg font-medium transition-all ${settings.colorTheme === o.v ? 'bg-slate-700 text-white ring-1 ring-[#f36f21]' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>
                   <span className="w-3.5 h-3.5 rounded-full" style={{ background: o.grad }}></span>{o.label}
@@ -211,15 +214,15 @@ export default function SettingsPage({ onClose }) {
           </div>
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-medium text-slate-200 flex items-center gap-1.5"><Tv className="w-3.5 h-3.5 text-cyan-400" /> Chế độ TV</p>
-              <p className="text-[10px] text-slate-500">Chữ to, nút to — dùng với điều khiển/từ xa</p>
+              <p className="text-xs font-medium text-slate-200 flex items-center gap-1.5"><Tv className="w-3.5 h-3.5 text-cyan-400" /> {t('settings.tv_mode')}</p>
+              <p className="text-[10px] text-slate-500">{t('settings.tv_mode_desc')}</p>
             </div>
             <Toggle on={!!settings.tvMode} onClick={() => updateSetting('tvMode', !settings.tvMode)} label="TV mode" />
           </div>
         </div>
 
         {/* ===== VIDEO ===== */}
-        <div className="bg-[#13151c] border border-slate-800/40 rounded-xl p-5 space-y-4">
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 space-y-4">
           <h3 className="text-sm font-bold text-white flex items-center gap-2"><Monitor className="w-4 h-4 text-blue-400" /> {t('settings.video')}</h3>
           <div className="flex items-center justify-between">
             <span className="text-xs text-slate-400">{t('settings.default_quality')}</span>
@@ -279,10 +282,17 @@ export default function SettingsPage({ onClose }) {
               <Toggle on={!!settings.gestureEnabled} onClick={() => updateSetting('gestureEnabled', !settings.gestureEnabled)} label={t('settings.gesture')} />
             </div>
           )}
+          <div className="flex items-center justify-between pt-1 border-t border-slate-800/40">
+            <div>
+              <p className="text-xs font-medium text-slate-200 flex items-center gap-1.5"><EyeOff className="w-3.5 h-3.5 text-purple-400" /> {t('settings.spoiler')}</p>
+              <p className="text-[10px] text-slate-500">{t('settings.spoiler_desc')}</p>
+            </div>
+            <Toggle on={!!settings.spoilerMask} onClick={() => updateSetting('spoilerMask', !settings.spoilerMask)} label="Spoiler mask" />
+          </div>
         </div>
 
         {/* ===== KIỂM SOÁT PHỤ HUYNH ===== */}
-        <div className="bg-[#13151c] border border-slate-800/40 rounded-xl p-5 space-y-4">
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 space-y-4">
           <h3 className="text-sm font-bold text-white flex items-center gap-2"><Shield className="w-4 h-4 text-amber-400" /> {t('settings.parental')}</h3>
           <div className="flex items-center justify-between">
             <span className="text-xs text-slate-400">{t('settings.parental_enable')}</span>
@@ -290,23 +300,23 @@ export default function SettingsPage({ onClose }) {
           </div>
           <div className="flex items-center justify-between py-2">
             <div>
-              <p className="text-xs font-medium text-slate-200 flex items-center gap-1.5"><Leaf className="w-3.5 h-3.5 text-emerald-400" /> Tiết kiệm data</p>
-              <p className="text-[10px] text-slate-500">Giới hạn độ phân giải video ≤ 480p (tiết kiệm 3G/4G)</p>
+              <p className="text-xs font-medium text-slate-200 flex items-center gap-1.5"><Leaf className="w-3.5 h-3.5 text-emerald-400" /> {t('settings.data_saver')}</p>
+              <p className="text-[10px] text-slate-500">{t('settings.data_saver_desc')}</p>
             </div>
             <Toggle on={!!settings.dataSaver} onClick={() => updateSetting('dataSaver', !settings.dataSaver)} label="Data saver" />
           </div>
           {settings.dataSaver && (
             <div className="flex items-center justify-between pl-1">
-              <span className="text-xs text-slate-400">Giới hạn chất lượng tối đa</span>
+              <span className="text-xs text-slate-400">{t('settings.data_cap')}</span>
               <select
                 value={settings.dataSaverCap || 480}
                 onChange={e => updateSetting('dataSaverCap', parseInt(e.target.value) || 480)}
                 className="bg-slate-800 text-xs text-slate-200 px-3 py-2 rounded-lg border border-slate-700"
               >
-                <option value={240}>240p (siêu tiết kiệm)</option>
-                <option value={360}>360p (tiết kiệm)</option>
-                <option value={480}>480p (cân bằng)</option>
-                <option value={720}>720p (vừa phải)</option>
+                <option value={240}>240p ({t('settings.cap_ultra')})</option>
+                <option value={360}>360p ({t('settings.cap_save')})</option>
+                <option value={480}>480p ({t('settings.cap_bal')})</option>
+                <option value={720}>720p ({t('settings.cap_mid')})</option>
               </select>
             </div>
           )}
@@ -330,16 +340,16 @@ export default function SettingsPage({ onClose }) {
           )}
           <div className="flex items-center justify-between pt-2 border-t border-slate-800/40">
             <div>
-              <p className="text-xs font-medium text-slate-200 flex items-center gap-1.5"><Moon className="w-3.5 h-3.5 text-indigo-400" /> 🌙 Giờ ngủ của bé</p>
-              <p className="text-[10px] text-slate-500">Trong khung giờ này app không mở kênh</p>
+              <p className="text-xs font-medium text-slate-200 flex items-center gap-1.5"><Moon className="w-3.5 h-3.5 text-indigo-400" /> 🌙 {t('settings.bedtime')}</p>
+              <p className="text-[10px] text-slate-500">{t('settings.bedtime_desc')}</p>
             </div>
             <Toggle on={!!settings.kidBedtimeEnabled} onClick={() => updateSetting('kidBedtimeEnabled', !settings.kidBedtimeEnabled)} label="Bedtime" />
           </div>
           {settings.kidBedtimeEnabled && (
             <div className="flex items-center gap-2 pl-1">
-              <span className="text-xs text-slate-400">Từ</span>
+              <span className="text-xs text-slate-400">{t('settings.from')}</span>
               <input type="time" value={settings.kidBedtimeStart || '21:00'} onChange={e => updateSetting('kidBedtimeStart', e.target.value)} className="bg-slate-800 text-xs text-slate-200 px-2 py-1.5 rounded-lg border border-slate-700" />
-              <span className="text-xs text-slate-400">đến</span>
+              <span className="text-xs text-slate-400">{t('settings.to')}</span>
               <input type="time" value={settings.kidBedtimeEnd || '06:00'} onChange={e => updateSetting('kidBedtimeEnd', e.target.value)} className="bg-slate-800 text-xs text-slate-200 px-2 py-1.5 rounded-lg border border-slate-700" />
             </div>
           )}
@@ -351,7 +361,7 @@ export default function SettingsPage({ onClose }) {
         </div>
 
         {/* ===== HẸN GIỜ TẮT ===== */}
-        <div className="bg-[#13151c] border border-slate-800/40 rounded-xl p-5 space-y-4">
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 space-y-4">
           <h3 className="text-sm font-bold text-white flex items-center gap-2"><Cpu className="w-4 h-4 text-purple-400" /> {t('settings.sleep_timer')}</h3>
           <div className="flex items-center justify-between">
             <span className="text-xs text-slate-400">{t('settings.sleep_timer')}</span>
@@ -375,9 +385,10 @@ export default function SettingsPage({ onClose }) {
           </div>
         </div>
 
-        {/* ===== EPG & NGUỒN ===== */}
-        <div className="bg-[#13151c] border border-slate-800/40 rounded-xl p-5 space-y-4">
-          <h3 className="text-sm font-bold text-white flex items-center gap-2"><Globe className="w-4 h-4 text-emerald-400" /> {t('settings.data_sources')}</h3>
+        {/* ===== EPG & NGUỒN (chỉ admin) ===== */}
+        {isAdmin && (
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 space-y-4">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2"><Globe className="w-4 h-4 text-emerald-400" /> {t('settings.data_sources')} <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">ADMIN</span></h3>
           <div className="space-y-2">
             <label className="text-xs text-slate-400 block">{t('settings.epg_url')}</label>
             <input
@@ -392,28 +403,29 @@ export default function SettingsPage({ onClose }) {
             <label className="text-xs text-slate-400 block"><Database className="w-3 h-3 inline mr-1" /> {t('settings.database_status')}</label>
             <p className="text-[10px] text-slate-600 leading-relaxed">{t('settings.database_desc')}</p>
           </div>
-          <div className="flex items-center justify-between pt-1 border-t border-slate-800/40">
-            <div>
-              <p className="text-xs font-medium text-slate-200 flex items-center gap-1.5"><EyeOff className="w-3.5 h-3.5 text-purple-400" /> Ẩn tỉ số (chống spoil)</p>
-              <p className="text-[10px] text-slate-500">Che tỉ số trận đấu trên lịch & player — xem lại không lo lộ kết quả</p>
-            </div>
-            <Toggle on={!!settings.spoilerMask} onClick={() => updateSetting('spoilerMask', !settings.spoilerMask)} label="Spoiler mask" />
-          </div>
         </div>
+        )}
 
         {/* ===== PHIÊN ĐĂNG NHẬP ===== */}
-        <div className="bg-[#13151c] border border-slate-800/40 rounded-xl p-5 space-y-3">
-          <h3 className="text-sm font-bold text-white flex items-center gap-2"><Smartphone className="w-4 h-4 text-cyan-400" /> Phiên đăng nhập</h3>
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-white flex items-center gap-2"><Smartphone className="w-4 h-4 text-cyan-400" /> {t('settings.sessions')}</h3>
+            {token && (
+              <button onClick={() => setShowQr(true)} className="flex items-center gap-1.5 px-3 py-1.5 grad-brand text-white text-[11px] font-bold rounded-xl shadow-md shadow-[#f36f21]/25">
+                <QrCode className="w-3.5 h-3.5" /> {t('settings.scan_qr')}
+              </button>
+            )}
+          </div>
           {!token ? (
-            <p className="text-[11px] text-slate-500">Đăng nhập để xem các thiết bị đang dùng tài khoản.</p>
+            <p className="text-[11px] text-slate-500">{t('settings.sess_login')}</p>
           ) : sessLoading ? (
-            <p className="text-xs text-slate-500">Đang tải…</p>
+            <p className="text-xs text-slate-500">{t('app.loading')}</p>
           ) : sessions.length === 0 ? (
-            <p className="text-[11px] text-slate-500">Không có phiên nào (server chưa cập nhật — cần deploy worker mới).</p>
+            <p className="text-[11px] text-slate-500">{t('settings.sess_empty')}</p>
           ) : (
             <div className="space-y-2 max-h-56 overflow-y-auto">
               {sessions.map(s => {
-                const ua = s.user_agent || 'Thiết bị không rõ';
+                const ua = s.user_agent || t('settings.sess_unknown');
                 const isCur = s.id === currentSessId;
                 const dev = /mobile|android|iphone/i.test(ua) ? '📱' : /tv|smarttv|tizen|webos/i.test(ua) ? '📺' : '💻';
                 return (
@@ -422,12 +434,12 @@ export default function SettingsPage({ onClose }) {
                     <div className="min-w-0 flex-1">
                       <p className="text-[11px] text-slate-200 truncate">{ua}</p>
                       <p className="text-[9px] text-slate-500">
-                        {isCur ? <span className="text-emerald-400 font-bold">● Thiết bị này · </span> : null}
-                        Hết hạn {new Date(s.expires_at).toLocaleDateString('vi-VN')}
+                        {isCur ? <span className="text-emerald-400 font-bold">● {t('settings.sess_this')} · </span> : null}
+                        {t('settings.sess_exp')} {new Date(s.expires_at).toLocaleDateString(lang === 'vi' ? 'vi-VN' : 'en-US')}
                       </p>
                     </div>
                     {!isCur && (
-                      <button onClick={() => revokeSession(s.id)} title="Đăng xuất thiết bị này" className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-950/40 transition-all">
+                      <button onClick={() => revokeSession(s.id)} title={t('settings.sess_revoke')} className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 hover:bg-red-950/40 transition-all">
                         <LogOut className="w-3.5 h-3.5" />
                       </button>
                     )}
@@ -439,21 +451,21 @@ export default function SettingsPage({ onClose }) {
         </div>
 
         {/* ===== HUY HIỆU ===== */}
-        <div className="bg-[#13151c] border border-slate-800/40 rounded-xl p-5 space-y-3">
-          <h3 className="text-sm font-bold text-white flex items-center gap-2"><Trophy className="w-4 h-4 text-amber-400" /> Huy hiệu của bạn</h3>
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 space-y-3">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2"><Trophy className="w-4 h-4 text-amber-400" /> {t('settings.ach_title')}</h3>
           {achStats && (
             <p className="text-[11px] text-slate-400">
-              Đã xem <span className="text-white font-bold">{fmtHours(achStats.seconds)}</span> · {achStats.channels.size} kênh · chuỗi {achStats.streak} ngày · {achStats.badges.length}/{BADGES.length} huy hiệu
+              {t('settings.ach_sum', { h: fmtHours(achStats.totalSec || 0, lang), c: (achStats.channels || []).length, s: achStats.streak || 0, g: (achStats.badges || []).length, n: BADGES.length })}
             </p>
           )}
           <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
             {BADGES.map(b => {
               const got = achStats?.badges?.includes(b.id);
               return (
-                <div key={b.id} title={`${b.name} — ${b.desc}`} className={`rounded-xl border px-2 py-2.5 text-center transition-all ${got ? 'border-amber-500/50 bg-amber-950/20' : 'border-slate-800/60 bg-black/20 opacity-45 grayscale'}`}>
+                <div key={b.id} title={`${badgeName(b, lang)} — ${badgeDesc(b, lang)}`} className={`rounded-xl border px-2 py-2.5 text-center transition-all ${got ? 'border-amber-500/50 bg-amber-950/20' : 'border-slate-800/60 bg-black/20 opacity-45 grayscale'}`}>
                   <div className="text-xl">{b.icon}</div>
-                  <div className="text-[9px] font-bold text-slate-200 mt-1 leading-tight">{b.name}</div>
-                  <div className="text-[8px] text-slate-500 leading-tight mt-0.5">{b.desc}</div>
+                  <div className="text-[9px] font-bold text-slate-200 mt-1 leading-tight">{badgeName(b, lang)}</div>
+                  <div className="text-[8px] text-slate-500 leading-tight mt-0.5">{badgeDesc(b, lang)}</div>
                 </div>
               );
             })}
@@ -461,10 +473,10 @@ export default function SettingsPage({ onClose }) {
         </div>
 
         {/* ===== BẢO MẬT (2FA) ===== */}
-        <div className="bg-[#13151c] border border-slate-800/40 rounded-xl p-5 space-y-3">
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 space-y-3">
           <h3 className="text-sm font-bold text-white flex items-center gap-2"><Shield className="w-4 h-4 text-emerald-400" /> Bảo mật — Xác thực 2 lớp (2FA)</h3>
           {twoFa.loading ? (
-            <p className="text-xs text-slate-500">Đang tải…</p>
+            <p className="text-xs text-slate-500">{t('app.loading')}</p>
           ) : !twoFa.enabled ? (
             !twoFaSetup ? (
               <div className="space-y-2">
@@ -503,7 +515,7 @@ export default function SettingsPage({ onClose }) {
         </div>
 
         {/* ===== VỀ APP + RESET ===== */}
-        <div className="bg-[#13151c] border border-slate-800/40 rounded-xl p-5 space-y-4">
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 space-y-4">
           <h3 className="text-sm font-bold text-white flex items-center gap-2"><Info className="w-4 h-4 text-slate-400" /> {t('settings.about')}</h3>
           <div className="flex items-center justify-between text-xs">
             <span className="text-slate-400">{t('settings.version')}</span>

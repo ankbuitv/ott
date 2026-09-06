@@ -87,7 +87,7 @@ export default function VideoPlayer({
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [reportMsg, setReportMsg] = useState('');
-  const [reportType, setReportType] = useState('Kênh không phát được');
+  const [reportType, setReportType] = useState('cant_play');
   const [netInfo, setNetInfo] = useState({ downlink: 0, rtt: 0, type: '' });
   const [partyTab, setPartyTab] = useState('party'); // 'party' | 'channel'
   const [showPollForm, setShowPollForm] = useState(false);
@@ -346,7 +346,7 @@ export default function VideoPlayer({
   const sendPoll = useCallback(() => {
     const q = pollDraft.q.trim();
     const opts = pollDraft.opts.map(o => o.trim()).filter(Boolean);
-    if (!q || opts.length < 2) { addToast('Nhập câu hỏi + ít nhất 2 lựa chọn', 'error'); return; }
+    if (!q || opts.length < 2) { addToast(t('vp.toast_poll_need'), 'error'); return; }
     sendPartyChat(POLL_PREFIX + JSON.stringify({ id: Date.now().toString(36), q: q.slice(0, 80), opts: opts.slice(0, 4).map(o => o.slice(0, 30)) }));
     setPollDraft({ q: '', opts: ['', ''] });
     setShowPollForm(false);
@@ -367,10 +367,11 @@ export default function VideoPlayer({
 
   const submitReport = useCallback(async () => {
     try {
-      await sendFeedback({ channel_id: channel?.channel_id, message: `[${reportType}] ${channel?.name || ''}${reportMsg ? ' — ' + reportMsg : ''}`.slice(0, 500), upstreamUA: displayUA, program: epgNow?.title || '' });
-      addToast('Đã gửi báo lỗi — cảm ơn bạn!', 'success');
+      const repLabels = { cant_play: 'Kênh không phát được', freeze: 'Đứng hình/giật', wrong_epg: 'Sai lịch phát sóng', poor_q: 'Chất lượng quá kém', bad_ua: 'Sai User-Agent', other: 'Khác' };
+      await sendFeedback({ channel_id: channel?.channel_id, message: `[${repLabels[reportType] || reportType}] ${channel?.name || ''}${reportMsg ? ' — ' + reportMsg : ''}`.slice(0, 500), upstreamUA: displayUA, program: epgNow?.title || '' });
+      addToast(t('vp.toast_rep_ok'), 'success');
       setShowReport(false); setReportMsg('');
-    } catch { addToast('Gửi báo lỗi thất bại — thử lại nhé', 'error'); }
+    } catch { addToast(t('vp.toast_rep_fail'), 'error'); }
     resetOverlayTimer();
   }, [channel, reportType, reportMsg, displayUA, epgNow, addToast, resetOverlayTimer]);
 
@@ -404,9 +405,9 @@ export default function VideoPlayer({
   });
 
   const toggleCast = useCallback(async () => {
-    addToast('Đang tìm thiết bị Cast…', 'info');
+    addToast(t('vp.toast_casting'), 'info');
     const ok = await loadCastSdk();
-    if (!ok || !window.cast?.framework) { addToast('Chromecast không khả dụng (cần Chrome)', 'error'); return; }
+    if (!ok || !window.cast?.framework) { addToast(t('vp.toast_cast_na'), 'error'); return; }
     try {
       const context = window.cast.framework.CastContext.getInstance();
       context.setOptions({
@@ -424,7 +425,7 @@ export default function VideoPlayer({
         await session.loadMedia(req);
         addToast(`Đang chiếu ${channel?.name || ''} lên TV 📺`, 'success');
       }
-    } catch (e) { addToast('Không kết nối được Cast', 'error'); }
+    } catch (e) { addToast(t('vp.toast_cast_fail'), 'error'); }
     resetOverlayTimer();
   }, [activeUrl, channel, addToast, resetOverlayTimer, isMpdUrl]);
 
@@ -433,7 +434,7 @@ export default function VideoPlayer({
     if (v && v.webkitShowPlaybackTargetPicker) {
       v.webkitShowPlaybackTargetPicker();
     } else {
-      addToast('AirPlay chỉ hỗ trợ trên Safari (iPhone/iPad/Mac)', 'info');
+      addToast(t('vp.toast_airplay'), 'info');
     }
     resetOverlayTimer();
   }, [addToast, resetOverlayTimer]);
@@ -710,7 +711,7 @@ export default function VideoPlayer({
   const seekBy = useCallback((sec) => {
     const v = videoRef.current;
     if (!v) return;
-    if (!isCatchupMode) { addToast && addToast('Tua nhanh/chậm chỉ dùng cho xem lại', 'info'); return; }
+    if (!isCatchupMode) { addToast && addToast(t('vp.toast_seek_catchup'), 'info'); return; }
     try { v.currentTime = Math.max(0, Math.min((v.duration || 1e9) - 1, v.currentTime + sec)); } catch {}
     resetOverlayTimer();
   }, [isCatchupMode, addToast, resetOverlayTimer]);
@@ -790,9 +791,9 @@ export default function VideoPlayer({
         addToast && addToast(newState ? 'Đã bật phụ đề' : 'Đã tắt phụ đề', 'info');
       } else if (p.setTextTrackVisibility) {
         // No text tracks available
-        addToast && addToast('Stream không có phụ đề', 'info');
+        addToast && addToast(t('vp.toast_no_sub'), 'info');
       }
-    } catch (e) { addToast && addToast('Stream không hỗ trợ phụ đề', 'info'); }
+    } catch (e) { addToast && addToast(t('vp.toast_sub_na'), 'info'); }
   };
 
   // Screenshot
@@ -811,9 +812,9 @@ export default function VideoPlayer({
         const a = document.createElement('a');
         a.href = url; a.download = `chrtv_${channel?.name || 'screenshot'}_${Date.now()}.png`;
         a.click(); URL.revokeObjectURL(url);
-        addToast && addToast('Đã chụp màn hình', 'success');
+        addToast && addToast(t('vp.toast_shot_ok'), 'success');
       }, 'image/png');
-    } catch (e) { addToast && addToast('Lỗi chụp màn hình', 'error'); }
+    } catch (e) { addToast && addToast(t('vp.toast_shot_fail'), 'error'); }
   }, [channel, addToast]);
 
   // PiP
@@ -823,12 +824,12 @@ export default function VideoPlayer({
       if (!v) return;
       if (document.pictureInPictureElement) {
         await document.exitPictureInPicture();
-        addToast && addToast('Đã tắt PiP', 'info');
+        addToast && addToast(t('vp.toast_pip_off'), 'info');
       } else if (v.requestPictureInPicture) {
         await v.requestPictureInPicture();
-        addToast && addToast('Đã bật Picture-in-Picture', 'info');
+        addToast && addToast(t('vp.toast_pip_on'), 'info');
       }
-    } catch (e) { addToast && addToast('PiP không hỗ trợ', 'error'); }
+    } catch (e) { addToast && addToast(t('vp.toast_pip_na'), 'error'); }
   }, [addToast]);
 
   // External player (Android)
@@ -836,9 +837,9 @@ export default function VideoPlayer({
     const url = activeUrl || streamUrl;
     if (device.os === 'android') {
       window.location.href = `intent://${url}#Intent;package=com.mxtech.videoplayer.ad;type=video;S.end;end`;
-      addToast && addToast('Đang mở bằng MX Player', 'info');
+      addToast && addToast(t('vp.toast_mx'), 'info');
     } else {
-      addToast && addToast('Chỉ hỗ trợ trên Android', 'info');
+      addToast && addToast(t('vp.toast_android'), 'info');
     }
   }, [activeUrl, streamUrl, device, addToast]);
 
@@ -1024,8 +1025,8 @@ export default function VideoPlayer({
       {mini && onMaximize && (
         <div data-mini-drag className="absolute top-0 left-0 right-0 z-50 flex items-center gap-2 px-3 py-2 bg-slate-900/95 border-b border-slate-700/40 cursor-move">
           <span className="text-sm">📌</span>
-          <span className="text-xs text-slate-200 font-semibold truncate flex-1">Mini: {channelName}</span>
-          <button onClick={onMaximize} className="px-2.5 py-1 bg-[#f36f21] hover:bg-[#ff9a3d] text-white text-[11px] font-bold rounded-lg flex items-center gap-1"><Maximize2 className="w-3 h-3" /> Mở lại</button>
+          <span className="text-xs text-slate-200 font-semibold truncate flex-1">{t('vp.mini_label')}: {channelName}</span>
+          <button onClick={onMaximize} className="px-2.5 py-1 bg-[#f36f21] hover:bg-[#ff9a3d] text-white text-[11px] font-bold rounded-lg flex items-center gap-1"><Maximize2 className="w-3 h-3" />{t('vp.reopen')}</button>
         </div>
       )}
       {/* Main Video */}
@@ -1050,7 +1051,7 @@ export default function VideoPlayer({
       {/* Radio / night layers */}
       {radioMode && (
         <div className="absolute inset-0 z-10 bg-gradient-to-br from-slate-900 via-cyan-950 to-slate-900 flex flex-col items-center justify-center pointer-events-none">
-          <HoldToUnlock onUnlock={() => setRadioMode(false)} icon={Headphones} label="giữ 2s để bật hình lại" buttonLabel="Bật hình lại" hint="Chế độ radio: chỉ nghe tiếng, tiết kiệm pin" />
+          <HoldToUnlock onUnlock={() => setRadioMode(false)} icon={Headphones} label={t('vp.hold_unhide')} buttonLabel={t('vp.unhide')} hint={t('vp.radio_hint')} />
           <div className="mt-4 flex items-center gap-1.5 justify-center">
             {[0, 1, 2, 3, 4, 5, 6].map(i => <div key={i} className="w-1.5 bg-cyan-400/70 rounded-full anim-eq" style={{ height: 16 + (i % 3) * 10, animationDelay: `${i * 0.12}s` }}></div>)}
           </div>
@@ -1063,7 +1064,7 @@ export default function VideoPlayer({
       {isBuffering && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 z-20">
           <div className="w-12 h-12 border-[3px] border-cyan-400 border-t-transparent rounded-full animate-spin"></div>
-          <span className="mt-2 text-xs text-slate-400 font-medium">Đang tải...</span>
+          <span className="mt-2 text-xs text-slate-400 font-medium">{t('app.loading')}</span>
         </div>
       )}
 
@@ -1071,7 +1072,7 @@ export default function VideoPlayer({
       {isFallbackActive && (
         <div className="absolute top-14 right-3 z-30 bg-amber-600/90 text-white px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-lg">
           <AlertTriangle className="w-3.5 h-3.5 text-yellow-300" />
-          <span className="text-[10px] font-medium">Luồng dự phòng</span>
+          <span className="text-[10px] font-medium">{t('vp.fallback')}</span>
         </div>
       )}
 
@@ -1098,9 +1099,9 @@ export default function VideoPlayer({
         <div className="absolute inset-0 z-[60] bg-black/60 backdrop-blur-[1px] flex items-center justify-center" onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
           <div className="text-center px-6">
             <div className="text-5xl mb-3">🔒</div>
-            <p className="text-white font-bold mb-1">Màn hình đã khoá</p>
-            <p className="text-slate-400 text-xs mb-4">Chống bé bấm nhầm · Giữ nút 2 giây để mở</p>
-            <HoldToUnlock onUnlock={() => setKidLocked(false)} icon={Lock} label="giữ 2s để mở khoá" buttonLabel="Mở khoá" />
+            <p className="text-white font-bold mb-1">{t('vp.locked')}</p>
+            <p className="text-slate-400 text-xs mb-4">{t('vp.locked_sub')}</p>
+            <HoldToUnlock onUnlock={() => setKidLocked(false)} icon={Lock} label={t('vp.hold_unlock')} buttonLabel={t('vp.unlock')} />
           </div>
         </div>
       )}
@@ -1138,10 +1139,10 @@ export default function VideoPlayer({
             <button onClick={(e) => { e.stopPropagation(); setShowAudioMenu(prev=>!prev); setShowQualityMenu(false); setShowSubtitleMenu(false); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${showAudioMenu ? 'bg-blue-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`} title="Audio">
               <AudioLines className="w-3.5 h-3.5" />
             </button>
-            <button onClick={shareChannel} className="p-1.5 rounded-full bg-black/50 text-slate-300 hover:bg-black/70 transition-all" title="Chia sẻ kênh (deep link)">
+            <button onClick={shareChannel} className="p-1.5 rounded-full bg-black/50 text-slate-300 hover:bg-black/70 transition-all" title={t('vp.share')}>
               <Share2 className="w-3.5 h-3.5" />
             </button>
-            <button onClick={toggleCast} className="p-1.5 rounded-full bg-black/50 text-slate-300 hover:bg-black/70 transition-all hidden md:block" title="Chiếu lên Chromecast">
+            <button onClick={toggleCast} className="p-1.5 rounded-full bg-black/50 text-slate-300 hover:bg-black/70 transition-all hidden md:block" title={t('vp.cast')}>
               <Cast className="w-3.5 h-3.5" />
             </button>
             {hasAirPlay && (
@@ -1152,23 +1153,23 @@ export default function VideoPlayer({
             <button onClick={() => { setShowParty(prev => !prev); setShowEpgStrip(false); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${showParty ? 'bg-purple-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`} title={t('player.watching_together')}>
               <Users className="w-3.5 h-3.5" />
             </button>
-            <button onClick={() => { setShowEpgStrip(prev => !prev); setShowParty(false); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${showEpgStrip ? 'bg-blue-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`} title="Kênh khác đang chiếu gì">
+            <button onClick={() => { setShowEpgStrip(prev => !prev); setShowParty(false); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${showEpgStrip ? 'bg-blue-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`} title={t('vp.epgstrip')}>
               <Tv className="w-3.5 h-3.5" />
             </button>
-            <button onClick={(e) => { e.stopPropagation(); setRadioMode(v => !v); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${radioMode ? 'bg-cyan-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`} title="Chế độ nghe radio (tắt hình, chỉ tiếng)">
+            <button onClick={(e) => { e.stopPropagation(); setRadioMode(v => !v); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${radioMode ? 'bg-cyan-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`} title={t('vp.radio')}>
               <Headphones className="w-3.5 h-3.5" />
             </button>
-            <button onClick={(e) => { e.stopPropagation(); setNightMode(v => !v); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${nightMode ? 'bg-indigo-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`} title="Chế độ xem đêm (dịu mắt)">
+            <button onClick={(e) => { e.stopPropagation(); setNightMode(v => !v); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${nightMode ? 'bg-indigo-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`} title={t('vp.night')}>
               <Moon className="w-3.5 h-3.5" />
             </button>
-            <button onClick={(e) => { e.stopPropagation(); setKidLocked(true); resetOverlayTimer(); }} className="p-1.5 rounded-full bg-black/50 text-slate-300 hover:bg-black/70 transition-all" title="Khoá trẻ em (chống bấm nhầm)">
+            <button onClick={(e) => { e.stopPropagation(); setKidLocked(true); resetOverlayTimer(); }} className="p-1.5 rounded-full bg-black/50 text-slate-300 hover:bg-black/70 transition-all" title={t('vp.kidlock')}>
               <Lock className="w-3.5 h-3.5" />
             </button>
-            <button onClick={(e) => { e.stopPropagation(); setShowReport(v => !v); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${showReport ? 'bg-amber-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`} title="Báo lỗi kênh">
+            <button onClick={(e) => { e.stopPropagation(); setShowReport(v => !v); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${showReport ? 'bg-amber-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`} title={t('vp.report')}>
               <Flag className="w-3.5 h-3.5" />
             </button>
             {onMinimize && !mini && (
-              <button onClick={(e) => { e.stopPropagation(); onMinimize(); }} className="p-1.5 rounded-full bg-black/50 text-slate-300 hover:bg-black/70 transition-all" title="Thu nhỏ (vừa xem vừa lướt)">
+              <button onClick={(e) => { e.stopPropagation(); onMinimize(); }} className="p-1.5 rounded-full bg-black/50 text-slate-300 hover:bg-black/70 transition-all" title={t('vp.mini')}>
                 <Minimize2 className="w-3.5 h-3.5" />
               </button>
             )}
@@ -1216,7 +1217,7 @@ export default function VideoPlayer({
                 { icon: Activity, label: 'FPS', value: videoStats.fps || 'N/A' },
                 { icon: Wifi, label: 'Buffer', value: `${videoStats.bufferLength}s` },
                 { icon: Hash, label: t('player.dropped'), value: videoStats.droppedFrames, color: videoStats.droppedFrames > 0 ? 'text-[#ff9a3d]' : 'text-emerald-400' },
-                { icon: Wifi, label: 'Mạng', value: netInfo.downlink ? `${netInfo.downlink} Mb/s${netInfo.type ? ` (${netInfo.type})` : ''}` : 'N/A' },
+                { icon: Wifi, label: t('vp.net'), value: netInfo.downlink ? `${netInfo.downlink} Mb/s${netInfo.type ? ` (${netInfo.type})` : ''}` : 'N/A' },
                 { icon: Activity, label: 'RTT', value: netInfo.rtt ? `${netInfo.rtt} ms` : 'N/A' },
               ].map(({ icon: Ic, label, value, color }) => (
                 <div key={label} className="flex items-center justify-between text-[11px]">
@@ -1248,10 +1249,10 @@ export default function VideoPlayer({
               </button>
               {/* Tốc độ phát (xem lại) */}
               <div className="px-2.5 py-1.5">
-                <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Tốc độ phát</div>
+                <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">{t('vp.speed')}</div>
                 <div className="flex items-center gap-1">
                   {[0.5, 0.75, 1, 1.25, 1.5, 2].map(r => (
-                    <button key={r} onClick={() => { if (!isCatchupMode) { addToast('Tốc độ phát chỉ dùng cho xem lại', 'info'); } else { try { videoRef.current.playbackRate = r; } catch {} setPlayRate(r); } resetOverlayTimer(); }} className={`flex-1 py-1 rounded-md text-[10px] font-bold transition-all ${playRate === r ? 'bg-[#f36f21] text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>{r}x</button>
+                    <button key={r} onClick={() => { if (!isCatchupMode) { addToast(t('vp.toast_speed_catchup'), 'info'); } else { try { videoRef.current.playbackRate = r; } catch {} setPlayRate(r); } resetOverlayTimer(); }} className={`flex-1 py-1 rounded-md text-[10px] font-bold transition-all ${playRate === r ? 'bg-[#f36f21] text-white' : 'bg-slate-800 text-slate-400 hover:text-white'}`}>{r}x</button>
                   ))}
                 </div>
               </div>
@@ -1309,7 +1310,7 @@ export default function VideoPlayer({
                   />
                   <button onClick={() => { if (customUA.trim()) { reloadWithUA(customUA.trim()); setCustomUA(''); } }} className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold rounded-lg">Dùng</button>
                 </div>
-                {(() => { let g = ''; try { g = getGlobalUA(); } catch {} return g ? (<button onClick={() => { try { setGlobalUA(''); } catch {} setUaTick((x) => x + 1); addToast('Đã xoá UA toàn cục', 'info'); }} className="w-full text-center text-[9px] text-slate-500 hover:text-slate-300 py-1">UA toàn cục đang dùng: {g.slice(0, 32)}… (bấm để xoá)</button>) : null; })()}
+                {(() => { let g = ''; try { g = getGlobalUA(); } catch {} return g ? (<button onClick={() => { try { setGlobalUA(''); } catch {} setUaTick((x) => x + 1); addToast(t('vp.toast_ua_cleared'), 'info'); }} className="w-full text-center text-[9px] text-slate-500 hover:text-slate-300 py-1">UA toàn cục đang dùng: {g.slice(0, 32)}… (bấm để xoá)</button>) : null; })()}
               </div>
             </div>
           </div>
@@ -1358,7 +1359,7 @@ export default function VideoPlayer({
         {showEpgStrip && (
           <div className="absolute top-12 left-3 z-20 w-80 max-h-[70%] bg-black/90 backdrop-blur-md rounded-xl border border-slate-700/40 flex flex-col pointer-events-auto shadow-2xl anim-pop-fast">
             <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700/40">
-              <div className="flex items-center gap-1.5 text-[10px] font-semibold text-blue-400 uppercase tracking-wider"><Tv className="w-3 h-3" /> Đang chiếu lúc này</div>
+              <div className="flex items-center gap-1.5 text-[10px] font-semibold text-blue-400 uppercase tracking-wider"><Tv className="w-3 h-3" /> {t('vp.now_on')}</div>
               <button onClick={() => setShowEpgStrip(false)} className="p-0.5 rounded hover:bg-slate-700/50"><X className="w-3 h-3 text-slate-400" /></button>
             </div>
             <div className="flex-1 overflow-y-auto px-1.5 py-1.5 space-y-0.5">
@@ -1369,7 +1370,7 @@ export default function VideoPlayer({
                     <img src={ch.logo || ''} alt="" className="w-7 h-7 object-contain rounded bg-slate-900/60 p-0.5 shrink-0" onError={e => { e.target.style.display = 'none'; }} />
                     <div className="min-w-0 flex-1">
                       <div className="text-[11px] font-semibold text-slate-200 truncate">{ch.name}</div>
-                      <div className="text-[9px] text-slate-500 truncate">{epg?.now ? `${formatTimeHHMM(epg.now.start)} · ${maskScores(epg.now.title)}` : 'Chưa có EPG'}</div>
+                      <div className="text-[9px] text-slate-500 truncate">{epg?.now ? `${formatTimeHHMM(epg.now.start)} · ${maskScores(epg.now.title)}` : t('vp.no_epg')}</div>
                     </div>
                   </button>
                 );
@@ -1383,8 +1384,8 @@ export default function VideoPlayer({
           <div className="absolute top-12 right-3 bottom-24 z-20 w-80 bg-black/90 backdrop-blur-md rounded-xl border border-purple-700/40 flex flex-col pointer-events-auto shadow-2xl anim-pop-fast">
             <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700/40">
               <div className="flex items-center gap-1">
-                <button onClick={() => setPartyTab('party')} className={`px-2.5 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1 ${partyTab === 'party' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'}`}><PartyPopper className="w-3 h-3" /> Xem chung{partyRoom ? ` ${partyRoom.replace('party:', '')}` : ''}</button>
-                <button onClick={() => setPartyTab('channel')} className={`px-2.5 py-1 rounded-lg text-[10px] font-bold ${partyTab === 'channel' ? 'bg-cyan-600 text-white' : 'text-slate-400 hover:text-white'}`}>💬 Chat kênh</button>
+                <button onClick={() => setPartyTab('party')} className={`px-2.5 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1 ${partyTab === 'party' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:text-white'}`}><PartyPopper className="w-3 h-3" /> {t('vp.party')}{partyRoom ? ` ${partyRoom.replace('party:', '')}` : ''}</button>
+                <button onClick={() => setPartyTab('channel')} className={`px-2.5 py-1 rounded-lg text-[10px] font-bold ${partyTab === 'channel' ? 'bg-cyan-600 text-white' : 'text-slate-400 hover:text-white'}`}>💬 {t('vp.chat_ch')}</button>
               </div>
               <button onClick={() => setShowParty(false)} className="p-0.5 rounded hover:bg-slate-700/50"><X className="w-3 h-3 text-slate-400" /></button>
             </div>
@@ -1423,7 +1424,7 @@ export default function VideoPlayer({
                       return (
                         <div key={poll.id} className="bg-slate-800/60 rounded-lg p-2">
                           <div className="text-[11px] font-bold text-white">📊 {poll.q}</div>
-                          <div className="text-[9px] text-slate-500 mb-0.5">{poll.from} · {total} vote</div>
+                          <div className="text-[9px] text-slate-500 mb-0.5">{poll.from} · {t('vp.n_votes', { n: total })}</div>
                           {poll.opts.map((o, i) => {
                             const c = votes.filter(v => v === i).length;
                             const pct = total ? Math.round(c / total * 100) : 0;
@@ -1445,7 +1446,7 @@ export default function VideoPlayer({
                 {/* Reaction bar */}
                 <div className="px-2 py-1 border-t border-slate-700/40 flex items-center gap-1 justify-center">
                   {isHost && partyTab === 'party' && partyRoom && (
-                    <button onClick={() => { setShowPollForm(v => !v); resetOverlayTimer(); }} className={`p-1 rounded-lg text-sm transition-all ${showPollForm ? 'bg-purple-600' : 'hover:bg-slate-700/60'}`} title="Tạo vote">📊</button>
+                    <button onClick={() => { setShowPollForm(v => !v); resetOverlayTimer(); }} className={`p-1 rounded-lg text-sm transition-all ${showPollForm ? 'bg-purple-600' : 'hover:bg-slate-700/60'}`} title={t('vp.mkpoll')}>📊</button>
                   )}
                   {PARTY_EMOJIS.map((em) => (
                     <button key={em} onClick={() => react(em)} className="text-base hover:scale-125 transition-transform p-0.5" title={`Thả ${em}`}>{em}</button>
@@ -1453,13 +1454,13 @@ export default function VideoPlayer({
                 </div>
                 {showPollForm && (
                   <div className="px-2 py-2 border-t border-slate-700/40 space-y-1.5 bg-slate-900/40">
-                    <input value={pollDraft.q} onChange={e => setPollDraft(d => ({ ...d, q: e.target.value }))} placeholder="Câu hỏi vote... (VD: Xem kênh nào tiếp?)" className="w-full px-2.5 py-1.5 bg-slate-800/60 border border-slate-700/40 rounded-lg text-[11px] text-white placeholder:text-slate-600 focus:outline-none focus:border-purple-500/60" />
+                    <input value={pollDraft.q} onChange={e => setPollDraft(d => ({ ...d, q: e.target.value }))} placeholder={t('vp.poll_q_ph')} className="w-full px-2.5 py-1.5 bg-slate-800/60 border border-slate-700/40 rounded-lg text-[11px] text-white placeholder:text-slate-600 focus:outline-none focus:border-purple-500/60" />
                     {pollDraft.opts.map((o, i) => (
-                      <input key={i} value={o} onChange={e => setPollDraft(d => { const opts = [...d.opts]; opts[i] = e.target.value; return { ...d, opts }; })} placeholder={`Lựa chọn ${i + 1}`} className="w-full px-2.5 py-1.5 bg-slate-800/60 border border-slate-700/40 rounded-lg text-[11px] text-white placeholder:text-slate-600 focus:outline-none focus:border-purple-500/60" />
+                      <input key={i} value={o} onChange={e => setPollDraft(d => { const opts = [...d.opts]; opts[i] = e.target.value; return { ...d, opts }; })} placeholder={t('vp.poll_opt', { n: i + 1 })} className="w-full px-2.5 py-1.5 bg-slate-800/60 border border-slate-700/40 rounded-lg text-[11px] text-white placeholder:text-slate-600 focus:outline-none focus:border-purple-500/60" />
                     ))}
                     <div className="flex items-center gap-1.5">
-                      {pollDraft.opts.length < 4 && <button onClick={() => setPollDraft(d => ({ ...d, opts: [...d.opts, ''] }))} className="px-2.5 py-1.5 bg-slate-700 text-white text-[10px] font-bold rounded-lg">+ Thêm</button>}
-                      <button onClick={sendPoll} className="flex-1 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-[11px] font-bold rounded-lg">Tạo vote</button>
+                      {pollDraft.opts.length < 4 && <button onClick={() => setPollDraft(d => ({ ...d, opts: [...d.opts, ''] }))} className="px-2.5 py-1.5 bg-slate-700 text-white text-[10px] font-bold rounded-lg">{t('vp.add')}</button>}
+                      <button onClick={sendPoll} className="flex-1 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-[11px] font-bold rounded-lg">{t('vp.mkpoll_btn')}</button>
                     </div>
                   </div>
                 )}
@@ -1495,15 +1496,15 @@ export default function VideoPlayer({
         {showReport && (
           <div className="absolute top-12 right-3 z-20 w-72 bg-black/85 backdrop-blur-md rounded-xl border border-slate-700/40 p-3 pointer-events-auto shadow-2xl anim-pop-fast">
             <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-1.5 text-[10px] font-semibold text-amber-400 uppercase tracking-wider"><Flag className="w-3 h-3" /> Báo lỗi kênh</div>
+              <div className="flex items-center gap-1.5 text-[10px] font-semibold text-amber-400 uppercase tracking-wider"><Flag className="w-3 h-3" /> {t('vp.report')}</div>
               <button onClick={() => setShowReport(false)} className="p-0.5 rounded hover:bg-slate-700/50"><X className="w-3 h-3 text-slate-400" /></button>
             </div>
             <select value={reportType} onChange={e => setReportType(e.target.value)} className="w-full px-2.5 py-2 bg-slate-800/60 border border-slate-700/40 rounded-lg text-[11px] text-white focus:outline-none focus:border-amber-500/60 mb-2">
-              {['Kênh không phát được', 'Đứng hình / giật liên tục', 'Sai lịch phát sóng', 'Chất lượng quá kém', 'Sai User-Agent', 'Khác'].map(o => <option key={o} value={o}>{o}</option>)}
+              {[['cant_play', t('vp.rep_o1')], ['freeze', t('vp.rep_o2')], ['wrong_epg', t('vp.rep_o3')], ['poor_q', t('vp.rep_o4')], ['bad_ua', t('vp.rep_o5')], ['other', t('vp.rep_o6')]].map(([v, label]) => <option key={v} value={v}>{label}</option>)}
             </select>
-            <textarea value={reportMsg} onChange={e => setReportMsg(e.target.value)} placeholder="Mô tả thêm (không bắt buộc)..." rows={2} className="w-full px-2.5 py-2 bg-slate-800/60 border border-slate-700/40 rounded-lg text-[11px] text-white placeholder:text-slate-600 focus:outline-none focus:border-amber-500/60 mb-2 resize-none" />
-            <button onClick={submitReport} className="w-full py-2 btn-orange text-white text-xs font-bold rounded-xl">Gửi báo lỗi</button>
-            <p className="text-[9px] text-slate-600 text-center mt-1.5">Kèm thông tin kỹ thuật để admin xử lý nhanh</p>
+            <textarea value={reportMsg} onChange={e => setReportMsg(e.target.value)} placeholder={t('vp.rep_ph')} rows={2} className="w-full px-2.5 py-2 bg-slate-800/60 border border-slate-700/40 rounded-lg text-[11px] text-white placeholder:text-slate-600 focus:outline-none focus:border-amber-500/60 mb-2 resize-none" />
+            <button onClick={submitReport} className="w-full py-2 btn-orange text-white text-xs font-bold rounded-xl">{t('vp.rep_send')}</button>
+            <p className="text-[9px] text-slate-600 text-center mt-1.5">{t('vp.rep_note')}</p>
           </div>
         )}
 
@@ -1603,22 +1604,22 @@ export default function VideoPlayer({
               <button onClick={toggleMute} className="p-2 rounded-full bg-black/50 text-slate-200 hover:bg-black/70">
                 <VolumeIcon className="w-3.5 h-3.5" />
               </button>
-              <button onClick={() => { setShowVolumeSlider(prev => !prev); resetOverlayTimer(); }} className="p-2 rounded-full bg-black/50 text-slate-200 hover:bg-black/70" title="Âm lượng">
+              <button onClick={() => { setShowVolumeSlider(prev => !prev); resetOverlayTimer(); }} className="p-2 rounded-full bg-black/50 text-slate-200 hover:bg-black/70" title={t('vp.vol')}>
                 <Volume2 className="w-3.5 h-3.5" />
               </button>
-              {onPrevChannel && <button onClick={onPrevChannel} className="p-2 rounded-full bg-black/50 text-slate-200 hover:bg-black/70" title="Trước (↑)"><ChevronUp className="w-3.5 h-3.5" /></button>}
-              {onNextChannel && <button onClick={onNextChannel} className="p-2 rounded-full bg-black/50 text-slate-200 hover:bg-black/70" title="Sau (↓)"><ChevronDown className="w-3.5 h-3.5" /></button>}
+              {onPrevChannel && <button onClick={onPrevChannel} className="p-2 rounded-full bg-black/50 text-slate-200 hover:bg-black/70" title={t('vp.prev')}><ChevronUp className="w-3.5 h-3.5" /></button>}
+              {onNextChannel && <button onClick={onNextChannel} className="p-2 rounded-full bg-black/50 text-slate-200 hover:bg-black/70" title={t('vp.next')}><ChevronDown className="w-3.5 h-3.5" /></button>}
             </div>
             <div className="flex items-center gap-1.5">
               {device.os === 'android' && (
-                <button onClick={openExternalPlayer} className="p-2 rounded-full bg-black/50 text-slate-200 hover:bg-black/70" title="Mở ngoài">
+                <button onClick={openExternalPlayer} className="p-2 rounded-full bg-black/50 text-slate-200 hover:bg-black/70" title={t('vp.open_ext')}>
                   <span className="text-[10px] font-bold">EXT</span>
                 </button>
               )}
-              <button onClick={() => { setShowEmojiBar(prev => !prev); if (!partyRoom) { setShowParty(true); createParty(); } resetOverlayTimer(); }} className={`p-2 rounded-full transition-all ${showEmojiBar ? 'bg-purple-600 text-white' : 'bg-black/50 text-slate-200 hover:bg-black/70'}`} title="Thả reaction">
+              <button onClick={() => { setShowEmojiBar(prev => !prev); if (!partyRoom) { setShowParty(true); createParty(); } resetOverlayTimer(); }} className={`p-2 rounded-full transition-all ${showEmojiBar ? 'bg-purple-600 text-white' : 'bg-black/50 text-slate-200 hover:bg-black/70'}`} title={t('vp.react')}>
                 <Smile className="w-3.5 h-3.5" />
               </button>
-              <button onClick={takeScreenshot} className="p-2 rounded-full bg-black/50 text-slate-200 hover:bg-black/70" title="Chụp màn (S)">
+              <button onClick={takeScreenshot} className="p-2 rounded-full bg-black/50 text-slate-200 hover:bg-black/70" title={t('vp.shot')}>
                 <Camera className="w-3.5 h-3.5" />
               </button>
               <button onClick={togglePiP} className="p-2 rounded-full bg-black/50 text-slate-200 hover:bg-black/70" title="PiP (P)">

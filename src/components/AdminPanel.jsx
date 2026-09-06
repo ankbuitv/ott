@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Users, BarChart3, Bell, Radio, Send, Eye, TrendingUp, Calendar, Plus, Trash2, Save, X, ScrollText, Ban, KeyRound, ShieldCheck, ChevronDown, Flag } from 'lucide-react';
+import { Settings, Users, BarChart3, Bell, Radio, Send, Eye, TrendingUp, Calendar, Plus, Trash2, Save, X, ScrollText, Ban, KeyRound, ShieldCheck, ChevronDown, Flag, Clapperboard } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { API_BASE } from '../services/config';
@@ -36,6 +36,8 @@ export default function AdminPanel({ onClose }) {
   const [creds, setCreds] = useState([]);
   const [credForm, setCredForm] = useState({ channel_id: '', upstream_token: '' });
   const [feedback, setFeedback] = useState([]);
+  const [shorts, setShorts] = useState([]);
+  const [shortForm, setShortForm] = useState({ title: '', caption: '', video_url: '', thumb_url: '', author: 'CHRTV' });
 
   // Notification form
   const [notifyTitle, setNotifyTitle] = useState('');
@@ -72,6 +74,7 @@ export default function AdminPanel({ onClose }) {
     fetch(`${BASE}/admin/audit`, { headers }).then(r => r.json()).then(d => setAudit(d.audit || [])).catch(() => {});
     fetch(`${BASE}/admin/stream-credentials`, { headers }).then(r => r.json()).then(d => setCreds(d.credentials || [])).catch(() => {});
     fetch(`${BASE}/admin/feedback`, { headers }).then(r => r.json()).then(d => setFeedback(d.feedback || [])).catch(() => {});
+    fetch(`${BASE}/admin/shorts`, { headers }).then(r => r.json()).then(d => setShorts(d.shorts || [])).catch(() => {});
   }, [token]);
 
   // ===== Quản lý user =====
@@ -223,7 +226,7 @@ export default function AdminPanel({ onClose }) {
         </div>
 
         <div className="flex border-b border-slate-800/40 overflow-x-auto">
-          {[{ id: 'stats', label: 'Thống kê', icon: BarChart3 }, { id: 'users', label: 'Người dùng', icon: Users }, { id: 'audit', label: 'Nhật ký', icon: ScrollText }, { id: 'notify', label: 'Thông báo', icon: Bell }, { id: 'broadcast', label: 'Broadcast', icon: Send }, { id: 'epg', label: 'EPG kênh', icon: Calendar }, { id: 'analytics', label: 'Analytics', icon: TrendingUp }, { id: 'credentials', label: 'Chìa khoá stream', icon: KeyRound }, { id: 'feedback', label: 'Báo lỗi', icon: Flag }].map(t => (
+          {[{ id: 'stats', label: 'Thống kê', icon: BarChart3 }, { id: 'users', label: 'Người dùng', icon: Users }, { id: 'audit', label: 'Nhật ký', icon: ScrollText }, { id: 'notify', label: 'Thông báo', icon: Bell }, { id: 'broadcast', label: 'Broadcast', icon: Send }, { id: 'epg', label: 'EPG kênh', icon: Calendar }, { id: 'analytics', label: 'Analytics', icon: TrendingUp }, { id: 'credentials', label: 'Chìa khoá stream', icon: KeyRound }, { id: 'feedback', label: 'Báo lỗi', icon: Flag }, { id: 'shorts', label: 'Shorts', icon: Clapperboard }].map(t => (
             <button key={t.id} onClick={() => setTab(t.id)} className={`flex items-center gap-1.5 px-4 py-2 text-[11px] font-semibold transition-all whitespace-nowrap ${tab === t.id ? 'text-[#ff9a3d] border-b-2 border-[#f36f21]' : 'text-slate-500 hover:text-white'}`}>
               <t.icon className="w-3 h-3" /> {t.label}
             </button>
@@ -461,6 +464,62 @@ export default function AdminPanel({ onClose }) {
             </div>
           )}
 
+          {tab === 'shorts' && (
+            <div className="space-y-3">
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!shortForm.video_url.trim()) { addToast('Nhập link video', 'error'); return; }
+                  const r = await fetch(`${BASE}/admin/shorts`, { method: 'POST', headers, body: JSON.stringify(shortForm) });
+                  const d = await r.json();
+                  if (d.success) {
+                    addToast('Đã đăng short!', 'success');
+                    setShortForm({ title: '', caption: '', video_url: '', thumb_url: '', author: 'CHRTV' });
+                    fetch(`${BASE}/admin/shorts`, { headers }).then(r2 => r2.json()).then(dd => setShorts(dd.shorts || [])).catch(() => {});
+                  } else addToast(d.error || 'Lỗi', 'error');
+                }}
+                className="space-y-2 bg-slate-900/40 rounded-xl p-3 border border-slate-800/40"
+              >
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Đăng short mới (link mp4 trực tiếp)</p>
+                <input value={shortForm.title} onChange={e => setShortForm({ ...shortForm, title: e.target.value })} placeholder="Tiêu đề" className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-[#f36f21]" />
+                <input value={shortForm.video_url} onChange={e => setShortForm({ ...shortForm, video_url: e.target.value })} placeholder="Link video mp4 https://..." className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-[#f36f21]" />
+                <div className="grid grid-cols-2 gap-2">
+                  <input value={shortForm.thumb_url} onChange={e => setShortForm({ ...shortForm, thumb_url: e.target.value })} placeholder="Ảnh bìa (không bắt buộc)" className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-[#f36f21]" />
+                  <input value={shortForm.author} onChange={e => setShortForm({ ...shortForm, author: e.target.value })} placeholder="Tác giả" className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-[#f36f21]" />
+                </div>
+                <textarea value={shortForm.caption} onChange={e => setShortForm({ ...shortForm, caption: e.target.value })} placeholder="Mô tả ngắn" rows={2} className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-[#f36f21] resize-none" />
+                <button type="submit" className="w-full py-2 btn-orange text-white text-xs font-bold rounded-xl">Đăng short</button>
+              </form>
+              <div className="space-y-2">
+                {shorts.length === 0 && <p className="text-xs text-slate-500 text-center py-3">Chưa có short nào</p>}
+                {shorts.map(s => (
+                  <div key={s.id} className="flex items-center gap-2.5 bg-slate-900/40 rounded-lg px-3 py-2 border border-slate-800/30">
+                    {s.thumb_url ? <img src={s.thumb_url} alt="" className="w-9 h-14 object-cover rounded-md shrink-0" onError={e => e.target.style.display = 'none'} /> : <span className="w-9 h-14 rounded-md grad-brand flex items-center justify-center text-sm shrink-0">🎬</span>}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] font-bold text-white truncate">{s.title || '(không tên)'}</p>
+                      <p className="text-[9px] text-slate-500">👁 {s.views || 0} · ❤ {s.likes || 0} · {s.status === 'hidden' ? '🙈 Đang ẩn' : '✅ Đang hiện'}</p>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        const ns = s.status === 'hidden' ? 'live' : 'hidden';
+                        await fetch(`${BASE}/admin/shorts`, { method: 'PUT', headers, body: JSON.stringify({ id: s.id, status: ns }) });
+                        setShorts(prev => prev.map(x => x.id === s.id ? { ...x, status: ns } : x));
+                      }}
+                      className="p-1.5 text-slate-500 hover:text-white" title={s.status === 'hidden' ? 'Hiện' : 'Ẩn'}
+                    ><Eye className="w-3.5 h-3.5" /></button>
+                    <button
+                      onClick={async () => {
+                        if (!confirm('Xoá short này?')) return;
+                        await fetch(`${BASE}/admin/shorts`, { method: 'DELETE', headers, body: JSON.stringify({ id: s.id }) });
+                        setShorts(prev => prev.filter(x => x.id !== s.id));
+                      }}
+                      className="p-1.5 text-slate-500 hover:text-[#ff9a3d]" title="Xoá"
+                    ><Trash2 className="w-3.5 h-3.5" /></button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {tab === 'feedback' && (
             <div className="space-y-2">
               {feedback.length === 0 && <p className="text-xs text-slate-500 text-center py-4">Chưa có báo lỗi nào 🎉</p>}

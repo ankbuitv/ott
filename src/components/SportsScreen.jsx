@@ -5,6 +5,7 @@ import { LEAGUES, fetchLeague, fetchLatestScoresAll, fetchSportsIndex, fetchSpor
 import ScrollRow from './ScrollRow';
 import RacingSection from './RacingSection';
 import MatchDetailModal from './MatchDetailModal';
+import TeamDetailModal from './TeamDetailModal';
 
 const SPORT_RE = /sport|thể thao|the thao|espn|bein|k\+|onsport|fpt.*sport|bóng đá|bong da|star sport|golf|tennis|bóng rổ|bong ro|basket|baseball|bóng chày|cầu lông|cau long|badminton|bơi|swim|olympic|esport|e-sport|đua xe|dua xe|racing|boxing|wwe|wimbledon|roland|nba|f1\b/i;
 
@@ -46,7 +47,7 @@ function TeamBadge({ src, name, size = 'w-8 h-8' }) {
   return <img src={src} alt="" onError={() => setErr(true)} className={`${size} object-contain shrink-0`} loading="lazy" />;
 }
 
-function MatchCard({ ev, showScore, onClick }) {
+function MatchCard({ ev, showScore, onClick, onTeam }) {
   const { t } = useI18n();
   const live = isLive(ev);
   const pp = isPostponed(ev);
@@ -75,7 +76,11 @@ function MatchCard({ ev, showScore, onClick }) {
         ].map((tm, i) => (
           <div key={i} className="flex items-center gap-2.5">
             <TeamBadge src={tm.badge} name={tm.name} />
-            <span className="flex-1 min-w-0 text-[13px] font-bold text-slate-200 truncate">{tm.name}</span>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onTeam && onTeam(tm.name); }}
+              className="flex-1 min-w-0 text-left text-[13px] font-bold text-slate-200 truncate hover:text-[#ffb37a]"
+            >{tm.name}</button>
             {showScore && (
               <span className={`text-[15px] font-black tabular-nums ${live ? 'text-[#ffb37a]' : 'text-white'}`}>
                 {tm.score ?? '-'}
@@ -90,13 +95,14 @@ function MatchCard({ ev, showScore, onClick }) {
 
 export default function SportsScreen({ channels = [], onSelectChannel }) {
   const { t } = useI18n();
-  const [leagueId, setLeagueId] = useState('aff');
+  const [leagueId, setLeagueId] = useState('u20wc');
   const [data, setData] = useState({ next: [], past: [], table: [] });
   const [loading, setLoading] = useState(true);
   const [videos, setVideos] = useState([]);
   const [playing, setPlaying] = useState(null);
   const [sportTab, setSportTab] = useState('football'); // football | racing
   const [selMatch, setSelMatch] = useState(null);
+  const [selTeam, setSelTeam] = useState('');
   // Explorer "Môn khác": Esports, cầu lông, bóng chày, bơi, Olympic... (TSDB có gì hiện nấy)
   const [custom, setCustom] = useState(null); // league object tự chọn từ explorer
   const [showExplorer, setShowExplorer] = useState(false);
@@ -431,8 +437,10 @@ export default function SportsScreen({ channels = [], onSelectChannel }) {
                   <CalendarDays className="w-4 h-4 text-sky-400" />
                 </span>
                 <h2 className="text-[19px] font-extrabold tracking-tight">{t('sports.fixtures')}</h2>
-                <span className="text-[11px] text-stone-500 font-bold flex items-center gap-1.5">
-                  {league.logo ? <img src={league.logo} alt="" className="w-4 h-4 object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : league.flag} {league.name}
+                <span className="text-[11px] text-stone-500 font-bold flex items-center gap-1.5 min-w-0">
+                  {league.logo ? <img src={league.logo} alt="" className="w-4 h-4 object-contain shrink-0" onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : league.flag}
+                  <span className="truncate">{league.name}</span>
+                  <span className="hidden sm:inline text-stone-600">· {t('sports.window')}</span>
                 </span>
               </div>
               {loading ? (
@@ -443,7 +451,7 @@ export default function SportsScreen({ channels = [], onSelectChannel }) {
                 <p className="text-[12px] text-stone-600 italic bg-white/[0.02] border border-white/[0.05] rounded-2xl px-4 py-6 text-center">{t('sports.no_data')}</p>
               ) : (
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {data.next.slice(0, 9).map(ev => <MatchCard key={ev.idEvent} ev={ev} showScore={false} onClick={() => setSelMatch(ev)} />)}
+                  {data.next.slice(0, 12).map(ev => <MatchCard key={ev.idEvent} ev={ev} showScore={false} onClick={() => setSelMatch(ev)} onTeam={setSelTeam} />)}
                 </div>
               )}
             </section>
@@ -455,6 +463,7 @@ export default function SportsScreen({ channels = [], onSelectChannel }) {
                   <Trophy className="w-4 h-4 text-emerald-400" />
                 </span>
                 <h2 className="text-[19px] font-extrabold tracking-tight">{t('sports.results')}</h2>
+                <span className="text-[11px] text-stone-600 font-bold">{t('sports.window')}</span>
               </div>
               {loading ? (
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -464,7 +473,7 @@ export default function SportsScreen({ channels = [], onSelectChannel }) {
                 <p className="text-[12px] text-stone-600 italic bg-white/[0.02] border border-white/[0.05] rounded-2xl px-4 py-6 text-center">{t('sports.no_data')}</p>
               ) : (
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {data.past.slice(0, 12).map(ev => <MatchCard key={ev.idEvent} ev={ev} showScore={true} onClick={() => setSelMatch(ev)} />)}
+                  {data.past.slice(0, 12).map(ev => <MatchCard key={ev.idEvent} ev={ev} showScore={true} onClick={() => setSelMatch(ev)} onTeam={setSelTeam} />)}
                 </div>
               )}
             </section>
@@ -576,7 +585,14 @@ export default function SportsScreen({ channels = [], onSelectChannel }) {
       )}
       {/* Chi tiết trận: diễn biến + highlight + dự đoán + nhắc + radio */}
       {selMatch && (
-        <MatchDetailModal ev={selMatch} leagueName={sportTab === 'football' ? league.name : ''} onClose={() => setSelMatch(null)} />
+        <MatchDetailModal ev={selMatch} leagueName={sportTab === 'football' ? league.name : ''} onClose={() => setSelMatch(null)} onTeam={setSelTeam} />
+      )}
+      {selTeam && (
+        <TeamDetailModal
+          name={selTeam}
+          onClose={() => setSelTeam('')}
+          onOpenMatch={(ev) => { setSelTeam(''); setSelMatch(ev); }}
+        />
       )}
     </div>
   );

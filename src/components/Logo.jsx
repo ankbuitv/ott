@@ -37,7 +37,7 @@ function LogoMark({ className = '' }) {
 export default function Logo({ size = 'md', showSubtext = true, className = '' }) {
   const { t } = useI18n();
   const sizes = {
-    sm: { main: 'text-[15px]', play: 'text-[8px] px-1.5 py-0.5', sub: 'text-[7px]', icon: 'w-8 h-8', reward: 'h-8' },
+    sm: { main: 'text-[13px] sm:text-[15px]', play: 'text-[7px] sm:text-[8px] px-1 sm:px-1.5 py-0.5', sub: 'text-[7px]', icon: 'w-7 h-7 sm:w-8 sm:h-8', reward: 'h-8' },
     md: { main: 'text-xl', play: 'text-[9px] px-2 py-[3px]', sub: 'text-[8px]', icon: 'w-10 h-10', reward: 'h-10' },
     lg: { main: 'text-[26px]', play: 'text-[10px] px-2 py-1', sub: 'text-[9px]', icon: 'w-12 h-12', reward: 'h-12' },
     xl: { main: 'text-4xl', play: 'text-xs px-2.5 py-1', sub: 'text-[11px]', icon: 'w-16 h-16', reward: 'h-16' },
@@ -52,13 +52,13 @@ export default function Logo({ size = 'md', showSubtext = true, className = '' }
         <LogoMark className="w-full h-full" />
       </div>
 
-      <div className="flex flex-col leading-none">
-        <span className="flex items-center gap-1.5">
+      <div className="flex flex-col leading-none min-w-0">
+        <span className="flex items-center gap-1 sm:gap-1.5">
           <span className={`${sizes.main} font-black tracking-tight text-white`}>CHRTV</span>
           <span className={`${sizes.play} font-black tracking-[0.18em] text-white rounded-md grad-brand shadow-lg shadow-[#f36f21]/30`}>PL▷Y</span>
         </span>
         {showSubtext && (
-          <span className={`${sizes.sub} font-semibold tracking-[0.14em] text-stone-500 mt-1 uppercase`}>
+          <span className={`${sizes.sub} hidden md:block font-semibold tracking-[0.14em] text-stone-500 mt-1 uppercase truncate`}>
             {t('app.tagline')}
           </span>
         )}
@@ -67,7 +67,7 @@ export default function Logo({ size = 'md', showSubtext = true, className = '' }
       <img
         src={REWARD_IMG}
         alt=""
-        className={`${sizes.reward} w-auto max-w-[4.5rem] shrink-0 object-contain object-center`}
+        className={`${sizes.reward} hidden md:block w-auto max-w-[4.5rem] shrink-0 object-contain object-center`}
       />
     </div>
   );

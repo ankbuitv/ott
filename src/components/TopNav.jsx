@@ -183,8 +183,8 @@ function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, s
   };
 
   return (
-    <nav className="topbar-mytv px-4 md:px-6 h-16 flex items-center justify-between sticky top-0 z-40 shrink-0">
-      <div className="flex items-center gap-6">
+    <nav className="topbar-mytv px-2 sm:px-4 md:px-6 h-14 sm:h-16 flex items-center justify-between gap-1 sm:gap-2 sticky top-0 z-40 shrink-0 min-w-0">
+      <div className="flex items-center gap-2 sm:gap-6 min-w-0 flex-1">
         <button onClick={() => setActiveTab && setActiveTab('channels')} className="shrink-0 hover:opacity-90 active:scale-95 transition-all" title="Trang chủ">
           <Logo size="sm" />
         </button>
@@ -231,17 +231,17 @@ function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, s
           )}
         </div>
       </div>
-      <div className="flex items-center gap-1.5 md:gap-2">
+      <div className="flex items-center gap-0.5 sm:gap-1.5 md:gap-2 shrink-0">
         <button
           onClick={() => { setMobileSearch(true); setSearchFocused(true); setTimeout(() => searchInputRef.current?.focus(), 0); }}
-          className={`md:hidden p-2 hover:bg-white/10 rounded-xl transition ${mobileSearch ? 'invisible' : ''}`}
+          className={`md:hidden p-1.5 sm:p-2 hover:bg-white/10 rounded-xl transition ${mobileSearch ? 'invisible' : ''}`}
           title={t('app.search.placeholder')}
           aria-label={t('app.search.placeholder')}
         >
           <Search className="w-5 h-5" />
         </button>
         <div className="relative" ref={langRef}>
-          <button onClick={() => { setLangOpen((o) => !o); setApkOpen(false); setNotifOpen(false); setUserOpen(false); }} className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 transition" title={t('settings.choose_lang')} aria-label={t('settings.choose_lang')}><Globe className="w-4 h-4 text-stone-300" /><span className="text-base leading-none">{curLang?.flag || '🌐'}</span><span className="hidden lg:inline text-[11px] font-bold text-stone-300 uppercase">{lang}</span></button>
+          <button onClick={() => { setLangOpen((o) => !o); setApkOpen(false); setNotifOpen(false); setUserOpen(false); }} className="flex items-center gap-1 px-2 sm:px-2.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 transition" title={t('settings.choose_lang')} aria-label={t('settings.choose_lang')}><Globe className="w-4 h-4 text-stone-300" /><span className="hidden sm:inline text-base leading-none">{curLang?.flag || '🌐'}</span><span className="hidden lg:inline text-[11px] font-bold text-stone-300 uppercase">{lang}</span></button>
           {langOpen && (
             <div className="absolute right-0 top-full mt-2 w-56 max-w-[80vw] bg-[#141419] border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50 anim-pop-fast">
               <div className="px-4 py-2.5 border-b border-white/5 text-xs font-bold">{t('settings.choose_lang')}</div>
@@ -294,7 +294,7 @@ function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, s
           <button
             type="button"
             onClick={() => { setApkOpen((o) => !o); setNotifOpen(false); setLangOpen(false); setUserOpen(false); }}
-            className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-[11px] font-bold text-stone-200 transition"
+            className="flex items-center gap-1.5 px-2 sm:px-2.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-[11px] font-bold text-stone-200 transition"
             title={t('nav.download_app')}
           >
             <Smartphone className="w-4 h-4 text-[#ff9a3d]" />

@@ -465,6 +465,13 @@ const T = {
   'sports.th_d': { vi: 'H', en: 'D' },
   'sports.th_l': { vi: 'B', en: 'L' },
   'sports.th_pts': { vi: 'Điểm', en: 'Pts' },
+  'sports.window': { vi: '2 tháng gần đây', en: 'Last 2 months' },
+  'team.formed': { vi: 'Thành lập', en: 'Founded' },
+  'team.stadium': { vi: 'Sân nhà', en: 'Stadium' },
+  'team.seats': { vi: 'chỗ', en: 'seats' },
+  'team.leagues': { vi: 'Giải đấu', en: 'Competitions' },
+  'team.last': { vi: 'Trận gần đây', en: 'Recent matches' },
+  'team.web': { vi: 'Trang CLB', en: 'Website' },
 
   // ============== CHANNEL INFO ==============
   'chinfo.need_login': { vi: 'Đăng nhập để đánh giá kênh nhé — miễn phí!', en: 'Sign in to rate channels — free!' },

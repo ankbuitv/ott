@@ -588,7 +588,7 @@ function AppContent() {
       <div className="flex flex-1 overflow-hidden">
         <Sidebar activeTab={activeTab} setActiveTab={goTab} onShowSettings={() => setShowSettings(true)} onShowAdmin={() => setShowAdmin(true)} />
 
-        <main className="flex-1 flex flex-col h-full overflow-y-auto pb-16 md:pb-0">
+        <main className="flex-1 flex flex-col h-full overflow-y-auto overflow-x-hidden min-w-0 pb-16 md:pb-0">
           {activeTab !== 'movies' && (
             <div className="px-5 md:px-8 pt-3 max-w-[1400px] mx-auto w-full">
               <BroadcastBanner />

@@ -102,10 +102,10 @@ export default function PlansScreen({ initialCode = '' }) {
     <div className="min-h-full pb-16 relative">
       <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(700px 260px at 50% 0%, rgba(243,111,33,.12), transparent 70%)' }}></div>
       <div className="max-w-[1200px] mx-auto px-4 md:px-6 relative">
-        <div className="flex items-center justify-end gap-2 text-[12px] pt-4 text-stone-500">
-          <Mail className="w-3.5 h-3.5 text-[#f36f21]" />
-          {t('plans.support')}:
-          <a href={`mailto:${SUPPORT_EMAIL}`} className="font-bold text-[#ff9a3d] hover:underline">{SUPPORT_EMAIL}</a>
+        <div className="flex items-center justify-end gap-2 text-[11px] sm:text-[12px] pt-4 text-stone-500 flex-wrap min-w-0">
+          <Mail className="w-3.5 h-3.5 text-[#f36f21] shrink-0" />
+          <span className="shrink-0">{t('plans.support')}:</span>
+          <a href={`mailto:${SUPPORT_EMAIL}`} className="font-bold text-[#ff9a3d] hover:underline break-all">{SUPPORT_EMAIL}</a>
         </div>
 
         {/* ===== HERO minh hoạ ===== */}
@@ -133,8 +133,8 @@ export default function PlansScreen({ initialCode = '' }) {
               <div className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-[#ff9a3d] bg-[#f36f21]/10 border border-[#f36f21]/30 rounded-full px-3 py-1 mb-2">
                 <Sparkles className="w-3 h-3" /> CHRTV PL▷Y
               </div>
-              <h1 className="text-[26px] md:text-[32px] font-black tracking-tight text-white leading-tight">{t('plans.title')}</h1>
-              <p className="text-[13px] text-stone-400 mt-1.5 flex items-center justify-center md:justify-start gap-1.5">
+              <h1 className="text-[22px] sm:text-[26px] md:text-[32px] font-black tracking-tight text-white leading-tight break-words">{t('plans.title')}</h1>
+              <p className="text-[13px] text-stone-400 mt-1.5 flex items-center justify-center md:justify-start gap-1.5 px-1">
                 <BadgeCheck className="w-4 h-4 text-emerald-400 shrink-0" />
                 {t('plans.sub')}
               </p>

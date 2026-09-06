@@ -4,8 +4,9 @@ const TSB_ABS = 'https://www.thesportsdb.com/api/v1/json/3';
 const OLB = 'https://api.openligadb.de';
 
 export const LEAGUES = [
+  { id: 'u20wc', name: 'FIFA U-20 World Cup', short: 'U20 TG', tsdb: '5642', flag: '🌎', cup: true, latestSeason: true, logo: 'https://r2.thesportsdb.com/images/media/league/badge/o9zi0a1751440425.png' },
+  { id: 'u20afc', name: 'U-20 châu Á 2027', short: 'U20 Á', tsdb: '', espnSlugs: ['afc.u20', 'afc.u20.championship', 'afc.u20asiancup'], espnDaysBack: 14, flag: '🌏', cup: true, latestSeason: true, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/847.png' },
   { id: 'aff', name: 'ASEAN Championship', short: 'ASEAN', tsdb: '5889', espnSlugs: ['aff.championship'], espnDaysBack: 50, flag: '🌏', cup: true, latestSeason: true, logo: 'https://r2.thesportsdb.com/images/media/league/badge/z9dvdf1780551855.png' },
-  { id: 'u20', name: 'AFC U-20 Asian Cup', short: 'U20 Á', tsdb: '', espnSlugs: ['afc.u20', 'afc.u20.championship', 'afc.u20asiancup'], espnDaysBack: 14, flag: '🌏', cup: true, latestSeason: true, logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/847.png' },
   { id: 'epl', name: 'Ngoại hạng Anh', short: 'EPL', tsdb: '4328', flag: '🇬🇧', logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/23.png' },
   { id: 'laliga', name: 'La Liga', short: 'LaLiga', tsdb: '4335', flag: '🇪🇸', logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/15.png' },
   { id: 'seriea', name: 'Serie A', short: 'Serie A', tsdb: '4332', flag: '🇮🇹', logo: 'https://a.espncdn.com/i/leaguelogos/soccer/500/12.png' },
@@ -52,7 +53,14 @@ async function tsdbGet(file, params = {}) {
     `${TSB_ABS}/${file}${qs ? `?${qs}` : ''}`,
   ];
   const settled = await Promise.all(tries.map((u) => getJSON(u, 8000).catch(() => null)));
-  return settled.find((d) => d && typeof d === 'object' && !d.error) || {};
+  const ok = settled.filter((d) => d && typeof d === 'object' && !d.error);
+  ok.sort((a, b) => payloadScore(b) - payloadScore(a));
+  return ok[0] || {};
+}
+
+function payloadScore(d) {
+  return (d.events?.length || 0) + (d.seasons?.length || 0) + (d.table?.length || 0)
+    + (d.leagues?.length || 0) + (d.teams?.length || 0) + (d.results?.length || 0);
 }
 
 function ymd(d) {
@@ -197,12 +205,17 @@ function mergeEvents(lists) {
   return [...map.values()];
 }
 
-function splitNextPast(events, { pastLimit = 15 } = {}) {
+const TWO_MONTHS = 62 * 24 * 3600 * 1000;
+
+function splitNextPast(events, { pastLimit = 40 } = {}) {
   const now = Date.now();
-  const horizon = now + 150 * 24 * 3600 * 1000;
   const withTs = events.map(ev => ({ ev, ts: tsOfEvent(ev) })).filter(x => x.ts > 0);
-  const next = withTs.filter(x => x.ts >= now - 3 * 3600 * 1000 && x.ts <= horizon).sort((a, b) => a.ts - b.ts).slice(0, 30).map(x => x.ev);
-  const past = withTs.filter(x => x.ts < now - 3 * 3600 * 1000).sort((a, b) => b.ts - a.ts).slice(0, pastLimit).map(x => x.ev);
+  const next = withTs
+    .filter(x => x.ts >= now - 3 * 3600 * 1000 && x.ts <= now + TWO_MONTHS)
+    .sort((a, b) => a.ts - b.ts).slice(0, 40).map(x => x.ev);
+  const past = withTs
+    .filter(x => x.ts < now - 3 * 3600 * 1000 && x.ts >= now - TWO_MONTHS)
+    .sort((a, b) => b.ts - a.ts).slice(0, pastLimit).map(x => x.ev);
   return { next, past };
 }
 
@@ -232,7 +245,7 @@ async function loadLeagueData(league, season) {
     fetchEspnLeague(league).catch(() => []),
   ]);
   const merged = mergeEvents([seasonEvts, pastLeague, nextLeague, espnEvts]);
-  const { next, past } = splitNextPast(merged, { pastLimit: (league.cup || league.latestSeason) ? 30 : 15 });
+  const { next, past } = splitNextPast(merged, { pastLimit: 40 });
 
   const table = await (async () => {
     if (!league.cup && league.tsdb) {
@@ -376,6 +389,86 @@ export async function fetchSportsVideos() {
     const d = await r.json();
     return d.videos || [];
   } catch { return []; }
+}
+
+function descForLang(tm, lang) {
+  const map = {
+    vi: tm.strDescriptionEN, en: tm.strDescriptionEN, de: tm.strDescriptionDE,
+    fr: tm.strDescriptionFR, it: tm.strDescriptionIT, cn: tm.strDescriptionCN,
+    zh: tm.strDescriptionCN, jp: tm.strDescriptionJP, ru: tm.strDescriptionRU,
+    es: tm.strDescriptionES, pt: tm.strDescriptionPT,
+  };
+  const raw = map[lang] || tm.strDescriptionEN || tm.strDescriptionIT || '';
+  return String(raw || '').replace(/\r\n/g, '\n').trim();
+}
+
+export function pickBestTeam(teams, query) {
+  const q = String(query || '').trim().toLowerCase();
+  const scored = (teams || []).map((tm) => {
+    let s = 0;
+    const name = String(tm.strTeam || '').toLowerCase();
+    const alt = String(tm.strTeamAlternate || '').toLowerCase();
+    const country = String(tm.strCountry || '').toLowerCase();
+    if (name === q) s += 100;
+    else if (name.startsWith(q)) s += 70;
+    else if (name.includes(q) || alt.includes(q)) s += 40;
+    if (country === q) s += 20;
+    if (tm.strSport === 'Soccer') s += 25;
+    if (tm.strBadge) s += 12;
+    if (tm.strStadium) s += 4;
+    if (tm.strDescriptionEN) s += 6;
+    if (tm.strLocked === 'unlocked') s += 2;
+    return { tm, s };
+  }).filter((x) => x.s > 0);
+  scored.sort((a, b) => b.s - a.s);
+  return (scored[0] || (teams || [])[0]) || null;
+}
+
+export function slimTeam(tm, lang = 'vi') {
+  if (!tm) return null;
+  const leagues = [tm.strLeague, tm.strLeague2, tm.strLeague3, tm.strLeague4, tm.strLeague5]
+    .map((x) => String(x || '').trim()).filter(Boolean);
+  const aliases = String(tm.strTeamAlternate || '').split(',').map((x) => x.trim()).filter(Boolean).slice(0, 4);
+  const desc = descForLang(tm, lang);
+  return {
+    id: tm.idTeam,
+    name: tm.strTeam,
+    aliases,
+    formed: tm.intFormedYear || '',
+    sport: tm.strSport || '',
+    country: tm.strCountry || '',
+    stadium: tm.strStadium || '',
+    location: tm.strLocation || '',
+    capacity: tm.intStadiumCapacity || '',
+    nick: tm.strKeywords || '',
+    badge: tm.strBadge || '',
+    logo: tm.strLogo || '',
+    kit: tm.strEquipment || '',
+    website: tm.strWebsite || '',
+    facebook: tm.strFacebook || '',
+    youtube: tm.strYoutube || '',
+    leagues,
+    desc: desc.length > 900 ? desc.slice(0, 900).trim() + '…' : desc,
+  };
+}
+
+export async function fetchTeam(query, lang = 'vi') {
+  const q = String(query || '').trim();
+  if (!q) return null;
+  return cached(`team_${q.toLowerCase()}_${lang}`, async () => {
+    const d = await tsdbGet('searchteams.php', { t: q });
+    const tm = pickBestTeam(d.teams || [], q);
+    return slimTeam(tm, lang);
+  }, 30 * 60 * 1000);
+}
+
+export async function fetchTeamLast(idTeam) {
+  if (!idTeam) return [];
+  return cached(`team_last_${idTeam}`, async () => {
+    const d = await tsdbGet('eventslast.php', { id: idTeam });
+    const list = d.results || d.events || [];
+    return Array.isArray(list) ? list.slice(0, 8) : [];
+  }, 10 * 60 * 1000);
 }
 
 export function parseVideoUrl(url) {

@@ -735,6 +735,11 @@ const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS scheduled_posts (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, title TEXT DEFAULT '', body TEXT DEFAULT '', link_type TEXT DEFAULT 'none', link_value TEXT DEFAULT '', image_url TEXT DEFAULT '', publish_at TEXT NOT NULL, is_done INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS predictions (user_id INTEGER NOT NULL, event_key TEXT NOT NULL, league TEXT DEFAULT '', home TEXT DEFAULT '', away TEXT DEFAULT '', ph INTEGER DEFAULT 0, pa INTEGER DEFAULT 0, points INTEGER DEFAULT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(user_id, event_key))`,
   `CREATE INDEX IF NOT EXISTS idx_predictions_key ON predictions(event_key)`,
+  `CREATE TABLE IF NOT EXISTS short_creator_profiles (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, handle TEXT UNIQUE NOT NULL, display_name TEXT DEFAULT '', avatar_url TEXT DEFAULT '', bio TEXT DEFAULT '', verified INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS short_follows (id INTEGER PRIMARY KEY AUTOINCREMENT, follower_user_id INTEGER NOT NULL, creator_id INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(follower_user_id, creator_id))`,
+  `CREATE INDEX IF NOT EXISTS idx_shorts_creator ON shorts(creator_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_short_follows_creator ON short_follows(creator_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_short_follows_follower ON short_follows(follower_user_id)`,
 ];
 
 let schemaReady = false;
@@ -774,6 +779,15 @@ async function ensureSchema(env) {
       "ALTER TABLE users ADD COLUMN plan TEXT DEFAULT ''",
     ]) {
       try { await env.DB.prepare(stmt).run(); } catch (e) { /* cột đã có — bỏ qua */ }
+    }
+    // MIGRATION: shorts -> creator profile + user_id
+    for (const stmt of [
+      "ALTER TABLE shorts ADD COLUMN user_id INTEGER DEFAULT 0",
+      "ALTER TABLE shorts ADD COLUMN creator_id INTEGER DEFAULT 0",
+      "CREATE TABLE IF NOT EXISTS short_creator_profiles (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, handle TEXT UNIQUE NOT NULL, display_name TEXT DEFAULT '', avatar_url TEXT DEFAULT '', bio TEXT DEFAULT '', verified INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+      "CREATE TABLE IF NOT EXISTS short_follows (id INTEGER PRIMARY KEY AUTOINCREMENT, follower_user_id INTEGER NOT NULL, creator_id INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(follower_user_id, creator_id))",
+    ]) {
+      try { await env.DB.prepare(stmt).run(); } catch (e) { /* đã có — bỏ qua */ }
     }
     // Seed gói mặc định (admin sửa/thêm sau trong Admin → Gói cước)
     try {
@@ -848,6 +862,12 @@ async function handleAPI(path, request, env, ctx) {
   if (path === "/api/reminders") return await handleReminders(request, env);
   if (path === "/api/feedback") return await handleFeedback(request, env);
   if (path === "/api/shorts") return await handleShorts(request, env);
+  if (path === "/api/shorts/creators") return await handleShortCreators(request, env);
+  if (path === "/api/shorts/creator") return await handleShortCreatorDetail(request, env);
+  if (path === "/api/shorts/by-creator") return await handleShortsByCreator(request, env);
+  if (path === "/api/shorts/follow") return await handleShortFollow(request, env);
+  if (path === "/api/shorts/creator/profile") return await handleShortCreatorProfile(request, env);
+  if (path === "/api/shorts/upload" || path === "/api/shorts/my") return await handleShortUploadMy(path, request, env);
   if (path === "/api/plans" && request.method === "GET") {
     await ensureSchema(env);
     try {
@@ -2476,8 +2496,36 @@ async function handleAdmin(path, request, env, ctx) {
   }
   // Shorts do admin đăng
   if (path === "/admin/shorts" && request.method === "GET") {
-    const { results } = await env.DB.prepare("SELECT * FROM shorts ORDER BY created_at DESC LIMIT 200").all();
-    return json({ success: true, shorts: results || [] }, 200, request, env);
+    try {
+      const { results } = await env.DB.prepare("SELECT s.*, c.handle as creator_handle, c.display_name as creator_name, c.avatar_url as creator_avatar FROM shorts s LEFT JOIN short_creator_profiles c ON c.id = s.creator_id ORDER BY s.created_at DESC LIMIT 200").all();
+      return json({ success: true, shorts: results || [] }, 200, request, env);
+    } catch {
+      const { results } = await env.DB.prepare("SELECT * FROM shorts ORDER BY created_at DESC LIMIT 200").all();
+      return json({ success: true, shorts: results || [] }, 200, request, env);
+    }
+  }
+  // Admin creator profiles management
+  if (path === "/admin/short-creators" && request.method === "GET") {
+    try {
+      const { results } = await env.DB.prepare("SELECT p.*, (SELECT COUNT(*) FROM shorts WHERE creator_id = p.id) as shorts_count, (SELECT COUNT(*) FROM short_follows WHERE creator_id = p.id) as followers FROM short_creator_profiles p ORDER BY p.created_at DESC LIMIT 200").all();
+      return json({ success: true, creators: results || [] }, 200, request, env);
+    } catch { return json({ success: true, creators: [] }, 200, request, env); }
+  }
+  if (path === "/admin/short-creators" && request.method === "PUT") {
+    const b = await request.json().catch(() => ({}));
+    const id = parseInt(b.id)||0;
+    if (!id) return json({ error: "Thiếu id" }, 400, request, env);
+    if (b.verified !== undefined) await env.DB.prepare("UPDATE short_creator_profiles SET verified = ? WHERE id = ?").bind(b.verified ? 1 : 0, id).run();
+    if (b.handle) await env.DB.prepare("UPDATE short_creator_profiles SET handle = ?, display_name = COALESCE(?, display_name), avatar_url = COALESCE(?, avatar_url), bio = COALESCE(?, bio) WHERE id = ?").bind(String(b.handle).slice(0,20), b.display_name || null, b.avatar_url || null, b.bio || null, id).run();
+    return json({ success: true }, 200, request, env);
+  }
+  if (path === "/admin/short-creators" && request.method === "DELETE") {
+    const { id } = await request.json().catch(() => ({}));
+    if (!id) return json({ error: "Thiếu id" }, 400, request, env);
+    await env.DB.prepare("DELETE FROM short_follows WHERE creator_id = ?").bind(id).run();
+    await env.DB.prepare("UPDATE shorts SET creator_id = NULL WHERE creator_id = ?").bind(id).run();
+    await env.DB.prepare("DELETE FROM short_creator_profiles WHERE id = ?").bind(id).run();
+    return json({ success: true }, 200, request, env);
   }
   if (path === "/admin/shorts" && request.method === "POST") {
     const b = await request.json().catch(() => ({}));
@@ -2615,6 +2663,25 @@ async function handleAdmin(path, request, env, ctx) {
     await logAudit(env, adminUser?.id || 0, "broadcast.send", { type: type || "info", message: (message || "").slice(0, 120) });
     return json({ success: true }, 200, request, env);
   }
+
+  if (path === "/admin/broadcast" && request.method === "DELETE") {
+    const b = await request.json().catch(() => ({}));
+    const id = parseInt(b.id) || 0;
+    if (!id) return json({ error: "Thiếu id" }, 400, request, env);
+    await env.DB.prepare("DELETE FROM broadcasts WHERE id = ?").bind(id).run();
+    await logAudit(env, adminUser?.id || 0, "broadcast.delete", { id });
+    return json({ success: true }, 200, request, env);
+  }
+
+  if (path === "/admin/notifications" && request.method === "DELETE") {
+    const b = await request.json().catch(() => ({}));
+    const id = parseInt(b.id) || 0;
+    if (!id) return json({ error: "Thiếu id" }, 400, request, env);
+    await env.DB.prepare("DELETE FROM notifications WHERE id = ?").bind(id).run();
+    await logAudit(env, adminUser?.id || 0, "notify.delete", { id });
+    return json({ success: true }, 200, request, env);
+  }
+
 
   if (path === "/admin/broadcasts" && request.method === "GET") {
     const { results } = await env.DB.prepare("SELECT * FROM broadcasts WHERE is_active = 1 ORDER BY created_at DESC LIMIT 20").all();
@@ -2996,15 +3063,48 @@ async function handleSessions(request, env) {
 }
 
 
-// ========== SHORTS (do admin đăng) ==========
+// ========== SHORTS (do admin đăng) + CREATOR PROFILE ==========
 async function handleShorts(request, env) {
   if (!hasDB(env)) return json({ success: true, shorts: [] }, 200, request, env);
   await ensureSchema(env);
   if (request.method !== "GET") return json({ error: "Method not allowed" }, 405, request, env);
   const url = new URL(request.url);
   const limit = Math.min(parseInt(url.searchParams.get("limit")) || 30, 100);
-  const { results } = await env.DB.prepare("SELECT id, title, caption, video_url, thumb_url, duration, author, views, likes, created_at FROM shorts WHERE status = 'live' ORDER BY created_at DESC LIMIT ?").bind(limit).all();
-  return json({ success: true, shorts: results || [] }, 200, request, env);
+  const auth = await getAuth(request, env);
+  const uid = auth && auth.user ? auth.user.id : 0;
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT s.id, s.title, s.caption, s.video_url, s.thumb_url, s.duration, s.author, s.views, s.likes, s.created_at, s.user_id, s.creator_id,
+              c.handle as creator_handle, c.display_name as creator_name, c.avatar_url as creator_avatar, c.bio as creator_bio, c.verified as creator_verified,
+              (SELECT COUNT(*) FROM short_follows WHERE creator_id = s.creator_id) as creator_followers,
+              (SELECT COUNT(*) FROM shorts WHERE creator_id = s.creator_id AND status='live') as creator_shorts_count,
+              (SELECT 1 FROM short_follows WHERE follower_user_id = ? AND creator_id = s.creator_id) as is_following
+       FROM shorts s LEFT JOIN short_creator_profiles c ON c.id = s.creator_id
+       WHERE s.status = 'live' ORDER BY s.created_at DESC LIMIT ?`
+    ).bind(uid, limit).all();
+    // fallback cho shorts cũ chưa có creator -> dùng author text
+    const out = (results || []).map(r => ({
+      ...r,
+      creator: r.creator_id ? {
+        id: r.creator_id,
+        handle: r.creator_handle,
+        display_name: r.creator_name || r.creator_handle,
+        avatar_url: r.creator_avatar || "",
+        bio: r.creator_bio || "",
+        verified: !!r.creator_verified,
+        followers: r.creator_followers || 0,
+        shorts_count: r.creator_shorts_count || 0,
+        is_following: !!r.is_following
+      } : null
+    }));
+    return json({ success: true, shorts: out }, 200, request, env);
+  } catch (e) {
+    // fallback old schema
+    try {
+      const { results } = await env.DB.prepare("SELECT id, title, caption, video_url, thumb_url, duration, author, views, likes, created_at FROM shorts WHERE status = 'live' ORDER BY created_at DESC LIMIT ?").bind(limit).all();
+      return json({ success: true, shorts: results || [] }, 200, request, env);
+    } catch { return json({ success: true, shorts: [] }, 200, request, env); }
+  }
 }
 
 async function handleShortReact(request, env) {
@@ -3017,6 +3117,220 @@ async function handleShortReact(request, env) {
   else await env.DB.prepare("UPDATE shorts SET views = views + 1 WHERE id = ?").bind(id).run();
   return json({ success: true }, 200, request, env);
 }
+
+async function handleShortCreators(request, env) {
+  if (!hasDB(env)) return json({ success: true, creators: [] }, 200, request, env);
+  await ensureSchema(env);
+  if (request.method !== "GET") return json({ error: "Method not allowed" }, 405, request, env);
+  const auth = await getAuth(request, env);
+  const uid = auth && auth.user ? auth.user.id : 0;
+  try {
+    const { results } = await env.DB.prepare(
+      `SELECT p.id, p.handle, p.display_name, p.avatar_url, p.bio, p.verified,
+              (SELECT COUNT(*) FROM shorts WHERE creator_id = p.id AND status='live') as shorts_count,
+              (SELECT COUNT(*) FROM short_follows WHERE creator_id = p.id) as followers,
+              (SELECT 1 FROM short_follows WHERE follower_user_id = ? AND creator_id = p.id) as is_following
+       FROM short_creator_profiles p ORDER BY followers DESC, shorts_count DESC LIMIT 100`
+    ).bind(uid).all();
+    return json({ success: true, creators: results || [] }, 200, request, env);
+  } catch { return json({ success: true, creators: [] }, 200, request, env); }
+}
+
+async function handleShortCreatorDetail(request, env) {
+  if (!hasDB(env)) return json({ error: "No DB" }, 503, request, env);
+  await ensureSchema(env);
+  const q = new URL(request.url).searchParams;
+  const handle = String(q.get("handle") || q.get("id") || "").trim().toLowerCase();
+  const idParam = parseInt(q.get("creator_id") || q.get("id")) || 0;
+  if (!handle && !idParam) return json({ error: "Thiếu handle/creator_id" }, 400, request, env);
+  const auth = await getAuth(request, env);
+  const uid = auth && auth.user ? auth.user.id : 0;
+  try {
+    let creator = null;
+    if (idParam) {
+      const { results } = await env.DB.prepare("SELECT * FROM short_creator_profiles WHERE id = ?").bind(idParam).all();
+      creator = results[0] || null;
+    } else {
+      const { results } = await env.DB.prepare("SELECT * FROM short_creator_profiles WHERE LOWER(handle) = ?").bind(handle).all();
+      creator = results[0] || null;
+      // fallback: tìm theo author text cũ trong shorts nếu chưa có profile
+      if (!creator) {
+        const { results: sres } = await env.DB.prepare("SELECT author FROM shorts WHERE LOWER(author) = ? LIMIT 1").bind(handle).all();
+        if (sres[0]) {
+          creator = { id: 0, handle: sres[0].author, display_name: sres[0].author, avatar_url: "", bio: "Người đăng: " + sres[0].author, verified: 0 };
+        }
+      }
+    }
+    if (!creator) return json({ error: "Không tìm thấy creator" }, 404, request, env);
+    let shorts = [];
+    let followers = 0;
+    let is_following = false;
+    if (creator.id) {
+      const { results: sr } = await env.DB.prepare("SELECT id, title, caption, video_url, thumb_url, duration, author, views, likes, created_at FROM shorts WHERE creator_id = ? AND status='live' ORDER BY created_at DESC LIMIT 100").bind(creator.id).all();
+      shorts = sr || [];
+      const { results: fr } = await env.DB.prepare("SELECT COUNT(*) as c FROM short_follows WHERE creator_id = ?").bind(creator.id).all();
+      followers = fr[0]?.c || 0;
+      if (uid) {
+        const { results: chk } = await env.DB.prepare("SELECT 1 FROM short_follows WHERE follower_user_id = ? AND creator_id = ?").bind(uid, creator.id).all();
+        is_following = !!chk[0];
+      }
+    } else {
+      // legacy author search
+      const { results: sr } = await env.DB.prepare("SELECT id, title, caption, video_url, thumb_url, duration, author, views, likes, created_at FROM shorts WHERE LOWER(author) = ? AND status='live' ORDER BY created_at DESC LIMIT 100").bind(handle).all();
+      shorts = sr || [];
+    }
+    return json({ success: true, creator: { ...creator, followers, is_following, shorts_count: shorts.length }, shorts }, 200, request, env);
+  } catch (e) {
+    return json({ error: "Lỗi: " + (e.message || e) }, 500, request, env);
+  }
+}
+
+async function handleShortsByCreator(request, env) {
+  if (!hasDB(env)) return json({ success: true, shorts: [] }, 200, request, env);
+  await ensureSchema(env);
+  const q = new URL(request.url).searchParams;
+  const handle = String(q.get("handle") || "").trim().toLowerCase();
+  const creator_id = parseInt(q.get("creator_id")) || 0;
+  if (!handle && !creator_id) return json({ error: "Thiếu handle" }, 400, request, env);
+  try {
+    if (creator_id) {
+      const { results } = await env.DB.prepare("SELECT id, title, caption, video_url, thumb_url, duration, author, views, likes, created_at, creator_id FROM shorts WHERE creator_id = ? AND status='live' ORDER BY created_at DESC LIMIT 100").bind(creator_id).all();
+      return json({ success: true, shorts: results || [] }, 200, request, env);
+    }
+    // try creator profile first
+    const { results: cr } = await env.DB.prepare("SELECT id FROM short_creator_profiles WHERE LOWER(handle) = ?").bind(handle).all();
+    if (cr[0]) {
+      const { results } = await env.DB.prepare("SELECT id, title, caption, video_url, thumb_url, duration, author, views, likes, created_at, creator_id FROM shorts WHERE creator_id = ? AND status='live' ORDER BY created_at DESC LIMIT 100").bind(cr[0].id).all();
+      return json({ success: true, shorts: results || [] }, 200, request, env);
+    }
+    // fallback legacy author
+    const { results } = await env.DB.prepare("SELECT id, title, caption, video_url, thumb_url, duration, author, views, likes, created_at FROM shorts WHERE LOWER(author) = ? AND status='live' ORDER BY created_at DESC LIMIT 100").bind(handle).all();
+    return json({ success: true, shorts: results || [] }, 200, request, env);
+  } catch { return json({ success: true, shorts: [] }, 200, request, env); }
+}
+
+async function handleShortFollow(request, env) {
+  if (!hasDB(env)) return dbUnavailable();
+  await ensureSchema(env);
+  const auth = await getAuth(request, env);
+  if (!auth || !auth.user) return json({ error: "LOGIN_REQUIRED" }, 401, request, env);
+  if (request.method === "GET") {
+    const q = new URL(request.url).searchParams;
+    const creator_id = parseInt(q.get("creator_id")) || 0;
+    if (!creator_id) return json({ error: "Thiếu creator_id" }, 400, request, env);
+    const { results } = await env.DB.prepare("SELECT 1 FROM short_follows WHERE follower_user_id = ? AND creator_id = ?").bind(auth.user.id, creator_id).all();
+    const { results: cnt } = await env.DB.prepare("SELECT COUNT(*) as c FROM short_follows WHERE creator_id = ?").bind(creator_id).all();
+    return json({ success: true, is_following: !!results[0], followers: cnt[0]?.c || 0 }, 200, request, env);
+  }
+  if (request.method !== "POST") return json({ error: "Method not allowed" }, 405, request, env);
+  const b = await request.json().catch(() => ({}));
+  let creator_id = parseInt(b.creator_id) || 0;
+  const handle = String(b.handle || "").trim().toLowerCase();
+  if (!creator_id && handle) {
+    const { results } = await env.DB.prepare("SELECT id FROM short_creator_profiles WHERE LOWER(handle) = ?").bind(handle).all();
+    creator_id = results[0]?.id || 0;
+  }
+  if (!creator_id) return json({ error: "Thiếu creator_id/handle" }, 400, request, env);
+  // check not self
+  const { results: own } = await env.DB.prepare("SELECT user_id FROM short_creator_profiles WHERE id = ?").bind(creator_id).all();
+  if (own[0] && own[0].user_id === auth.user.id) return json({ error: "Không thể tự theo dõi chính mình" }, 400, request, env);
+  try {
+    const { results: exists } = await env.DB.prepare("SELECT id FROM short_follows WHERE follower_user_id = ? AND creator_id = ?").bind(auth.user.id, creator_id).all();
+    if (exists[0]) {
+      await env.DB.prepare("DELETE FROM short_follows WHERE follower_user_id = ? AND creator_id = ?").bind(auth.user.id, creator_id).run();
+      const { results: cnt } = await env.DB.prepare("SELECT COUNT(*) as c FROM short_follows WHERE creator_id = ?").bind(creator_id).all();
+      return json({ success: true, is_following: false, followers: cnt[0]?.c || 0 }, 200, request, env);
+    } else {
+      await env.DB.prepare("INSERT INTO short_follows (follower_user_id, creator_id) VALUES (?, ?)").bind(auth.user.id, creator_id).run();
+      const { results: cnt } = await env.DB.prepare("SELECT COUNT(*) as c FROM short_follows WHERE creator_id = ?").bind(creator_id).all();
+      return json({ success: true, is_following: true, followers: cnt[0]?.c || 0 }, 200, request, env);
+    }
+  } catch (e) {
+    return json({ error: "Lỗi follow: " + (e.message || e) }, 500, request, env);
+  }
+}
+
+async function handleShortCreatorProfile(request, env) {
+  if (!hasDB(env)) return dbUnavailable();
+  await ensureSchema(env);
+  const auth = await getAuth(request, env);
+  if (!auth || !auth.user) return json({ error: "LOGIN_REQUIRED" }, 401, request, env);
+  if (request.method === "GET") {
+    const { results } = await env.DB.prepare("SELECT * FROM short_creator_profiles WHERE user_id = ?").bind(auth.user.id).all();
+    const profile = results[0] || null;
+    if (!profile) return json({ success: true, profile: null }, 200, request, env);
+    const { results: cnt } = await env.DB.prepare("SELECT COUNT(*) as c FROM short_follows WHERE creator_id = ?").bind(profile.id).all();
+    const { results: scnt } = await env.DB.prepare("SELECT COUNT(*) as c FROM shorts WHERE creator_id = ? AND status='live'").bind(profile.id).all();
+    return json({ success: true, profile: { ...profile, followers: cnt[0]?.c || 0, shorts_count: scnt[0]?.c || 0 } }, 200, request, env);
+  }
+  if (request.method === "POST" || request.method === "PUT") {
+    const b = await request.json().catch(() => ({}));
+    let handle = String(b.handle || "").trim().toLowerCase().replace(/[^a-z0-9_.]/g, "").slice(0, 20);
+    const display_name = String(b.display_name || b.name || "").slice(0, 60);
+    const avatar_url = String(b.avatar_url || "").slice(0, 500);
+    const bio = String(b.bio || b.description || "").slice(0, 500);
+    if (!handle || handle.length < 3) return json({ error: "Handle cần ≥3 ký tự (a-z,0-9,_,.)" }, 400, request, env);
+    if (!display_name) return json({ error: "Thiếu tên hiển thị" }, 400, request, env);
+    // check handle unique except own
+    const { results: exist } = await env.DB.prepare("SELECT id, user_id FROM short_creator_profiles WHERE LOWER(handle) = ?").bind(handle).all();
+    if (exist[0] && exist[0].user_id !== auth.user.id) return json({ error: "Handle này đã có người dùng" }, 409, request, env);
+    const { results: own } = await env.DB.prepare("SELECT id FROM short_creator_profiles WHERE user_id = ?").bind(auth.user.id).all();
+    if (own[0]) {
+      await env.DB.prepare("UPDATE short_creator_profiles SET handle = ?, display_name = ?, avatar_url = ?, bio = ? WHERE user_id = ?").bind(handle, display_name, avatar_url, bio, auth.user.id).run();
+      const { results: upd } = await env.DB.prepare("SELECT * FROM short_creator_profiles WHERE user_id = ?").bind(auth.user.id).all();
+      return json({ success: true, profile: upd[0] }, 200, request, env);
+    } else {
+      try {
+        const r = await env.DB.prepare("INSERT INTO short_creator_profiles (user_id, handle, display_name, avatar_url, bio) VALUES (?, ?, ?, ?, ?)").bind(auth.user.id, handle, display_name, avatar_url, bio).run();
+        const id = r.meta?.last_row_id || 0;
+        const { results: created } = await env.DB.prepare("SELECT * FROM short_creator_profiles WHERE id = ?").bind(id).all();
+        return json({ success: true, profile: created[0] || { id, handle, display_name, avatar_url, bio } }, 200, request, env);
+      } catch (e) {
+        if (String(e.message||"").includes("UNIQUE")) return json({ error: "Handle đã tồn tại" }, 409, request, env);
+        return json({ error: "Lỗi tạo profile" }, 500, request, env);
+      }
+    }
+  }
+  if (request.method === "DELETE") {
+    await env.DB.prepare("DELETE FROM short_creator_profiles WHERE user_id = ?").bind(auth.user.id).run();
+    return json({ success: true }, 200, request, env);
+  }
+  return json({ error: "Method not allowed" }, 405, request, env);
+}
+
+async function handleShortUploadMy(path, request, env) {
+  if (!hasDB(env)) return dbUnavailable();
+  await ensureSchema(env);
+  const auth = await getAuth(request, env);
+  if (!auth || !auth.user) return json({ error: "LOGIN_REQUIRED" }, 401, request, env);
+  if (path === "/api/shorts/my" && request.method === "GET") {
+    const { results } = await env.DB.prepare("SELECT s.id, s.title, s.caption, s.video_url, s.thumb_url, s.duration, s.views, s.likes, s.status, s.created_at, p.handle as creator_handle FROM shorts s LEFT JOIN short_creator_profiles p ON p.id = s.creator_id WHERE s.user_id = ? ORDER BY s.created_at DESC LIMIT 100").bind(auth.user.id).all();
+    return json({ success: true, shorts: results || [] }, 200, request, env);
+  }
+  if (path === "/api/shorts/upload" && request.method === "POST") {
+    const b = await request.json().catch(() => ({}));
+    const { title, caption, video_url, thumb_url, duration } = b;
+    if (!video_url) return json({ error: "Thiếu video_url" }, 400, request, env);
+    // must have creator profile
+    const { results: cp } = await env.DB.prepare("SELECT id, handle FROM short_creator_profiles WHERE user_id = ?").bind(auth.user.id).all();
+    if (!cp[0]) return json({ error: "Bạn cần tạo hồ sơ creator trước (handle, avatar, bio)" , code:"NEED_PROFILE" }, 400, request, env);
+    const creator_id = cp[0].id;
+    const author = cp[0].handle;
+    await env.DB.prepare("INSERT INTO shorts (title, caption, video_url, thumb_url, duration, author, user_id, creator_id, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'live')").bind(String(title||"").slice(0,120), String(caption||"").slice(0,500), String(video_url).slice(0,500), String(thumb_url||"").slice(0,500), parseInt(duration)||0, author, auth.user.id, creator_id).run();
+    return json({ success: true }, 200, request, env);
+  }
+  if (path === "/api/shorts/my" && request.method === "DELETE") {
+    const b = await request.json().catch(() => ({}));
+    const id = parseInt(b.id)||0;
+    if (!id) return json({ error: "Thiếu id" }, 400, request, env);
+    const isAdmin = auth.user.role === "admin";
+    if (isAdmin) await env.DB.prepare("DELETE FROM shorts WHERE id = ?").bind(id).run();
+    else await env.DB.prepare("DELETE FROM shorts WHERE id = ? AND user_id = ?").bind(id, auth.user.id).run();
+    return json({ success: true }, 200, request, env);
+  }
+  return json({ error: "Method not allowed" }, 405, request, env);
+}
+
 
 // ========== QR LOGIN (quét từ thiết bị đã đăng nhập) ==========
 const QR_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // không lẫn 0/O, 1/I/L

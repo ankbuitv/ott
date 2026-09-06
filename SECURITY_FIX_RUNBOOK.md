@@ -58,12 +58,28 @@ cd ott   # repo này
 JWT_S=$(openssl rand -hex 32)
 STREAM_S=$(openssl rand -hex 32)
 ADMIN_S=$(openssl rand -hex 24)
+PEPPER_S=$(openssl rand -hex 32)
 
 wrangler secret put JWT_SECRET            # dán $JWT_S
 wrangler secret put STREAM_TOKEN_SECRET   # dán $STREAM_S
 wrangler secret put ADMIN_MASTER_TOKEN    # dán $ADMIN_S
+wrangler secret put PASSWORD_PEPPER       # dán $PEPPER_S  (xem cảnh báo ⚠️ bên dưới)
 wrangler secret put BREVO_API_KEY         # key Brevo hiện có (nếu đã có)
 ```
+
+> ⚠️ **CỰC KỲ QUAN TRỌNG — mật khẩu user và việc xoay `JWT_SECRET`:**
+> Bản cũ hash mật khẩu bằng `sha256(password + JWT_SECRET)`, nên **xoay
+> `JWT_SECRET` là mọi user gõ đúng mật khẩu vẫn bị báo “Sai mật khẩu”.**
+> Bản hiện tại đã tách: mật khẩu dùng `PASSWORD_PEPPER` (không set thì rơi về
+> `JWT_SECRET`), JWT dùng `JWT_SECRET`. Khi xoay secret:
+>
+> ```bash
+> # khai báo secret CŨ để hash cũ vẫn đăng nhập được (tự nâng cấp sau lần login đầu)
+> wrangler secret put LEGACY_JWT_SECRETS      # "secret_cu_1,secret_cu_2"
+> ```
+>
+> `PASSWORD_PEPPER` thì **không xoay** (xoay = khoá toàn bộ mật khẩu).
+> Chi tiết + cách cứu tài khoản đang bị khoá: `DANG_NHAP_TROUBLESHOOT.md`.
 
 Secret tuỳ chọn (khuyến nghị bật):
 

@@ -62,7 +62,7 @@ export default function AuthScreen() {
             setQrLeft(0);
           }
         } catch {}
-      }, 2000);
+      }, 3000); // 3s: đủ nhanh cho QR mà không đốt hạn mức rate-limit /auth/* của IP
     } catch (e) {
       setError(t('auth.qr.error'));
     } finally {

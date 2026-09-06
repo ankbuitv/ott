@@ -43,6 +43,29 @@ function streamTokenSecret(env) {
   return s;
 }
 
+// ---- Mật khẩu: pepper RIÊNG, KHÔNG dùng chung JWT_SECRET ----
+// Trước đây password_hash = sha256(password + JWT_SECRET). Hệ quả: mỗi lần xoay
+// JWT_SECRET (đúng theo SECURITY_FIX_RUNBOOK §1) là TOÀN BỘ mật khẩu user chết →
+// nhập đúng mật khẩu vẫn báo "Sai mật khẩu". Từ nay:
+//   - hash mới dùng PASSWORD_PEPPER (nếu chưa set thì rơi về JWT_SECRET để tương thích)
+//   - LEGACY_PASSWORD_PEPPERS / LEGACY_JWT_SECRETS (phân tách bằng dấu phẩy) chứa các
+//     secret CŨ: user đăng nhập được 1 lần bằng hash cũ rồi hash tự nâng cấp sang pepper mới.
+function passwordSecret(env) {
+  const s = (env && (env.PASSWORD_PEPPER || env.JWT_SECRET)) || "";
+  if (!s) throw new Error("PASSWORD_PEPPER (hoặc JWT_SECRET) chưa cấu hình — chạy: wrangler secret put PASSWORD_PEPPER");
+  return s;
+}
+function legacyPasswordSecrets(env) {
+  if (!env) return [];
+  const raw = [env.LEGACY_PASSWORD_PEPPERS, env.LEGACY_JWT_SECRETS, env.JWT_SECRET_OLD]
+    .filter(Boolean).join(",");
+  const cur = (env.PASSWORD_PEPPER || env.JWT_SECRET || "");
+  const list = raw.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
+  // Khi mới bật PASSWORD_PEPPER: hash cũ vẫn theo JWT_SECRET hiện tại → thử luôn.
+  if (env.JWT_SECRET && env.JWT_SECRET !== cur) list.push(env.JWT_SECRET);
+  return Array.from(new Set(list));
+}
+
 const CHRTV_CLIENT_UA = "CHRTV-OTT/0.0.1"; // CHỈ dùng làm phiên bản client (log), KHÔNG phải cơ chế xác thực.
 const SUPPORT_EMAIL = "support@ankb.qzz.io";
 
@@ -268,7 +291,42 @@ function sha256(message) {
 }
 
 function hashPassword(password, env) {
-  return sha256(password + jwtSecret(env));
+  return sha256(password + passwordSecret(env));
+}
+
+// Chữ ký JWT — DÙNG JWT_SECRET (tách hẳn khỏi hash mật khẩu để xoay secret
+// chỉ thu hồi phiên đăng nhập, KHÔNG khoá mật khẩu của user).
+function signToken(data, env) {
+  return sha256(data + jwtSecret(env));
+}
+
+// So sánh chuỗi hằng thời gian (chống timing attack khi dò hash).
+function safeEqual(a, b) {
+  const x = String(a || ""), y = String(b || "");
+  if (x.length !== y.length) return false;
+  let diff = 0;
+  for (let i = 0; i < x.length; i++) diff |= x.charCodeAt(i) ^ y.charCodeAt(i);
+  return diff === 0;
+}
+
+/**
+ * Kiểm tra mật khẩu với MỌI lược đồ hash từng dùng trong lịch sử app:
+ *   1. sha256(password + PASSWORD_PEPPER)  — chuẩn hiện tại
+ *   2. sha256(password + <secret cũ>)      — sau khi xoay JWT_SECRET/pepper
+ *   3. sha256(password)                    — tài khoản đời đầu (chưa có secret)
+ * Trả về { ok, needsRehash } — needsRehash = true thì caller ghi lại hash chuẩn mới.
+ */
+function verifyPassword(password, storedHash, env) {
+  const stored = String(storedHash || "");
+  if (!stored) return { ok: false, needsRehash: false };
+  try {
+    if (safeEqual(stored, hashPassword(password, env))) return { ok: true, needsRehash: false };
+  } catch { /* thiếu secret — thử tiếp các lược đồ cũ */ }
+  for (const s of legacyPasswordSecrets(env)) {
+    if (safeEqual(stored, sha256(password + s))) return { ok: true, needsRehash: true };
+  }
+  if (safeEqual(stored, sha256(password))) return { ok: true, needsRehash: true };
+  return { ok: false, needsRehash: false };
 }
 
 function generateToken() {
@@ -292,7 +350,7 @@ function generateJWT(userId, env, extra) {
     exp: Date.now() + (extra && extra.ttlMs ? extra.ttlMs : 30 * 24 * 3600 * 1000),
     ...(extra || {}),
   }));
-  const sig = hashPassword(header + "." + payload, env);
+  const sig = signToken(header + "." + payload, env);
   return `${header}.${payload}.${sig}`;
 }
 
@@ -300,8 +358,8 @@ function generateJWT(userId, env, extra) {
 function verifyJWT(token, env) {
   try {
     const [header, payload, sig] = token.split(".");
-    const expected = hashPassword(header + "." + payload, env);
-    if (sig !== expected) return null;
+    const expected = signToken(header + "." + payload, env);
+    if (!safeEqual(sig, expected)) return null;
     const data = JSON.parse(atob(payload));
     if (data.exp < Date.now()) return null;
     return data;
@@ -737,7 +795,10 @@ const SCHEMA_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_predictions_key ON predictions(event_key)`,
   `CREATE TABLE IF NOT EXISTS short_creator_profiles (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, handle TEXT UNIQUE NOT NULL, display_name TEXT DEFAULT '', avatar_url TEXT DEFAULT '', bio TEXT DEFAULT '', verified INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS short_follows (id INTEGER PRIMARY KEY AUTOINCREMENT, follower_user_id INTEGER NOT NULL, creator_id INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(follower_user_id, creator_id))`,
-  `CREATE INDEX IF NOT EXISTS idx_shorts_creator ON shorts(creator_id)`,
+  // LƯU Ý: index trên shorts(creator_id) KHÔNG đặt ở đây — cột creator_id do bước
+  // MIGRATION (ALTER TABLE) bên dưới thêm vào, nên nếu để trong batch này thì trên DB
+  // MỚI câu lệnh fail → CẢ BATCH rollback → không có bảng users/sessions → không
+  // đăng ký/đăng nhập được. Index được tạo sau phần ALTER.
   `CREATE INDEX IF NOT EXISTS idx_short_follows_creator ON short_follows(creator_id)`,
   `CREATE INDEX IF NOT EXISTS idx_short_follows_follower ON short_follows(follower_user_id)`,
 ];
@@ -753,9 +814,20 @@ async function ensureSchema(env) {
   if (schemaReady) return true;
   try {
     if (typeof env.DB.batch === "function") {
-      await env.DB.batch(SCHEMA_STATEMENTS.map((sql) => env.DB.prepare(sql)));
+      try {
+        await env.DB.batch(SCHEMA_STATEMENTS.map((sql) => env.DB.prepare(sql)));
+      } catch (e) {
+        // Batch của D1 là all-or-nothing: 1 câu lỗi là mất hết bảng.
+        // Chạy lại từng câu để lỗi cục bộ không kéo sập toàn bộ schema.
+        console.error("ensureSchema batch failed, fallback từng câu:", e?.message || e);
+        for (const sql of SCHEMA_STATEMENTS) {
+          try { await env.DB.prepare(sql).run(); } catch (err) { console.error("schema stmt lỗi:", err?.message || err); }
+        }
+      }
     } else {
-      for (const sql of SCHEMA_STATEMENTS) await env.DB.prepare(sql).run();
+      for (const sql of SCHEMA_STATEMENTS) {
+        try { await env.DB.prepare(sql).run(); } catch (err) { console.error("schema stmt lỗi:", err?.message || err); }
+      }
     }
     // MIGRATION: bảng channels cũ → tự thêm cột mới (is_active, UA, DRM...).
     // Nếu cột đã tồn tại, lệnh này fail và bị bỏ qua — không sao.
@@ -786,6 +858,8 @@ async function ensureSchema(env) {
       "ALTER TABLE shorts ADD COLUMN creator_id INTEGER DEFAULT 0",
       "CREATE TABLE IF NOT EXISTS short_creator_profiles (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, handle TEXT UNIQUE NOT NULL, display_name TEXT DEFAULT '', avatar_url TEXT DEFAULT '', bio TEXT DEFAULT '', verified INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
       "CREATE TABLE IF NOT EXISTS short_follows (id INTEGER PRIMARY KEY AUTOINCREMENT, follower_user_id INTEGER NOT NULL, creator_id INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(follower_user_id, creator_id))",
+      // Index này phải chạy SAU ALTER TABLE shorts ADD COLUMN creator_id
+      "CREATE INDEX IF NOT EXISTS idx_shorts_creator ON shorts(creator_id)",
     ]) {
       try { await env.DB.prepare(stmt).run(); } catch (e) { /* đã có — bỏ qua */ }
     }
@@ -1858,11 +1932,15 @@ async function handleAuth(path, request, env) {
   if (path.startsWith("/auth/qr/")) return await handleQrLogin(request, env);
   const ip = request.headers.get("CF-Connecting-IP") || "local";
 
-  // P2 (verify brute-force): rate-limit TOÀN BỘ /auth/* theo IP — 20 req/phút
-  // (lưới chính chống brute-force mã là lockout 5 lần/email bên dưới + rate-limit
-  //  từng endpoint; ngưỡng IP chỉ chặn enumeration hàng loạt)
+  // P2 (verify brute-force): rate-limit TOÀN BỘ /auth/* theo IP.
+  // Ngưỡng cũ 20 req/phút quá chặt: màn QR đăng nhập poll /auth/qr/poll mỗi 2s
+  // (~30 req/phút) là đủ tự khoá chính mình → user gõ mật khẩu đúng vẫn nhận 429.
+  // Nay: endpoint poll có ngưỡng riêng rộng (120/phút), các endpoint auth còn lại 40/phút.
   try {
-    const g = await rateLimitCheck(env, "auth:ip:" + ip, 20, 60);
+    const isPoll = path === "/auth/qr/poll";
+    const g = isPoll
+      ? await rateLimitCheck(env, "authpoll:ip:" + ip, 120, 60)
+      : await rateLimitCheck(env, "auth:ip:" + ip, 40, 60);
     if (!g.allowed) return json({ error: "Quá nhiều request — thử lại sau.", code: "RATE_LIMITED", retry_after: g.retryAfter }, 429, request, env);
   } catch (e) { /* DB lỗi — bỏ qua rate limit, vẫn có lockout riêng từng endpoint */ }
 
@@ -1935,10 +2013,17 @@ async function handleAuth(path, request, env) {
     password = String(password || "");
     if (!login || !password) return json({ error: "Thiếu thông tin" }, 400, request, env);
 
-    // RATE LIMIT: sai ≥5 lần trong 15 phút (theo tài khoản hoặc IP) → khoá tạm
+    // RATE LIMIT: sai nhiều lần trong 15 phút → khoá tạm.
+    //  - theo TÀI KHOẢN: 5 lần (chống dò mật khẩu 1 user)
+    //  - theo IP: 20 lần (nới ra vì nhà mạng VN dùng CGNAT — nhiều user chung 1 IP,
+    //    ngưỡng 5 chung làm người dùng vô can bị khoá dù gõ đúng mật khẩu)
     try {
-      const { results: fails } = await env.DB.prepare("SELECT COUNT(*) as c FROM login_attempts WHERE (login = ? OR ip = ?) AND created_at > datetime('now', '-15 minutes')").bind(login, ip).all();
-      if ((fails[0]?.c || 0) >= 5) {
+      const { results: fails } = await env.DB.prepare(
+        "SELECT SUM(CASE WHEN login = ? THEN 1 ELSE 0 END) AS byLogin, COUNT(*) AS byIp FROM login_attempts WHERE (login = ? OR ip = ?) AND created_at > datetime('now', '-15 minutes')"
+      ).bind(login, login, ip).all();
+      const byLogin = fails[0]?.byLogin || 0;
+      const byIp = fails[0]?.byIp || 0;
+      if (byLogin >= 5 || byIp >= 20) {
         return json({ error: "Đăng nhập sai quá nhiều lần. Tạm khoá 15 phút — thử lại sau hoặc đặt lại mật khẩu.", code: "RATE_LIMITED" }, 429, request, env);
       }
     } catch (e) { /* bảng chưa có — bỏ qua */ }
@@ -1961,18 +2046,14 @@ async function handleAuth(path, request, env) {
         return json({ error: "Tài khoản không tồn tại — kiểm tra lại tên đăng nhập/email.", code: "NO_ACCOUNT" }, 401, request, env);
       }
       const user = results[0];
-      // Kiểm tra mật khẩu: hash hiện tại + fallback hash đời cũ (tự nâng cấp khi khớp)
-      let pwOk = user.password_hash === hash;
-      if (!pwOk) {
-        try {
-          const legacy = sha256(password); // tài khoản tạo trước khi có JWT_SECRET
-          if (user.password_hash === legacy) {
-            pwOk = true;
-            try { await env.DB.prepare("UPDATE users SET password_hash = ? WHERE id = ?").bind(hash, user.id).run(); } catch {}
-          }
-        } catch {}
+      // Kiểm tra mật khẩu qua verifyPassword(): chấp nhận hash chuẩn hiện tại,
+      // hash theo secret CŨ (LEGACY_PASSWORD_PEPPERS/LEGACY_JWT_SECRETS) và hash
+      // sha256 đời đầu — khớp bằng lược đồ cũ thì tự nâng cấp sang hash chuẩn.
+      const pw = verifyPassword(password, user.password_hash, env);
+      if (pw.ok && pw.needsRehash) {
+        try { await env.DB.prepare("UPDATE users SET password_hash = ? WHERE id = ?").bind(hash, user.id).run(); } catch {}
       }
-      if (!pwOk) {
+      if (!pw.ok) {
         try { await env.DB.prepare("INSERT INTO login_attempts (login, ip) VALUES (?, ?)").bind(login, ip).run(); } catch {}
         return json({ error: "Sai mật khẩu — thử lại hoặc bấm Quên mật khẩu.", code: "WRONG_PASSWORD" }, 401, request, env);
       }
@@ -2212,9 +2293,15 @@ async function handleUser(path, request, env) {
   if (path === "/user/change-password" && request.method === "POST") {
     const { oldPassword, newPassword } = await request.json().catch(() => ({}));
     if (!oldPassword || !newPassword) return json({ error: "Thiếu thông tin" }, 400, request, env);
-    const { results } = await env.DB.prepare("SELECT id FROM users WHERE id = ? AND password_hash = ?").bind(user.id, hashPassword(oldPassword, env)).all();
-    if (results.length === 0) return json({ error: "Sai mật khẩu cũ" }, 400, request, env);
-    await env.DB.prepare("UPDATE users SET password_hash = ? WHERE id = ?").bind(hashPassword(newPassword, env), user.id).run();
+    if (String(newPassword).length < 6) return json({ error: "Mật khẩu mới ≥ 6 ký tự" }, 400, request, env);
+    // Đọc hash rồi so bằng verifyPassword (hỗ trợ cả hash theo secret cũ) —
+    // trước đây so trực tiếp trong SQL nên đổi secret là không đổi được mật khẩu.
+    const { results } = await env.DB.prepare("SELECT password_hash FROM users WHERE id = ?").bind(user.id).all();
+    if (results.length === 0) return json({ error: "Không tìm thấy tài khoản" }, 404, request, env);
+    if (!verifyPassword(String(oldPassword), results[0].password_hash, env).ok) {
+      return json({ error: "Sai mật khẩu cũ" }, 400, request, env);
+    }
+    await env.DB.prepare("UPDATE users SET password_hash = ? WHERE id = ?").bind(hashPassword(String(newPassword), env), user.id).run();
     return json({ success: true }, 200, request, env);
   }
 
@@ -2285,7 +2372,13 @@ async function handleUser(path, request, env) {
     const { results } = await env.DB.prepare("SELECT pin_hash FROM user_profiles WHERE id = ? AND user_id = ?").bind(id, user.id).all();
     if (results.length === 0) return json({ error: "Profile không tồn tại" }, 404, request, env);
     if (!results[0].pin_hash) return json({ success: true }, 200, request, env);
-    if (results[0].pin_hash === hashPassword(pin, env)) return json({ success: true }, 200, request, env);
+    const pinCheck = verifyPassword(String(pin), results[0].pin_hash, env);
+    if (pinCheck.ok) {
+      if (pinCheck.needsRehash) {
+        try { await env.DB.prepare("UPDATE user_profiles SET pin_hash = ? WHERE id = ?").bind(hashPassword(String(pin), env), id).run(); } catch {}
+      }
+      return json({ success: true }, 200, request, env);
+    }
     return json({ error: "PIN sai" }, 401, request, env);
   }
 

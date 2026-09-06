@@ -63,7 +63,7 @@ function AppContent() {
   const guestMode = !isAuthenticated || !user;
   const effUser = guestMode ? GUEST_USER : user;
   const effPlan = guestMode ? 'standard' : (effectivePlan || user?.plan || 'standard');
-  const [showLangPicker, setShowLangPicker] = useState(!hasPicked());
+  const [showLangPicker, setShowLangPicker] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
   const [movieToOpen, setMovieToOpen] = useState(null); // phim được chọn từ TopNav search
   const [shortToOpen, setShortToOpen] = useState(null); // short được chọn từ Home
@@ -448,11 +448,6 @@ function AppContent() {
   }, [isPlayerOpen]);
 
   // GATING
-  // Language picker — show lần đầu (chưa chọn ngôn ngữ)
-  if (showLangPicker) {
-    return <LanguagePicker onClose={() => setShowLangPicker(false)} />;
-  }
-
   // Khoá PIN mở app
   if (!appUnlocked && hasAppPin()) {
     return (
@@ -658,7 +653,7 @@ function AppContent() {
       <KeyboardShortcuts open={showKeyboardShortcuts} onClose={() => setShowKeyboardShortcuts(false)} />
       <AuthModal open={showAuth} onClose={() => setShowAuth(false)} />
       {showAdmin && user?.role === 'admin' && <AdminPanel onClose={() => { setShowAdmin(false); try { history.replaceState(null, '', location.pathname); } catch {} }} />}
-      <OnboardingTour onLogin={isAuthenticated} />
+      {showLangPicker && <LanguagePicker onClose={() => setShowLangPicker(false)} />}
     </div>
   );
 }

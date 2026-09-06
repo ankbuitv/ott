@@ -1854,6 +1854,8 @@ async function rewriteM3U8Sealed(text, targetUrl, proxyBase, ctx, env) {
 async function handleAuth(path, request, env) {
   if (!hasDB(env)) return dbUnavailable();
   await ensureSchema(env);
+  // QR login routes — must be handled inside handleAuth because fetch router dispatches /auth/* here
+  if (path.startsWith("/auth/qr/")) return await handleQrLogin(request, env);
   const ip = request.headers.get("CF-Connecting-IP") || "local";
 
   // P2 (verify brute-force): rate-limit TOÀN BỘ /auth/* theo IP — 20 req/phút
@@ -1881,12 +1883,23 @@ async function handleAuth(path, request, env) {
     const verifyCode = randomDigits(6); // CSPRNG — KHÔNG dùng Math.random
     const verifyExpires = Math.floor(Date.now() / 1000) + 600; // 10 phút
 
+    let newUserId = 0;
     try {
-      await env.DB.prepare("INSERT INTO users (username, email, password_hash, verify_code, verify_expires) VALUES (?, ?, ?, ?, ?)").bind(username, email, hash, verifyCode, verifyExpires).run();
+      const r = await env.DB.prepare("INSERT INTO users (username, email, password_hash, verify_code, verify_expires, plan) VALUES (?, ?, ?, ?, ?, 'standard')").bind(username, email, hash, verifyCode, verifyExpires).run();
+      newUserId = r.meta?.last_row_id || r.lastInsertRowid || 0;
     } catch (e) {
       if (e.message?.includes("UNIQUE")) return json({ error: "Username hoặc email đã tồn tại" }, 409, request, env);
       console.error("register INSERT error:", e?.message || e);
       return json({ error: "Lỗi đăng ký: " + (e?.message || "database") }, 500, request, env);
+    }
+    // Auto gán gói standard — insert vào user_plans để plan luôn tồn tại
+    try {
+      if (newUserId) {
+        const nowSec = Math.floor(Date.now() / 1000);
+        await env.DB.prepare("INSERT OR IGNORE INTO user_plans (user_id, plan, expires_at, updated_at) VALUES (?, 'standard', 0, ?)").bind(newUserId, nowSec).run();
+      }
+    } catch (e) {
+      console.error("register plan auto error:", e?.message || e);
     }
     // Gửi email qua Brevo — KHÔNG trả mã về client khi gửi email thành công
     let emailSent = false;

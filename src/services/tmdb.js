@@ -2,24 +2,23 @@ import { API_BASE } from './config';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMG = 'https://image.tmdb.org/t/p';
-// Default fallback key — get free one at https://www.themoviedb.org/settings/api
-const DEFAULT_TMDB_KEY = 'c02e885e3955667731c6267bd30fa92d';
+// Không để lộ key TMDB ở client - dùng proxy /api/tmdb qua Worker (server giữ key)
+// DUMMY_KEY chỉ để nhận biết chưa có key cá nhân, mọi request sẽ đi qua proxy
+const DUMMY_KEY = '1b3b8c6a4c1f2a0f5b8e6e2a7c8d4e1f';
 const KEY_STORAGE = 'chrtv_tmdb_key';
 const envKey = import.meta.env.VITE_TMDB_KEY;
-// Key mặc định cũ (không hợp lệ) — chỉ dùng để nhận biết "chưa cấu hình key thật"
-const DUMMY_KEY = '1b3b8c6a4c1f2a0f5b8e6e2a7c8d4e1f';
 
-// Key ưu tiên: key người dùng dán trong app (localStorage) > key build (env) > key nhúng sẵn
+// Key ưu tiên: key người dùng dán trong app (localStorage) > key build (env) > dummy
 export function getTMDBKey() {
   try {
     const saved = localStorage.getItem(KEY_STORAGE);
     if (saved && saved.trim()) return saved.trim();
   } catch {}
-  return envKey || DEFAULT_TMDB_KEY;
+  return envKey || DUMMY_KEY;
 }
 export function setTMDBKey(k) {
   try { localStorage.setItem(KEY_STORAGE, (k || '').trim()); } catch {}
-  cache.clear(); // đổi key -> xoá cache cũ
+  cache.clear();
 }
 // Còn dùng key giả cũ (chưa có key thật) hay không
 export function isDefaultTMDBKey() {
@@ -27,14 +26,7 @@ export function isDefaultTMDBKey() {
     if (localStorage.getItem(KEY_STORAGE)?.trim()) return false;
   } catch {}
   if (envKey) return false;
-  return getTMDBKey() === DUMMY_KEY;
-}
-
-// Warn if the current key is the old dummy (no real key yet)
-if (typeof localStorage === 'undefined' || !localStorage.getItem(KEY_STORAGE)) {
-  if (!envKey && DEFAULT_TMDB_KEY === DUMMY_KEY) {
-    console.warn('[TMDB] Chua cau hinh VITE_TMDB_KEY - Movies se dung du lieu du phong. Xem TMDB.md de lay key mien phi.');
-  }
+  return true;
 }
 
 const cache = new Map();
@@ -48,8 +40,6 @@ const fromCache = (k) => {
 };
 
 // Khu vực đang hoạt động (mặc định Việt Nam) — đổi bằng setTMDBRegion()
-// → toàn bộ call TMDB sẽ dùng đúng ngôn ngữ + region của quốc gia đó,
-// nhờ vậy poster/kết quả đổi theo vị trí địa lý người xem.
 let activeRegion = 'US';
 let activeLanguage = 'vi-VN';
 
@@ -61,18 +51,25 @@ export function setTMDBRegion(cc) {
 export const getTMDBRegion = () => activeRegion;
 export const getTMDBLanguage = () => activeLanguage;
 
+function hasCustomKey() {
+  try {
+    const saved = localStorage.getItem(KEY_STORAGE);
+    if (saved && saved.trim() && saved.trim() !== DUMMY_KEY) return true;
+  } catch {}
+  if (envKey && envKey !== DUMMY_KEY) return true;
+  return false;
+}
+
 async function tmdbFetch(path, query = {}) {
-  const q = { api_key: getTMDBKey(), language: activeLanguage, ...query };
+  const q = { language: activeLanguage, ...query };
   const qs = new URLSearchParams(q).toString();
   const key = `${path}?${qs}`;
   const cached = fromCache(key);
   if (cached) return cached;
 
-  // Ưu tiên PROXY qua Worker (/api/tmdb): server tự gắn key + cache D1 ở edge,
-  // client không lộ api_key. Proxy lỗi (worker cũ/không có) → gọi thẳng TMDB như cũ.
+  // Luôn ưu tiên proxy qua Worker - server giấu key, client không bao giờ gửi api_key
   try {
-    const proxyQs = new URLSearchParams({ path, ...Object.fromEntries(new URLSearchParams(qs).entries()) });
-    proxyQs.delete('api_key');
+    const proxyQs = new URLSearchParams({ path, ...q });
     const res = await fetch(`${API_BASE}/api/tmdb?${proxyQs.toString()}`);
     if (res.ok) {
       const data = await res.json();
@@ -80,20 +77,29 @@ async function tmdbFetch(path, query = {}) {
         cacheTMDB(key, data);
         return data;
       }
+      // Nếu proxy trả lỗi nhưng có data (vd: rate limit), vẫn trả về để caller xử lý
+      if (data) return data;
     }
   } catch {}
 
-  try {
-    const res = await fetch(`${TMDB_BASE}${path}?${qs}`);
-    const data = await res.json();
-    if (data.results || data.id) cacheTMDB(key, data);
-    return data;
-  } catch (e) {
-    return { results: [], error: e.message };
+  // Fallback: chỉ khi user đã tự dán key cá nhân thì mới gọi trực tiếp TMDB (tránh lộ key mặc định)
+  if (hasCustomKey()) {
+    try {
+      const directQs = new URLSearchParams({ api_key: getTMDBKey(), ...q }).toString();
+      const res = await fetch(`${TMDB_BASE}${path}?${directQs}`);
+      const data = await res.json();
+      if (data.results || data.id) cacheTMDB(key, data);
+      return data;
+    } catch (e) {
+      return { results: [], error: e.message };
+    }
   }
+
+  // Không có custom key và proxy fail -> trả fallback rỗng để MovieAPI.safe dùng dữ liệu local
+  return { results: [], error: 'proxy_fail' };
 }
 
-// --- Cast / Person / Recommendations / Collection (dùng trong modal chi tiết phim) ---
+// --- Cast / Person / Recommendations / Collection ---
 export async function getCredits(id, mediaType = 'movie') {
   return tmdbFetch(`/${mediaType === 'tv' ? 'tv' : 'movie'}/${id}/credits`);
 }
@@ -120,7 +126,6 @@ export async function getPopularMovies(region) {
   const q = region ? { region } : {};
   return tmdbFetch('/movie/popular', q);
 }
-// Top 10 phim hot nhất THÁNG NÀY: phát hành trong tháng hiện tại, xếp theo độ hot
 export async function getMonthlyTop(region) {
   const now = new Date();
   const p = (n) => String(n).padStart(2, '0');
@@ -143,7 +148,6 @@ export async function getPopularTV(region) {
   const q = region ? { region } : {};
   return tmdbFetch('/tv/popular', q);
 }
-// TV show sản xuất tại chính quốc gia đó (local shows) — rỗng thì caller tự fallback
 export async function getLocalTV(region) {
   if (!region) return tmdbFetch('/tv/popular');
   return tmdbFetch('/discover/tv', { with_origin_country: region, sort_by: 'popularity.desc' });
@@ -185,8 +189,6 @@ export async function discoverMovies({ page = 1, sort_by = 'popularity.desc', wi
 }
 
 // --- Fallback khi TMDB fail / hết quota ---
-// Mảng lớn các phim phổ biến với ID TMDB THẬT (trailer/nguồn phát vẫn chạy)
-// Poster path nếu sai thì ảnh không tải, card vẫn hiển thị bình thường.
 const FALLBACK_FEATURED = [
   { id: 76600, title: 'Avatar: The Way of Water', backdrop_path: '/s16H6tpK2utvwDrcZ9piKnxbSuN.jpg', poster_path: '/94ldQ7GsB2FKfcGqkqVYxC2CqYW.jpg', overview: 'Jake Sully sống cùng gia đình mới trên hành tinh Pandora...', vote_average: 7.7, release_date: '2022-12-14', media_type: 'movie' },
   { id: 872585, title: 'Oppenheimer', backdrop_path: '/fm6KqXpk3M2HVveHwCrBSSBaO0V.jpg', poster_path: '/8Gxv8gSFCU0XGDykEGv7zR1n2ua.jpg', overview: 'Câu chuyện về người đàn ông đã tạo ra bom nguyên tử...', vote_average: 8.3, release_date: '2023-07-19', media_type: 'movie' },
@@ -203,7 +205,7 @@ const FALLBACK_FEATURED = [
   { id: 278, title: 'The Shawshank Redemption', backdrop_path: '/kXfqcdQKsToO0OUXHcrrNCHDBzO.jpg', poster_path: '/q6y0Go1tsGEsmtFryDOJo3dEmqu.jpg', overview: 'Andy Dufresne vượt ngục...', vote_average: 8.7, release_date: '1994-09-23', media_type: 'movie' },
   { id: 238, title: 'The Godfather', backdrop_path: '/rSPw7tgCH9c6NqICZefQkujvM2i.jpg', poster_path: '/3bhkrj58Vtu7enYsRolD1fZdja1.jpg', overview: 'Gia đình mafia Corleone...', vote_average: 8.7, release_date: '1972-03-14', media_type: 'movie' },
   { id: 680, title: 'Pulp Fiction', backdrop_path: '/suaEOtk1N1sgg2MTM7FZdCAYVRT.jpg', poster_path: '/d5iIlFn5s0ImszYzBPb8JPIfbXD.jpg', overview: 'Những câu chuyện đan xen...', vote_average: 8.5, release_date: '1994-09-10', media_type: 'movie' },
-  { id: 13, title: 'Forrest Gump', backdrop_path: '/xY79UJrv6SRhcKpE5hrHh3XrmWt.jpg', poster_path: '/arw2vcBveWOVZr6pxd9XTd1TdQ2.jpg', overview: 'Cuộc đời Forrest Gump...', vote_average: 8.5, release_date: '1994-06-23', media_type: 'movie' },
+  { id: 13, title: 'Forrest Gump', backdrop_path: '/xY79UJrv6SRhcKpE5hrHh3XrmWt.jpg', poster_path: '/arw2vcBveWOVZr6pxd9XTd1TdQqJ.jpg', overview: 'Cuộc đời Forrest Gump...', vote_average: 8.5, release_date: '1994-06-23', media_type: 'movie' },
   { id: 597, title: 'Titanic', backdrop_path: '/2Y0D1k1CNnAsu5z1s2OYHMd7jK0.jpg', poster_path: '/9xjZS2rlVxm8SFxo8KpHjmmHM71.jpg', overview: 'Chuyện tình Jack và Rose...', vote_average: 8.0, release_date: '1997-11-18', media_type: 'movie' },
   { id: 299534, title: 'Avengers: Endgame', backdrop_path: '/or06FN3Dka5tukK1e9sl16pB3iy.jpg', poster_path: '/or06FN3Dka5tukK1e9sl16pB3iy.jpg', overview: 'Các Avengers đối đầu Thanos...', vote_average: 8.3, release_date: '2019-04-24', media_type: 'movie' },
   { id: 299536, title: 'Avengers: Infinity War', backdrop_path: '/7WsyChQLEftFiDOVTGkv3hFpyyt.jpg', poster_path: '/7WsyChQLEftFiDOVTGkv3hFpyyt.jpg', overview: 'Thanos săn lùng viên đá vô cực...', vote_average: 8.3, release_date: '2018-04-25', media_type: 'movie' },
@@ -272,9 +274,6 @@ async function safe(name, fn, fb) {
   return { results: fb };
 }
 
-// ====== Khu vực địa lý cho poster phim ======
-// Poster/khối phim đổi theo quốc gia người xem (qua /api/geo → Cloudflare IP geo).
-// region = mã TMDB region (ISO 3166-1), language = ngôn ngữ tiêu đề/mô tả trên TMDB.
 const flagEmoji = (cc) => {
   try { return String.fromCodePoint(...[...cc.toUpperCase()].map(c => 0x1F1E6 + c.charCodeAt(0) - 65)); }
   catch { return '🌍'; }
@@ -301,7 +300,6 @@ export const COUNTRY_INFO = Object.fromEntries(
   ])
 );
 
-// Quốc gia không có trong danh sách → sinh info tổng quát (cờ từ mã quốc gia)
 export function countryInfoOf(cc) {
   const up = (cc || '').toUpperCase();
   if (COUNTRY_INFO[up]) return COUNTRY_INFO[up];
@@ -309,10 +307,8 @@ export function countryInfoOf(cc) {
 }
 const CC_RE = /^[A-Z]{2}$/;
 
-// Danh sách quốc gia hiển thị trong bộ chọn khu vực
 export const REGION_LIST = Object.keys(COUNTRY_LANG);
 
-// Fallback theo khu vực khi TMDB fail/hết quota (dùng phim thật có trong FALLBACK_FEATURED)
 const REGION_FALLBACKS = {
   VN: [FALLBACK_FEATURED[0], FALLBACK_FEATURED[3], FALLBACK_FEATURED[8], FALLBACK_FEATURED[4], FALLBACK_FEATURED[20], FALLBACK_FEATURED[9], FALLBACK_FEATURED[13], FALLBACK_FEATURED[22]],
   PH: [FALLBACK_FEATURED[0], FALLBACK_FEATURED[3], FALLBACK_FEATURED[4], FALLBACK_FEATURED[13], FALLBACK_FEATURED[10], FALLBACK_FEATURED[5], FALLBACK_FEATURED[22], FALLBACK_FEATURED[8]],
@@ -322,7 +318,6 @@ const REGION_FALLBACKS = {
 };
 
 export const MovieAPI = {
-  // Hero theo quốc gia: TMDB /movie/now_playing?region=XX trả phim đang chiếu tại nước đó
   hero: (country) => {
     const cc = (country || 'US').toUpperCase();
     if (cc === 'US') {
@@ -338,7 +333,6 @@ export const MovieAPI = {
     const mk = `${now.getFullYear()}-${now.getMonth()}`;
     return safe('topm_' + mk + '_' + (region || ''), () => getMonthlyTop(region || undefined), FALLBACK_TRENDING);
   },
-  // TV: ưu tiên show sản xuất tại chính quốc gia đó (region), trống thì fallback toàn cầu
   popularTV: (region) => {
     const cc = (region || 'US').toUpperCase();
     if (cc && cc !== 'US') {
@@ -350,14 +344,12 @@ export const MovieAPI = {
     return safe('tv', () => getPopularTV(), FALLBACK_TV);
   },
   search: async (q) => {
-    // Thử tiếng Việt trước, nếu rỗng thì thử không ép ngôn ngữ (phim chưa có tên Việt)
     let r = await tmdbFetch('/search/multi', { query: q, include_adult: false });
     if (!(r.results || []).length) {
       r = await tmdbFetch('/search/multi', { query: q, include_adult: false, language: 'en-US' });
     }
     return r;
   },
-  // Kiểm tra 1 key có hợp lệ không (gọi /configuration — endpoint nhẹ nhất)
   verifyKey: async (key) => {
     try {
       const q = new URLSearchParams({ api_key: (key || '').trim() });
@@ -368,7 +360,6 @@ export const MovieAPI = {
       return { ok: false, error: e.message };
     }
   },
-  // Tìm trong fallback local khi TMDB search không trả kết quả (key lỗi/hết quota)
   searchFallback: (q) => {
     const ql = (q || '').toLowerCase().trim();
     if (!ql) return Promise.resolve([]);
@@ -382,11 +373,6 @@ export const MovieAPI = {
   },
   details: getMovieDetails,
   trailer: (m) => getMovieTrailer(m.id, m.media_type),
-
-  /**
-   * Nạp ~200 phim TMDB cho catalog trang chính.
-   * Tìm kiếm thêm phim qua search() - gọi TMDB /search/multi trực tiếp.
-   */
   catalog: async (country) => {
     const byId = new Map();
     const add = (items) => (items || []).forEach(m => {
@@ -395,7 +381,6 @@ export const MovieAPI = {
       if (!byId.has(key)) byId.set(key, m);
     });
 
-    // Trộn trang toàn cầu + trang theo region → lưới poster đổi theo quốc gia người xem
     const cc = (country || '').toUpperCase();
     const regional = cc && cc !== 'US';
     const pages = [
@@ -413,18 +398,15 @@ export const MovieAPI = {
       ['/tv/popular', { page: 2 }],
       ['/tv/top_rated', { page: 1 }],
     ];
-    // TV show bản địa (sản xuất tại quốc gia đó)
     if (regional) pages.push(['/discover/tv', { with_origin_country: cc, sort_by: 'popularity.desc', page: 1 }]);
 
-    const results = await Promise.all(
+    await Promise.all(
       pages.map(([path, q]) =>
         tmdbFetch(path, q).then(r => { add(r.results); return r; }).catch(() => {})
       )
     );
 
     const arr = Array.from(byId.values());
-
-    // Fallback nếu không có dữ liệu thật
     if (arr.length < 30) {
       const seen = new Set(arr.map(m => `${m.media_type || 'movie'}-${m.id}`));
       FALLBACK_FEATURED.forEach(m => {

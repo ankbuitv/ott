@@ -52,6 +52,7 @@ export default function VideoPlayer({
 }) {
   const videoRef = useRef(null);
   const containerRef = useRef(null);
+  const channelName = channel?.name || '';
   const shakaPlayerRef = useRef(null);
 
   const [isPlaying, setIsPlaying] = useState(true);
@@ -1014,11 +1015,11 @@ export default function VideoPlayer({
       className="relative w-full h-full bg-black flex items-center justify-center overflow-hidden select-none"
       style={{ cursor: showOverlay ? 'default' : 'none' }}
     >
-      {mini && onMaximize && (
+      {mini && onExpand && (
         <div data-mini-drag className="absolute top-0 left-0 right-0 z-50 flex items-center gap-2 px-3 py-2 bg-slate-900/95 border-b border-slate-700/40 cursor-move">
           <span className="text-sm">📌</span>
           <span className="text-xs text-slate-200 font-semibold truncate flex-1">{t('vp.mini_label')}: {channelName}</span>
-          <button onClick={onMaximize} className="px-2.5 py-1 bg-[#f36f21] hover:bg-[#ff9a3d] text-white text-[11px] font-bold rounded-lg flex items-center gap-1"><Maximize2 className="w-3 h-3" />{t('vp.reopen')}</button>
+          <button onClick={onExpand} className="px-2.5 py-1 bg-[#f36f21] hover:bg-[#ff9a3d] text-white text-[11px] font-bold rounded-lg flex items-center gap-1"><Maximize2 className="w-3 h-3" />{t('vp.reopen')}</button>
         </div>
       )}
       {/* Main Video */}

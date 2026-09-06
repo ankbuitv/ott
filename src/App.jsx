@@ -494,7 +494,7 @@ function AppContent() {
             <PlansScreen />
           ) : (
             <>
-              {activeTab === 'channels' ? (
+              {/* Home (mặc định) — đã bỏ tab Yêu thích/Lịch sử */}
                 <HomePage
                   channels={channels}
                   epgData={epgData}
@@ -513,35 +513,6 @@ function AppContent() {
                   onSelectMovie={(m) => { setMovieToOpen(m); goTab('movies'); }}
                   onGoTab={goTab}
                 />
-              ) : (
-                <div className="max-w-[1400px] mx-auto px-8 py-8">
-                  <h1 className="text-2xl font-black mb-6">
-                    {activeTab === 'favorites' ? t('fav.title') : t('hist.title')}
-                  </h1>
-                  {isLoading ? <SkeletonGrid count={6} /> : filteredChannels.length === 0 ? (
-                    <div className="text-center py-12 bg-white/[0.02] rounded-2xl border border-white/[0.04]">
-                      <p className="text-sm text-slate-400">{activeTab === 'favorites' ? t('fav.empty') : t('hist.empty')}</p>
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                      {filteredChannels.map(ch => (
-                        <ChannelCard
-                          key={ch.channel_id}
-                          channel={ch}
-                          isFavorite={favorites.includes(ch.channel_id)}
-                          onSelect={handleSelectChannel}
-                          onToggleFavorite={handleToggleFavorite}
-                          onShowInfo={() => {
-                            const epg = getEpgForChannel(ch.channel_id);
-                            setChannelInfoModal({ channel: ch, epgNow: epg.now, epgNext: epg.next, isFav: favorites.includes(ch.channel_id) });
-                          }}
-                          epgNow={getEpgForChannel(ch.channel_id).now}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
             </>
           )}
         </main>
@@ -565,7 +536,7 @@ function AppContent() {
             onClose={() => { setIsPlayerOpen(false); setMiniPlayer(false); }}
             mini={miniPlayer}
             onMinimize={() => setMiniPlayer(true)}
-            onMaximize={() => setMiniPlayer(false)}
+            onExpand={() => setMiniPlayer(false)}
             allChannels={channels}
             epgLookup={getEpgForChannel}
             initialPartyRoom={deepPartyRoom}

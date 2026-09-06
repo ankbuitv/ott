@@ -27,8 +27,6 @@ export default function Sidebar({ activeTab, setActiveTab, onShowSettings, onSho
     { id: 'movies', label: t('nav.movies').toUpperCase(), icon: FilmIcon },
     { id: 'shorts', label: t('nav.shortcuts').toUpperCase(), icon: ShortsIcon },
     { id: 'plans', label: t('nav.plans').toUpperCase(), icon: CrownIcon },
-    { id: 'favorites', label: '♥', icon: HeartIcon },
-    { id: 'history', label: t('nav.live') === 'Truyền Hình' ? 'L.SỬ' : 'HIST', icon: ClockIcon },
   ];
 
   return (

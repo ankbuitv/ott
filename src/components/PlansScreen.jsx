@@ -136,7 +136,7 @@ export default function PlansScreen({ initialCode = '' }) {
               <h1 className="text-[26px] md:text-[32px] font-black tracking-tight text-white leading-tight">{t('plans.title')}</h1>
               <p className="text-[13px] text-stone-400 mt-1.5 flex items-center justify-center md:justify-start gap-1.5">
                 <BadgeCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-                {t('plans.promo', { email: SUPPORT_EMAIL })}
+                {t('plans.sub')}
               </p>
             </div>
             {/* Gói hiện tại */}
@@ -184,42 +184,34 @@ export default function PlansScreen({ initialCode = '' }) {
                 </tr>
               </thead>
               <tbody>
-                {(() => {
-                  const rows = [];
-                  const seen = new Set();
-                  plans.forEach((p) => (Array.isArray(p.allows) ? p.allows : []).forEach((f) => {
-                    const k = String(f).trim();
-                    if (k && !seen.has(k)) { seen.add(k); rows.push(k); }
-                  }));
-                  return (rows.length ? rows : [t('plans.feature')]).slice(0, 10).map((feat) => (
-                    <tr key={feat} className="border-b border-white/[0.04]">
-                      <td className="px-4 py-2.5 text-[12px] text-stone-300 font-semibold">{feat}</td>
-                      {plans.map((p) => {
-                        const ok = (Array.isArray(p.allows) ? p.allows : []).includes(feat);
-                        return (
-                          <td key={p.code} className="px-3 py-2.5 text-center">
-                            {ok ? <Check className="w-4 h-4 text-emerald-400 mx-auto" /> : <X className="w-4 h-4 text-stone-700 mx-auto" />}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ));
-                })()}
+                {PLAN_FEATURES.map((feat) => (
+                  <tr key={feat.id} className="border-b border-white/[0.04]">
+                    <td className="px-4 py-2.5 text-[12px] text-stone-300 font-semibold">{lang === 'vi' ? feat.vi : feat.en}</td>
+                    {plans.map((p) => {
+                      const ok = planHasFeature(p, feat.id);
+                      return (
+                        <td key={p.code} className="px-3 py-2.5 text-center">
+                          {ok
+                            ? <Check className="w-4 h-4 text-emerald-400 mx-auto" strokeWidth={3} />
+                            : <X className="w-4 h-4 text-stone-600 mx-auto" strokeWidth={3} />}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
                 <tr>
                   <td className="px-4 py-3" />
                   {plans.map((p) => {
                     const isCurrent = current === p.code;
-                    const priceStr = fmtPrice(p, lang);
                     return (
-                      <td key={p.code} className="px-3 py-3 text-center">
+                      <td key={p.code} className="px-3 py-3 text-center align-bottom">
                         <button
                           onClick={() => startBuy(p)}
                           disabled={busy === p.code || isCurrent}
-                          className={`w-full py-2 rounded-xl text-[12px] font-black ${isCurrent ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/40' : 'grad-brand text-white'}`}
+                          className={`h-11 w-full rounded-xl text-[12px] font-black ${isCurrent ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/40' : 'grad-brand text-white'}`}
                         >
-                          {isCurrent ? t('plans.is_current') : t('plans.buy_now')}
+                          {isCurrent ? t('plans.is_current') : busy === p.code ? t('plans.activating') : t('plans.buy_now')}
                         </button>
-                        {!isCurrent && priceStr && <p className="text-[10px] text-stone-500 mt-1">{priceStr}{t('plans.per_month')}</p>}
                       </td>
                     );
                   })}

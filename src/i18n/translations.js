@@ -40,7 +40,7 @@ const T = {
   'app.watch': { vi: 'Xem', en: 'Watch', zh: '观看', fil: 'Panoorin', fr: 'Regarder' },
   'app.watch_now': { vi: 'Xem ngay', en: 'Watch now', zh: '立即观看', fil: 'Panoorin na', fr: 'Regarder' },
   'app.favorites': { vi: 'Yêu thích', en: 'Favorites', zh: '收藏', fil: 'Mga Paborito', fr: 'Favoris' },
-  'plans.free_hint': { vi: 'Tạm miễn phí kích hoạt — bấm để xem gói', en: 'Free activation for now — tap to view plans', zh: '目前免费开通 — 点击查看套餐', fil: 'Libreng activation sa ngayon — pindutin para makita ang plan', fr: 'Activation gratuite pour le moment — voir les offres' },
+  'plans.free_hint': { vi: 'Bấm để xem các gói cước', en: 'Tap to view plans', zh: '点击查看套餐', fil: 'Pindutin para makita ang plan', fr: 'Voir les offres' },
 
   // ============== SHORTS ==============
   'shorts.title': { vi: '🎬 Shorts', en: '🎬 Shorts', zh: '🎬 短视频', fil: '🎬 Shorts', fr: '🎬 Shorts' },
@@ -56,7 +56,7 @@ const T = {
   'welcome.f1': { vi: 'Hàng trăm kênh truyền hình trong nước & quốc tế', en: 'Hundreds of local & international channels', zh: '数百个国内与国际电视频道', fil: 'Daang-daang channel sa Pilipinas at global', fr: 'Des centaines de chaînes locales et internationales' },
   'welcome.f2': { vi: 'Phim & series mới — cập nhật liên tục', en: 'New movies & series — updated daily', zh: '最新电影与剧集 — 每日更新', fil: 'Mga bagong pelikula at series — araw-araw', fr: 'Nouveaux films et séries — chaque jour' },
   'welcome.f3': { vi: 'Bóng đá & thể thao trực tiếp + xem lại (catch-up 7 ngày)', en: 'Live football & sports + 7-day catch-up', zh: '足球与体育直播 + 7天回放', fil: 'Live football at sports + 7-day catch-up', fr: 'Football & sport en direct + reprise 7 jours' },
-  'welcome.f4': { vi: 'Gói VIP — hiện đang MIỄN PHÍ kích hoạt', en: 'VIP plans — currently FREE to activate', zh: 'VIP 套餐 — 目前免费开通', fil: 'VIP plans — kasalukuyang LIBRE i-activate', fr: 'Offres VIP — actuellement GRATUITES' },
+  'welcome.f4': { vi: 'Gói VIP — mở khoá kênh theo gói đã chọn', en: 'VIP plans — unlock channels by subscription', zh: 'VIP 套餐 — 按套餐解锁频道', fil: 'VIP plans — i-unlock ang channel ayon sa plan', fr: 'Offres VIP — débloquez les chaînes selon l’abonnement' },
   'welcome.cta': { vi: 'Bắt đầu xem ngay', en: 'Start watching now', zh: '立即开始观看', fil: 'Magsimula na sa panonood', fr: 'Commencer maintenant' },
   'welcome.later': { vi: 'Để sau', en: 'Maybe later', zh: '稍后再说', fil: 'Susunod', fr: 'Plus tard' },
   'welcome.hello': { vi: 'Xin chào', en: 'Hello', zh: '你好', fil: 'Kumusta', fr: 'Bonjour' },
@@ -485,32 +485,32 @@ const T = {
 
   // ============== PLANS ==============
   'plans.title':   { vi: 'MUA GÓI CHRTV PLAY', en: 'CHRTV PLAY PLANS' },
-  'plans.sub': { vi: 'Mở khoá kênh theo gói — đang khuyến mãi, kích hoạt miễn phí', en: 'Unlock channels by plan — promo on, free activation' },
+  'plans.sub': { vi: 'Chọn gói phù hợp để mở khoá kênh và tính năng', en: 'Pick a plan to unlock channels and features' },
   'plans.hot': { vi: 'HOT', en: 'HOT' },
-  'plans.promo':   { vi: 'Ưu đãi ra mắt: TẤT CẢ CÁC GÓI TẠM MIỄN PHÍ — hỗ trợ qua email {{email}}', en: 'Launch offer: ALL PLANS TEMPORARILY FREE — support via {{email}}' },
+  'plans.promo':   { vi: 'Giá theo bảng kê admin — hỗ trợ qua email {{email}}', en: 'Pricing set by admin — support via {{email}}' },
   'plans.s1': { vi: 'Chọn gói', en: 'Pick a plan' },
   'plans.s1s': { vi: 'Chọn gói phù hợp', en: 'Choose what fits' },
   'plans.s2': { vi: 'Kích hoạt', en: 'Activate' },
-  'plans.s2s': { vi: 'Tạm miễn phí 100%', en: 'Temporarily 100% free' },
+  'plans.s2s': { vi: 'Thanh toán theo gói', en: 'Pay for your plan' },
   'plans.s3': { vi: 'Xem ngay', en: 'Watch now' },
   'plans.s3s': { vi: 'Tự động mở khoá kênh', en: 'Channels unlock automatically' },
   'plans.current': { vi: 'Gói hiện tại của bạn', en: 'Your current plan' },
-  'plans.upgrade_anytime': { vi: 'có thể nâng cấp bất cứ lúc nào (miễn phí)', en: 'you can upgrade anytime (free)' },
+  'plans.upgrade_anytime': { vi: 'có thể nâng cấp bất cứ lúc nào', en: 'you can upgrade anytime' },
   'plans.plan_of': { vi: 'Gói {{name}}', en: '{{name}} plan' },
-  'plans.temp_free': { vi: 'TẠM FREE', en: 'TEMP FREE' },
+  'plans.temp_free': { vi: '', en: '' },
   'plans.free_price': { vi: '0đ', en: 'Free' },
   'plans.per_month': { vi: '/tháng', en: '/month' },
-  'plans.launch_deal': { vi: 'KM RA MẮT · GIẢM 100%', en: 'LAUNCH DEAL · 100% OFF' },
+  'plans.launch_deal': { vi: '', en: '' },
   'plans.is_current': { vi: '✓ Gói hiện tại', en: '✓ Current plan' },
   'plans.activating': { vi: 'Đang kích hoạt...', en: 'Activating...' },
-  'plans.activate_free': { vi: 'Kích hoạt miễn phí', en: 'Activate for free' },
+  'plans.activate_free': { vi: 'Kích hoạt', en: 'Activate' },
   'plans.activate': { vi: 'Kích hoạt', en: 'Activate' },
   'plans.partner': { vi: 'Liên hệ đối tác kích hoạt', en: 'Contact a partner to activate' },
   'plans.downgrade': { vi: 'Chuyển xuống gói này', en: 'Switch to this plan' },
-  'plans.activated': { vi: 'Đã kích hoạt gói {{code}} (tạm free)', en: 'Plan {{code}} activated (temp free)' },
+  'plans.activated': { vi: 'Đã kích hoạt gói {{code}}', en: 'Plan {{code}} activated' },
   'plans.activate_fail': { vi: 'Kích hoạt thất bại — thử lại hoặc gửi email {{email}}', en: 'Activation failed — retry or email {{email}}' },
   'plans.support': { vi: 'Hỗ trợ & liên hệ', en: 'Support & contact' },
-  'plans.note1': { vi: 'Ghi chú: Trong thời gian ưu đãi, tất cả gói đều miễn phí — chỉ cần bấm kích hoạt để mở khoá kênh tương ứng.', en: 'Note: during the promo, all plans are free — just hit activate to unlock channels.' },
+  'plans.note1': { vi: 'Giá gói do admin thiết lập. Thanh toán xong là mở khoá kênh tương ứng.', en: 'Plan prices are set by admin. Payment unlocks the matching channels.' },
   'plans.note2': { vi: 'Khi áp dụng thu phí sẽ thông báo qua email đăng ký và thông báo trong app.', en: 'When billing starts, we will notify via your email and in-app notices.' },
   'plans.note3': { vi: 'Mọi thắc mắc/hỗ trợ vui lòng gửi email:', en: 'Questions/support, please email:' },
   'plans.note4': { vi: '(không hỗ trợ qua điện thoại).', en: '(no phone support).' },
@@ -625,7 +625,7 @@ const T = {
   'vp.err_retry': { vi: 'Thử lại', en: 'Retry' },
   'vp.err_other': { vi: 'Kênh khác', en: 'Other channels' },
   'vp.err_login': { vi: '🔒 Kênh này cần đăng nhập để xem — đóng trình phát rồi đăng nhập/đăng ký (miễn phí).', en: '🔒 This channel needs login — close the player then sign in/sign up (free).' },
-  'vp.err_plan': { vi: '💎 Kênh thuộc gói cao hơn — vào mục Mua Gói để kích hoạt (tạm miễn phí).', en: '💎 This channel needs a higher plan — activate one in Plans (temp free).' },
+  'vp.err_plan': { vi: '💎 Kênh thuộc gói cao hơn — vào mục Mua Gói để đăng ký.', en: '💎 This channel needs a higher plan — subscribe in Plans.' },
   'vp.err_login_short': { vi: 'Cần đăng nhập để xem kênh này', en: 'Login required for this channel' },
   'vp.err_plan_short': { vi: 'Kênh này thuộc gói cao hơn — vào Mua Gói để xem', en: 'Higher plan required — see Plans' },
   'vp.err_play': { vi: 'Luồng phát bị gián đoạn, vui lòng thử lại. {{msg}}', en: 'Stream interrupted, please retry. {{msg}}' },
@@ -942,5 +942,8 @@ export function detectCountry() {
     // Mặc định: quốc tế
     return 'US';
   } catch { return 'US'; }
+}
+
+US'; }
 }
 

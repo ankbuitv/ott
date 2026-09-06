@@ -4,6 +4,8 @@ import { formatTimeHHMM } from '../utils/dateUtils';
 import { getRating, postRating } from '../services/ratings';
 import { hasUserToken } from '../services/session';
 import { useI18n } from '../contexts/I18nContext';
+import FanGroupBox from './FanGroupBox';
+import CommentsBox from './CommentsBox';
 
 function ChannelRating({ channelId, onRequireLogin }) {
   const { t } = useI18n();
@@ -74,7 +76,7 @@ export default function ChannelInfoModal({ channel, epgNow, epgNext, isFavorite,
   if (!channel) return null;
   return (
     <div className="fixed inset-0 z-[160] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 modal-backdrop" onClick={onClose}>
-      <div className="w-full max-w-sm overflow-hidden modal-panel" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-sm max-h-[90vh] overflow-y-auto modal-panel" onClick={e => e.stopPropagation()}>
         <div className="relative p-5 pt-6 text-center overflow-hidden">
           <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(280px 130px at 50% 0%, rgba(243,111,33,.22), transparent 70%)' }}></div>
           <button onClick={onClose} className="absolute top-3 right-3 p-1 hover:bg-slate-800 rounded-lg">
@@ -118,6 +120,11 @@ export default function ChannelInfoModal({ channel, epgNow, epgNext, isFavorite,
           )}
 
           <ChannelRating channelId={channel.channel_id} onRequireLogin={onRequireLogin} />
+
+          <FanGroupBox target={`ch-${channel.channel_id}`} name={channel.name} />
+          <div className="max-h-[300px] overflow-y-auto">
+            <CommentsBox target={`ch-${channel.channel_id}`} />
+          </div>
 
           <div className="space-y-1.5 pt-1">
             <div className="flex items-center justify-between text-xs">

@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, RotateCcw, Crown, Eye, EyeOff, Globe, Database, Shield, Monitor, Trash2, Languages, Moon, Sun, MapPin, Info, Cpu, Leaf, Copy, CheckCircle2, ShieldOff, Palette, Tv, Trophy, Smartphone, LogOut, QrCode } from 'lucide-react';
+import { Settings, RotateCcw, Crown, Eye, EyeOff, Globe, Database, Shield, Monitor, Trash2, Languages, Moon, Sun, MapPin, Info, Cpu, Leaf, Copy, CheckCircle2, ShieldOff, Palette, Tv, Trophy, Smartphone, LogOut, QrCode, Users, KeyRound } from 'lucide-react';
+import ShareButtons from './ShareButtons';
+import { hasAppPin, setAppPin, clearAppPin, weekReport, getKidLimit, setKidLimit, fmtDur } from '../services/kids';
+import { useProfile } from '../contexts/ProfileContext';
 import QrScanner from './QrScanner';
 import PlansScreen from './PlansScreen';
 import { BADGES, getStats, fmtHours, badgeName, badgeDesc } from '../services/achievements';
@@ -26,6 +29,10 @@ function Toggle({ on, onClick, label }) {
 }
 
 export default function SettingsPage({ onClose }) {
+  const { profiles } = useProfile();
+  const [pinOn, setPinOn] = useState(() => hasAppPin());
+  const [pinNew, setPinNew] = useState('');
+  const [pinMsg, setPinMsg] = useState('');
   const { t, lang, setLang, languages, detectedLang } = useI18n();
   const { settings, updateSetting, resetSettings } = useSettings();
   const device = useDevice();
@@ -134,6 +141,8 @@ export default function SettingsPage({ onClose }) {
     ...(isAdmin ? [{ id: 'sources', label: t('settings.data_sources'), Icon: Globe }] : []),
     { id: 'sessions', label: t('settings.sessions'), Icon: Smartphone },
     { id: 'badges', label: t('settings.ach_title'), Icon: Trophy },
+    { id: 'family', label: t('settings.family'), Icon: Users },
+    { id: 'pin', label: t('settings.app_pin'), Icon: KeyRound },
     { id: '2fa', label: '2FA', Icon: QrCode },
     { id: 'plans', label: t('nav.plans'), Icon: Crown },
     { id: 'about', label: t('settings.about'), Icon: Info },
@@ -506,6 +515,13 @@ export default function SettingsPage({ onClose }) {
               {t('settings.ach_sum', { h: fmtHours(achStats.totalSec || 0, lang), c: (achStats.channels || []).length, s: achStats.streak || 0, g: (achStats.badges || []).length, n: BADGES.length })}
             </p>
           )}
+          {achStats && (achStats.badges || []).length > 0 && (
+            <ShareButtons
+              url={typeof window !== 'undefined' ? window.location.href : ''}
+              title={t('settings.ach_share', { g: (achStats.badges || []).length, h: fmtHours(achStats.totalSec || 0, lang) })}
+              compact
+            />
+          )}
           <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
             {BADGES.map(b => {
               const got = achStats?.badges?.includes(b.id);
@@ -518,6 +534,65 @@ export default function SettingsPage({ onClose }) {
               );
             })}
           </div>
+        </div>
+        )}
+
+        {/* ===== GIA ĐÌNH & BÁO CÁO BÉ ===== */}
+        {active === 'family' && (
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 shadow-xl shadow-black/30 space-y-4">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2"><Users className="w-4 h-4 text-fuchsia-400" /> {t('settings.family')}</h3>
+          {(profiles || []).filter(p => p.is_child).length === 0 && (
+            <p className="text-[11px] text-slate-500">{t('settings.no_kids')}</p>
+          )}
+          {(profiles || []).filter(p => p.is_child).map(p => {
+            const rep = weekReport(p.id);
+            const lim = getKidLimit(p.id);
+            const max = Math.max(1, ...rep.days.map(d => d.sec));
+            return (
+              <div key={p.id} className="rounded-2xl bg-black/30 border border-white/[0.06] p-3">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <p className="text-[13px] font-black text-white">🧒 {p.name}</p>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-slate-500 font-bold">{t('settings.limit_day')}</span>
+                    <input
+                      type="number" min="0" max="1440" defaultValue={lim} key={`${p.id}-${lim}`}
+                      onBlur={e => setKidLimit(p.id, e.target.value)}
+                      className="w-16 px-2 py-1 bg-slate-800 border border-slate-700 rounded-lg text-[12px] font-bold text-white text-center outline-none focus:border-[#f36f21]"
+                    />
+                    <span className="text-[10px] text-slate-500">′</span>
+                  </div>
+                </div>
+                <div className="flex items-end gap-1 h-16">
+                  {rep.days.map(d => (
+                    <div key={d.date} className="flex-1 flex flex-col items-center gap-0.5" title={`${d.date}: ${fmtDur(d.sec)}`}>
+                      <div className="w-full rounded-t-md bg-gradient-to-t from-[#f36f21] to-amber-400 min-h-[3px]" style={{ height: `${Math.max(4, Math.round((d.sec / max) * 52))}px` }} />
+                      <span className="text-[8px] text-slate-600 font-bold">{d.date.slice(8)}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1.5">{t('settings.week_total')}: <b className="text-slate-300">{fmtDur(rep.total)}</b>
+                  {rep.top.length > 0 && <span> · ⭐ {rep.top.slice(0, 3).map(([name, sec]) => `${name} (${fmtDur(sec)})`).join(' · ')}</span>}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+        )}
+
+        {/* ===== PIN MỞ APP ===== */}
+        {active === 'pin' && (
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 shadow-xl shadow-black/30 space-y-3">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2"><KeyRound className="w-4 h-4 text-amber-400" /> {t('settings.app_pin')}</h3>
+          <p className="text-[11px] text-slate-400">{t('settings.pin_sub')}</p>
+          {pinOn ? (
+            <button onClick={() => { clearAppPin(); setPinOn(false); setPinMsg(t('settings.pin_off')); }} className="px-4 py-2 bg-white/10 hover:bg-white/15 text-white text-xs font-bold rounded-xl">{t('settings.pin_disable')}</button>
+          ) : (
+            <div className="flex gap-2">
+              <input value={pinNew} onChange={e => { setPinNew(e.target.value.replace(/\D/g, '').slice(0, 8)); setPinMsg(''); }} placeholder="PIN 4-8 số" inputMode="numeric" className="w-36 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm font-mono tracking-widest text-white text-center outline-none focus:border-amber-500" />
+              <button onClick={async () => { if (await setAppPin(pinNew)) { setPinOn(true); setPinNew(''); setPinMsg(t('settings.pin_on')); } else setPinMsg(t('settings.pin_invalid')); }} className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold rounded-xl">{t('settings.pin_enable')}</button>
+            </div>
+          )}
+          {pinMsg && <p className="text-[11px] text-amber-400">{pinMsg}</p>}
         </div>
         )}
 

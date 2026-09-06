@@ -27,6 +27,13 @@ import BroadcastBanner from './components/BroadcastBanner';
 import FocusableWrapper from './components/FocusableWrapper';
 import MoviesScreen from './components/MoviesScreen';
 import ShortsScreen from './components/ShortsScreen';
+import CommunityScreen from './components/CommunityScreen';
+import PublicProfileModal from './components/PublicProfileModal';
+import KidsShell from './components/KidsShell';
+import PinPad from './components/PinPad';
+import { sendBeat } from './services/social';
+import { popDueReminders, fireBrowserNotification } from './services/localNotify';
+import { recordProfileWatch, hasAppPin, verifyAppPin } from './services/kids';
 import ChannelCard from './components/ChannelCard';
 import { SkeletonGrid } from './components/SkeletonLoader';
 
@@ -51,7 +58,7 @@ function AppContent() {
   const { settings } = useSettings();
   const { addToast } = useToast();
   const { user, isAuthenticated, token, effectivePlan } = useAuth();
-  const { currentProfile } = useProfile();
+  const { currentProfile, logoutProfile } = useProfile();
   const { hasPicked, resetPicker, t, lang } = useI18n();
   const guestMode = !isAuthenticated || !user;
   const effUser = guestMode ? GUEST_USER : user;
@@ -60,6 +67,9 @@ function AppContent() {
   const [showAuth, setShowAuth] = useState(false);
   const [movieToOpen, setMovieToOpen] = useState(null); // phim được chọn từ TopNav search
   const [shortToOpen, setShortToOpen] = useState(null); // short được chọn từ Home
+  const [publicHandle, setPublicHandle] = useState(null); // hồ sơ công khai (?u=)
+  const [appUnlocked, setAppUnlocked] = useState(() => { try { return sessionStorage.getItem('chrtv_unlocked') === '1'; } catch { return true; } });
+  const [pinErr, setPinErr] = useState('');
   const promptLogin = useCallback((msg) => {
     if (msg) addToast(msg, 'info');
     setShowAuth(true);
@@ -122,13 +132,26 @@ function AppContent() {
   useEffect(() => { localStorage.setItem('chrtv_tab', activeTab); }, [activeTab]);
 
   // ============ DEEP LINK: ?channel=ID&party=CODE (share từ player) ============
+  // + ?movie=tv-123 (chia sẻ phim) + ?u=handle (hồ sơ công khai)
   const [deepPartyRoom, setDeepPartyRoom] = useState(null);
+  const deepMovieDone = useRef(false);
   useEffect(() => {
     try {
       const params = new URLSearchParams(window.location.search || (window.location.hash || '').split('?')[1] || '');
       const chId = params.get('channel');
       const party = params.get('party');
       if (party) setDeepPartyRoom(`party:${party.toUpperCase()}`);
+      const uh = params.get('u');
+      if (uh && !publicHandle) setPublicHandle(uh);
+      const mv = params.get('movie');
+      if (mv && !deepMovieDone.current) {
+        deepMovieDone.current = true;
+        const m = String(mv).match(/^(movie|tv)-(\d+)$/);
+        if (m) {
+          setMovieToOpen({ id: Number(m[2]), media_type: m[1] });
+          setActiveTab('movies');
+        }
+      }
       if (chId && channels.length > 0) {
         const ch = channels.find((c) => c.channel_id === chId);
         if (ch && (!currentChannel || currentChannel.channel_id !== chId)) {
@@ -137,6 +160,22 @@ function AppContent() {
       }
     } catch {}
   }, [channels]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Nhắc lịch (trận đấu/phim): kiểm tra mỗi 60s
+  useEffect(() => {
+    const check = () => {
+      try {
+        const due = popDueReminders();
+        due.forEach((r) => {
+          addToast(`⏰ ${r.title}`, 'info');
+          fireBrowserNotification(r.title, r.body);
+        });
+      } catch {}
+    };
+    check();
+    const iv = setInterval(check, 60000);
+    return () => clearInterval(iv);
+  }, [addToast]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -359,17 +398,22 @@ function AppContent() {
     return findEpgForChannel(epgData.programmes, ch);
   }, [epgData, channels]);
 
-  // Huy hiệu: cộng giờ xem mỗi 30s khi đang mở player
+  // Huy hiệu: cộng giờ xem mỗi 30s khi đang mở player + heartbeat + thống kê hồ sơ
   useEffect(() => {
     if (!isPlayerOpen || !currentChannel) return undefined;
+    try {
+      sendBeat({ kind: 'channel', ref_id: currentChannel.channel_id, ref_name: currentChannel.name || '', seconds: 0, viewed: true, name: currentProfile?.name || effUser?.display_name || effUser?.username || '' });
+    } catch {}
     const iv = setInterval(() => {
       try {
         const nb = addWatch(30, currentChannel.channel_id);
         nb.forEach(b => addToast(t('app.new_badge', { n: badgeName(b, lang), d: badgeDesc(b, lang) }), 'success'));
+        sendBeat({ kind: 'channel', ref_id: currentChannel.channel_id, ref_name: currentChannel.name || '', seconds: 30, name: currentProfile?.name || effUser?.display_name || effUser?.username || '' });
+        recordProfileWatch(currentProfile?.id || 'guest', 30, currentChannel.name || currentChannel.channel_id);
       } catch {}
     }, 30000);
     return () => clearInterval(iv);
-  }, [isPlayerOpen, currentChannel, addToast]);
+  }, [isPlayerOpen, currentChannel, addToast]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Mở modal chi tiết kênh (từ nút hover ở trang chủ)
   const handleShowInfo = useCallback((ch) => {
@@ -409,9 +453,62 @@ function AppContent() {
     return <LanguagePicker onClose={() => setShowLangPicker(false)} />;
   }
 
+  // Khoá PIN mở app
+  if (!appUnlocked && hasAppPin()) {
+    return (
+      <PinPad
+        title={t('pin.app_title')}
+        error={pinErr}
+        onSubmit={async (pin) => {
+          if (await verifyAppPin(pin)) {
+            try { sessionStorage.setItem('chrtv_unlocked', '1'); } catch {}
+            setAppUnlocked(true);
+          } else setPinErr(t('pin.wrong'));
+        }}
+      />
+    );
+  }
+
   // Khách: KHÔNG chặn cổng — vào web xem bình thường (UI như user đã đăng nhập)
   if (!guestMode && !currentProfile) {
     return <ProfileGate />;
+  }
+
+  // Chế độ bé: giao diện riêng
+  if (!guestMode && currentProfile?.is_child) {
+    return (
+      <div className="h-screen w-screen bg-black text-slate-100 overflow-y-auto font-sans select-none">
+        <KidsShell
+          channels={channels}
+          onSelectChannel={handleSelectChannel}
+          onSelectMovie={(m) => { setMovieToOpen(m); }}
+          onExitKids={() => logoutProfile()}
+        />
+        {movieToOpen && (
+          <div className="fixed inset-0 z-[100] bg-black overflow-y-auto">
+            <button onClick={() => setMovieToOpen(null)} className="fixed top-3 left-3 z-[110] px-4 py-2 rounded-full bg-black/70 border border-white/20 text-[12px] font-bold text-white">← {t('common.back')}</button>
+            <MoviesScreen openMovie={movieToOpen} onOpenMovieHandled={() => setMovieToOpen(null)} onRequireLogin={() => promptLogin(t('app.need_login_movie'))} />
+          </div>
+        )}
+        {isPlayerOpen && currentChannel && (
+          <div className="fixed inset-0 z-[120] bg-black">
+            <VideoPlayer
+              channel={currentChannel}
+              streamUrl={activeStreamUrl}
+              epgNow={getEpgForChannel(currentChannel.channel_id).now}
+              epgNext={getEpgForChannel(currentChannel.channel_id).next}
+              onNextChannel={handleNextChannel}
+              onPrevChannel={handlePrevChannel}
+              onClose={() => { setIsPlayerOpen(false); setMiniPlayer(false); }}
+              allChannels={channels}
+              epgLookup={getEpgForChannel}
+              currentUserName={currentProfile?.name || ''}
+            />
+          </div>
+        )}
+        <AuthModal open={showAuth} onClose={() => setShowAuth(false)} />
+      </div>
+    );
   }
 
   // Movies mode
@@ -485,6 +582,8 @@ function AppContent() {
             <SportsScreen channels={channels} onSelectChannel={handleSelectChannel} />
           ) : activeTab === 'epg' ? (
             <EpgGridTimeline channels={channels} epgData={epgData} onPlayCatchup={handlePlayCatchup} onSelectChannel={handleSelectChannel} onRequireLogin={promptLogin} />
+          ) : activeTab === 'community' ? (
+            <CommunityScreen onRequireLogin={promptLogin} />
           ) : activeTab === 'shorts' ? (
             <ShortsScreen
               channels={channels}
@@ -555,6 +654,7 @@ function AppContent() {
       {channelInfoModal && (
         <ChannelInfoModal channel={channelInfoModal.channel} epgNow={channelInfoModal.epgNow} epgNext={channelInfoModal.epgNext} isFavorite={favorites.includes(channelInfoModal.channel.channel_id)} onPlay={handleSelectChannel} onToggleFavorite={handleToggleFavorite} onClose={() => setChannelInfoModal(null)} onRequireLogin={promptLogin} />
       )}
+      {publicHandle && <PublicProfileModal handle={publicHandle} onClose={() => { setPublicHandle(null); try { history.replaceState(null, '', location.pathname); } catch {} }} />}
       <KeyboardShortcuts open={showKeyboardShortcuts} onClose={() => setShowKeyboardShortcuts(false)} />
       <AuthModal open={showAuth} onClose={() => setShowAuth(false)} />
       {showAdmin && user?.role === 'admin' && <AdminPanel onClose={() => { setShowAdmin(false); try { history.replaceState(null, '', location.pathname); } catch {} }} />}

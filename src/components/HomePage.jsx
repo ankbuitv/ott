@@ -9,6 +9,8 @@ import { fetchEvents } from '../services/events';
 import { fetchLeague, LEAGUES } from '../services/sports';
 import { API_BASE } from '../services/config';
 import Footer from './Footer';
+import TopChannelsStrip from './TopChannelsStrip';
+import AdSlot from './AdSlot';
 
 /**
  * TRANG CHỦ:
@@ -204,6 +206,8 @@ export default function HomePage({
       )}
 
       <div className="max-w-[1400px] mx-auto px-5 md:px-8 pt-8 space-y-10">
+        <TopChannelsStrip channels={channels} onSelectChannel={onSelectChannel} />
+        <AdSlot slot="home" />
         {/* ===== 2. KÊNH TRENDING ===== */}
         {trendingCh.length > 0 && (
           <section className="anim-fade-up">

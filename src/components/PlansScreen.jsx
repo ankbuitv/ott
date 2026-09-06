@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Check, Mail, BadgeCheck, ShieldCheck, RefreshCcw, Lock, Crown } from 'lucide-react';
+import { Check, Mail, BadgeCheck, ShieldCheck, RefreshCcw, Lock, Crown, Gift } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { PLANS, activatePlan, fetchPlan, fetchPlanList, refreshPlanRanks, SUPPORT_EMAIL } from '../services/plans';
 import { useI18n } from '../contexts/I18nContext';
+import PayModal from './PayModal';
+import { redeemGift } from '../services/social';
 
 function fmtPrice(p, lang) {
   const price = Number(p.price) || 0;
@@ -22,6 +24,9 @@ export default function PlansScreen() {
   const [busy, setBusy] = useState('');
   const [plans, setPlans] = useState(PLANS);
   const [serverInfo, setServerInfo] = useState(null);
+  const [payPlan, setPayPlan] = useState(null);
+  const [giftCode, setGiftCode] = useState('');
+  const [giftBusy, setGiftBusy] = useState(false);
 
   useEffect(() => {
     let on = true;
@@ -43,6 +48,28 @@ export default function PlansScreen() {
   const cur = plans.find(p => p.code === current);
   const currentRank = cur ? Number(cur.rank) || 0 : 0;
   const maxRank = Math.max(1, ...plans.map(p => Number(p.rank) || 1));
+
+  // Gói có giá -> mở thanh toán VietQR; gói free -> kích hoạt ngay
+  const startBuy = (p) => {
+    if (current === p.code) return;
+    if ((Number(p.price) || 0) > 0) { setPayPlan(p); return; }
+    doActivate(p.code);
+  };
+
+  const doGift = async () => {
+    const code = giftCode.trim();
+    if (!code) return;
+    setGiftBusy(true);
+    try {
+      const r = await redeemGift(code);
+      setCurrent(r.plan);
+      try { setAuth({ ...user, plan: r.plan }, token); } catch (e) {}
+      setGiftCode('');
+      addToast(t('gift.ok', { plan: String(r.plan).toUpperCase(), days: r.days }), 'success');
+    } catch (e) {
+      addToast(e.code === 'LOGIN_REQUIRED' ? t('gift.need_login') : (e.message || t('gift.fail')), 'error');
+    } finally { setGiftBusy(false); }
+  };
 
   const doActivate = async (code) => {
     setBusy(code);
@@ -145,7 +172,7 @@ export default function PlansScreen() {
                   </div>
                 )}
                 <button
-                  onClick={() => doActivate(p.code)}
+                  onClick={() => startBuy(p)}
                   disabled={busy === p.code || isCurrent}
                   className={`mx-6 mt-4 py-3 rounded-2xl font-extrabold text-[14px] transition active:scale-[0.98] ${isCurrent ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/40 cursor-default' : 'text-white hover:brightness-110 disabled:opacity-60 shadow-lg'}`}
                   style={!isCurrent ? { background: `linear-gradient(135deg, ${p.color || '#f36f21'}, ${p.color || '#f36f21'}bb)`, boxShadow: `0 8px 24px ${p.color || '#f36f21'}44` } : {}}
@@ -165,6 +192,22 @@ export default function PlansScreen() {
           })}
         </div>
 
+        {/* Mã quà tặng */}
+        <div className="max-w-[560px] mx-auto mt-8 rounded-3xl border border-fuchsia-500/25 bg-fuchsia-500/[0.05] p-4">
+          <p className="text-[13px] font-black text-white flex items-center gap-2 mb-2"><Gift className="w-4 h-4 text-fuchsia-400" />{t('gift.title')}</p>
+          <div className="flex gap-2">
+            <input
+              value={giftCode} onChange={e => setGiftCode(e.target.value.toUpperCase().slice(0, 32))}
+              onKeyDown={e => { if (e.key === 'Enter') doGift(); }}
+              placeholder="CHRTV-XXXXXXXX"
+              className="flex-1 px-3 py-2.5 bg-black/40 border border-white/10 rounded-xl text-[13px] font-mono font-bold text-white placeholder:text-stone-600 outline-none focus:border-fuchsia-500 uppercase"
+            />
+            <button onClick={doGift} disabled={giftBusy || !giftCode.trim()} className="px-5 rounded-xl bg-fuchsia-600 hover:bg-fuchsia-500 text-white text-[13px] font-bold disabled:opacity-40 active:scale-95">
+              {t('gift.redeem')}
+            </button>
+          </div>
+        </div>
+
         <p className="max-w-[820px] mx-auto text-center text-[12px] text-stone-500 leading-relaxed mt-8">
           {t('plans.note1')} {t('plans.note2')}<br />
           {t('plans.note3')} <a className="text-[#ff9a3d] font-bold" href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a> {t('plans.note4')}
@@ -175,6 +218,13 @@ export default function PlansScreen() {
         </div>
         {serverInfo?.support && <div className="text-center text-[11px] text-stone-600 mt-2">{t('plans.partner')}: {serverInfo.support}</div>}
       </div>
+      {payPlan && (
+        <PayModal
+          plan={payPlan}
+          onClose={() => setPayPlan(null)}
+          onPaid={(code) => { setCurrent(code); setPayPlan(null); }}
+        />
+      )}
     </div>
   );
 }

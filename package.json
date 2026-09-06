@@ -16,6 +16,7 @@
     "@capacitor/core": "^7.0.0",
     "@noriginmedia/react-spatial-navigation": "^2.12.9",
     "fast-xml-parser": "^5.0.8",
+    "hls.js": "^1.7.2",
     "jsqr": "^1.4.0",
     "lucide-react": "^1.16.0",
     "qrcode.react": "^4.2.0",

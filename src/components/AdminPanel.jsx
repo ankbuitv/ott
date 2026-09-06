@@ -38,6 +38,7 @@ export default function AdminPanel({ onClose }) {
   const [credForm, setCredForm] = useState({ channel_id: '', upstream_token: '' });
   const [feedback, setFeedback] = useState([]);
   const [shorts, setShorts] = useState([]);
+  const [shortCreators, setShortCreators] = useState([]);
   const [shortForm, setShortForm] = useState({ title: '', caption: '', video_url: '', thumb_url: '', author: 'CHRTV' });
   const [events, setEvents] = useState([]);
   const [evForm, setEvForm] = useState({ title: '', subtitle: '', image_url: '', link_type: 'none', link_value: '', starts_at: '', ends_at: '', sort_order: 0 });
@@ -84,6 +85,7 @@ export default function AdminPanel({ onClose }) {
     fetch(`${BASE}/admin/stream-credentials`, { headers }).then(r => r.json()).then(d => setCreds(d.credentials || [])).catch(() => {});
     fetch(`${BASE}/admin/feedback`, { headers }).then(r => r.json()).then(d => setFeedback(d.feedback || [])).catch(() => {});
     fetch(`${BASE}/admin/shorts`, { headers }).then(r => r.json()).then(d => setShorts(d.shorts || [])).catch(() => {});
+    fetch(`${BASE}/admin/short-creators`, { headers }).then(r => r.json()).then(d => setShortCreators(d.creators || [])).catch(() => {});
     fetch(`${BASE}/admin/events`, { headers }).then(r => r.json()).then(d => setEvents(d.events || [])).catch(() => {});
     fetch(`${BASE}/admin/sports-videos`, { headers }).then(r => r.json()).then(d => setSportsVids(d.videos || [])).catch(() => {});
     fetch(`${BASE}/admin/plans`, { headers }).then(r => r.json()).then(d => setPlans(d.plans || [])).catch(() => {});
@@ -133,16 +135,20 @@ export default function AdminPanel({ onClose }) {
     e.preventDefault();
     const r = await fetch(`${BASE}/admin/notify`, { method: 'POST', headers, body: JSON.stringify({ title: notifyTitle, body: notifyBody, type: notifyType, channel_id: notifyChannel }) });
     const d = await r.json();
-    if (d.success) { addToast('Đã gửi thông báo!', 'success'); setNotifyTitle(''); setNotifyBody(''); }
-    else addToast(d.error, 'error');
+    if (d.success) {
+      addToast('Đã gửi thông báo!', 'success'); setNotifyTitle(''); setNotifyBody('');
+      fetch(`${BASE}/admin/notifications`, { headers }).then(r => r.json()).then(dd => setNotifications(dd.notifications || [])).catch(() => {});
+    } else addToast(d.error, 'error');
   };
 
   const sendBroadcast = async (e) => {
     e.preventDefault();
     const r = await fetch(`${BASE}/admin/broadcast`, { method: 'POST', headers, body: JSON.stringify({ message: broadcastMsg, type: broadcastType, expires_in: 3600 }) });
     const d = await r.json();
-    if (d.success) { addToast('Đã broadcast!', 'success'); setBroadcastMsg(''); }
-    else addToast(d.error, 'error');
+    if (d.success) {
+      addToast('Đã broadcast!', 'success'); setBroadcastMsg('');
+      fetch(`${BASE}/admin/broadcasts`, { headers }).then(r => r.json()).then(dd => setBroadcasts(dd.broadcasts || [])).catch(() => {});
+    } else addToast(d.error, 'error');
   };
 
   // ---------- EPG override handlers ----------
@@ -290,38 +296,87 @@ export default function AdminPanel({ onClose }) {
           )}
 
           {tab === 'notify' && (
-            <form onSubmit={sendNotification} className="space-y-3">
-              <input type="text" value={notifyTitle} onChange={e => setNotifyTitle(e.target.value)} placeholder="Tiêu đề thông báo" required className="w-full px-3 py-2 bg-slate-800/60 border border-slate-700/50 rounded-xl text-xs text-white focus:outline-none focus:border-[#f36f21]/60" />
-              <textarea value={notifyBody} onChange={e => setNotifyBody(e.target.value)} placeholder="Nội dung thông báo..." required rows={3} className="w-full px-3 py-2 bg-slate-800/60 border border-slate-700/50 rounded-xl text-xs text-white focus:outline-none focus:border-[#f36f21]/60 resize-none" />
-              <div className="flex gap-2">
-                <select value={notifyType} onChange={e => setNotifyType(e.target.value)} className="bg-slate-800 text-xs text-slate-200 px-3 py-2 rounded-xl border border-slate-700">
-                  <option value="info">Info</option><option value="warning">Warning</option><option value="event">Sự kiện</option><option value="promo">Khuyến mãi</option>
-                </select>
-                <input type="text" value={notifyChannel} onChange={e => setNotifyChannel(e.target.value)} placeholder="Channel ID (tùy chọn)" className="flex-1 px-3 py-2 bg-slate-800/60 border border-slate-700/50 rounded-xl text-xs text-white focus:outline-none" />
-                <button type="submit" className="px-4 py-2 bg-[#f36f21] text-white text-xs font-bold rounded-xl hover:bg-[#f36f21] transition-all flex items-center gap-1"><Send className="w-3.5 h-3.5" /> Gửi</button>
-              </div>
-              <div className="text-[10px] text-slate-600">Thông báo sẽ hiển thị cho tất cả người dùng qua WebSocket</div>
-            </form>
+            <div className="space-y-3">
+              <form onSubmit={sendNotification} className="space-y-3">
+                <input type="text" value={notifyTitle} onChange={e => setNotifyTitle(e.target.value)} placeholder="Tiêu đề thông báo" required className="w-full px-3 py-2 bg-slate-800/60 border border-slate-700/50 rounded-xl text-xs text-white focus:outline-none focus:border-[#f36f21]/60" />
+                <textarea value={notifyBody} onChange={e => setNotifyBody(e.target.value)} placeholder="Nội dung thông báo..." required rows={3} className="w-full px-3 py-2 bg-slate-800/60 border border-slate-700/50 rounded-xl text-xs text-white focus:outline-none focus:border-[#f36f21]/60 resize-none" />
+                <div className="flex gap-2">
+                  <select value={notifyType} onChange={e => setNotifyType(e.target.value)} className="bg-slate-800 text-xs text-slate-200 px-3 py-2 rounded-xl border border-slate-700">
+                    <option value="info">Info</option><option value="warning">Warning</option><option value="event">Sự kiện</option><option value="promo">Khuyến mãi</option>
+                  </select>
+                  <input type="text" value={notifyChannel} onChange={e => setNotifyChannel(e.target.value)} placeholder="Channel ID (tùy chọn)" className="flex-1 px-3 py-2 bg-slate-800/60 border border-slate-700/50 rounded-xl text-xs text-white focus:outline-none" />
+                  <button type="submit" className="px-4 py-2 bg-[#f36f21] text-white text-xs font-bold rounded-xl hover:bg-[#f36f21] transition-all flex items-center gap-1"><Send className="w-3.5 h-3.5" /> Gửi</button>
+                </div>
+                <div className="text-[10px] text-slate-600">Thông báo sẽ hiển thị cho tất cả người dùng qua WebSocket</div>
+              </form>
+              {notifications.length > 0 && (
+                <div className="space-y-1.5 pt-2">
+                  <p className="text-[10px] text-slate-500 font-semibold uppercase">Danh sách thông báo ({notifications.length}):</p>
+                  <div className="space-y-1.5 max-h-[32vh] overflow-y-auto pr-1">
+                    {notifications.map((n) => (
+                      <div key={n.id} className="flex items-start gap-2 bg-slate-900/40 rounded-lg p-2.5 border border-slate-800/30">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[11px] font-bold text-white truncate">{n.title}</p>
+                          <p className="text-[10px] text-slate-400 line-clamp-2 leading-relaxed">{n.body}</p>
+                          <p className="text-[9px] text-slate-600 mt-1">{n.type} {n.channel_id ? '· ' + n.channel_id : ''} · {n.created_at}</p>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            if (!confirm('Xoá thông báo này?')) return;
+                            const r = await fetch(`${BASE}/admin/notifications`, { method: 'DELETE', headers, body: JSON.stringify({ id: n.id }) });
+                            const d = await r.json();
+                            if (d.success) { addToast('Đã xoá thông báo', 'success'); setNotifications(prev => prev.filter(x => x.id !== n.id)); }
+                            else addToast(d.error || 'Lỗi', 'error');
+                          }}
+                          className="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-[#ff9a3d] hover:bg-[#f36f21]/10 shrink-0"
+                          title="Xoá thông báo"
+                        ><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           {tab === 'broadcast' && (
-            <form onSubmit={sendBroadcast} className="space-y-3">
-              <textarea value={broadcastMsg} onChange={e => setBroadcastMsg(e.target.value)} placeholder="Tin broadcast (hiển thị banner trên trang)" required rows={2} className="w-full px-3 py-2 bg-slate-800/60 border border-slate-700/50 rounded-xl text-xs text-white focus:outline-none focus:border-[#f36f21]/60 resize-none" />
-              <div className="flex gap-2 items-center">
-                <select value={broadcastType} onChange={e => setBroadcastType(e.target.value)} className="bg-slate-800 text-xs text-slate-200 px-3 py-2 rounded-xl border border-slate-700">
-                  <option value="info">Info</option><option value="warning">Cảnh báo</option><option value="event">Sự kiện</option>
-                </select>
-                <button type="submit" className="px-4 py-2 bg-[#f36f21] text-white text-xs font-bold rounded-xl hover:bg-[#f36f21] transition-all flex items-center gap-1"><Send className="w-3.5 h-3.5" /> Broadcast</button>
-              </div>
-              {broadcasts.length > 0 && (
-                <div className="space-y-1.5 mt-3">
-                  <p className="text-[10px] text-slate-500 font-semibold uppercase">Broadcast hiện tại:</p>
-                  {broadcasts.map((b, i) => (
-                    <div key={i} className="bg-slate-900/40 rounded-lg p-2 border border-slate-800/30 text-xs text-slate-300">{b.message}</div>
-                  ))}
+            <div className="space-y-3">
+              <form onSubmit={sendBroadcast} className="space-y-3">
+                <textarea value={broadcastMsg} onChange={e => setBroadcastMsg(e.target.value)} placeholder="Tin broadcast (hiển thị banner trên trang)" required rows={2} className="w-full px-3 py-2 bg-slate-800/60 border border-slate-700/50 rounded-xl text-xs text-white focus:outline-none focus:border-[#f36f21]/60 resize-none" />
+                <div className="flex gap-2 items-center">
+                  <select value={broadcastType} onChange={e => setBroadcastType(e.target.value)} className="bg-slate-800 text-xs text-slate-200 px-3 py-2 rounded-xl border border-slate-700">
+                    <option value="info">Info</option><option value="warning">Cảnh báo</option><option value="event">Sự kiện</option>
+                  </select>
+                  <button type="submit" className="px-4 py-2 bg-[#f36f21] text-white text-xs font-bold rounded-xl hover:bg-[#f36f21] transition-all flex items-center gap-1"><Send className="w-3.5 h-3.5" /> Broadcast</button>
                 </div>
-              )}
-            </form>
+              </form>
+              {broadcasts.length > 0 ? (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] text-slate-500 font-semibold uppercase">Broadcast hiện tại ({broadcasts.length}):</p>
+                  <div className="space-y-1.5 max-h-[40vh] overflow-y-auto pr-1">
+                    {broadcasts.map((b) => (
+                      <div key={b.id} className="flex items-start gap-2 bg-slate-900/40 rounded-lg p-2.5 border border-slate-800/30">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[11px] text-slate-200 leading-relaxed">{b.message}</p>
+                          <p className="text-[9px] text-slate-600 mt-1">{b.type} · {b.created_at} {b.expires_at ? '· hết hạn ' + new Date(b.expires_at * 1000).toLocaleString('vi-VN') : ''}</p>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            if (!confirm('Xoá broadcast này? Banner sẽ biến mất với mọi user.')) return;
+                            const r = await fetch(`${BASE}/admin/broadcast`, { method: 'DELETE', headers, body: JSON.stringify({ id: b.id }) });
+                            const d = await r.json();
+                            if (d.success) { addToast('Đã xoá broadcast', 'success'); setBroadcasts(prev => prev.filter(x => x.id !== b.id)); }
+                            else addToast(d.error || 'Lỗi', 'error');
+                          }}
+                          className="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-[#ff9a3d] hover:bg-[#f36f21]/10 shrink-0"
+                          title="Xoá broadcast"
+                        ><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : <p className="text-[11px] text-slate-600 text-center py-3">Chưa có broadcast nào</p>}
+            </div>
           )}
 
           {tab === 'epg' && (
@@ -758,8 +813,8 @@ export default function AdminPanel({ onClose }) {
               </div>
             </div>
           )}
-          {tab === 'shorts' && (
-            <div className="space-y-3">
+                    {tab === 'shorts' && (
+            <div className="space-y-4">
               <form
                 onSubmit={async (e) => {
                   e.preventDefault();
@@ -774,24 +829,54 @@ export default function AdminPanel({ onClose }) {
                 }}
                 className="space-y-2 bg-slate-900/40 rounded-xl p-3 border border-slate-800/40"
               >
-                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Đăng short mới (link mp4 trực tiếp)</p>
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Đăng short mới (admin - link mp4 trực tiếp)</p>
                 <input value={shortForm.title} onChange={e => setShortForm({ ...shortForm, title: e.target.value })} placeholder="Tiêu đề" className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-[#f36f21]" />
                 <input value={shortForm.video_url} onChange={e => setShortForm({ ...shortForm, video_url: e.target.value })} placeholder="Link video mp4 https://..." className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-[#f36f21]" />
                 <div className="grid grid-cols-2 gap-2">
                   <input value={shortForm.thumb_url} onChange={e => setShortForm({ ...shortForm, thumb_url: e.target.value })} placeholder="Ảnh bìa (không bắt buộc)" className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-[#f36f21]" />
-                  <input value={shortForm.author} onChange={e => setShortForm({ ...shortForm, author: e.target.value })} placeholder="Tác giả" className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-[#f36f21]" />
+                  <input value={shortForm.author} onChange={e => setShortForm({ ...shortForm, author: e.target.value })} placeholder="Tác giả (fallback nếu không có creator)" className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-[#f36f21]" />
                 </div>
                 <textarea value={shortForm.caption} onChange={e => setShortForm({ ...shortForm, caption: e.target.value })} placeholder="Mô tả ngắn" rows={2} className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-[#f36f21] resize-none" />
                 <button type="submit" className="w-full py-2 btn-orange text-white text-xs font-bold rounded-xl">Đăng short</button>
               </form>
+
+              {shortCreators.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Creator profiles ({shortCreators.length}) - avatar, bio, follow</p>
+                  <div className="space-y-1.5 max-h-[32vh] overflow-y-auto pr-1">
+                    {shortCreators.map(c => (
+                      <div key={c.id} className="flex items-center gap-2.5 bg-slate-900/40 rounded-xl px-3 py-2.5 border border-slate-800/30">
+                        {c.avatar_url ? <img src={c.avatar_url} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" /> : <span className="w-9 h-9 rounded-full bg-[#f36f21]/20 text-[#f36f21] flex items-center justify-center text-[11px] font-black shrink-0">{(c.display_name||c.handle||'C')[0].toUpperCase()}</span>}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[11px] font-bold text-white flex items-center gap-1 truncate">{c.display_name} <span className="text-slate-500 font-normal">@{c.handle}</span> {c.verified ? <span className="text-cyan-400 text-[10px]">✓</span> : null}</p>
+                          <p className="text-[10px] text-slate-400 truncate">{c.bio || '—'} · {c.followers||0} followers · {c.shorts_count||0} shorts</p>
+                        </div>
+                        <button onClick={async () => {
+                          const r = await fetch(`${BASE}/admin/short-creators`, { method: 'PUT', headers, body: JSON.stringify({ id: c.id, verified: c.verified ? 0 : 1 }) });
+                          const d = await r.json();
+                          if (d.success) { addToast(c.verified ? 'Đã bỏ tick xanh' : 'Đã xác minh ✓', 'success'); setShortCreators(prev => prev.map(x => x.id===c.id ? {...x, verified: x.verified ? 0 : 1} : x)); }
+                        }} className={`px-2 py-1 rounded-lg text-[10px] font-bold ${c.verified ? 'bg-cyan-600/20 text-cyan-300' : 'bg-slate-700/50 text-slate-300'}`}>{c.verified ? '✓ Verified' : 'Verify'}</button>
+                        <button onClick={async () => {
+                          if (!confirm('Xoá creator @'+c.handle+'? Video của họ sẽ mất creator link.')) return;
+                          const r = await fetch(`${BASE}/admin/short-creators`, { method: 'DELETE', headers, body: JSON.stringify({ id: c.id }) });
+                          const d = await r.json();
+                          if (d.success) { addToast('Đã xoá creator', 'success'); setShortCreators(prev => prev.filter(x => x.id!==c.id)); }
+                        }} className="p-1.5 text-slate-500 hover:text-[#ff9a3d]"><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-2">
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Shorts ({shorts.length})</p>
                 {shorts.length === 0 && <p className="text-xs text-slate-500 text-center py-3">Chưa có short nào</p>}
                 {shorts.map(s => (
                   <div key={s.id} className="flex items-center gap-2.5 bg-slate-900/40 rounded-lg px-3 py-2 border border-slate-800/30">
                     {s.thumb_url ? <img src={s.thumb_url} alt="" className="w-9 h-14 object-cover rounded-md shrink-0" onError={e => e.target.style.display = 'none'} /> : <span className="w-9 h-14 rounded-md grad-brand flex items-center justify-center text-sm shrink-0">🎬</span>}
                     <div className="min-w-0 flex-1">
-                      <p className="text-[11px] font-bold text-white truncate">{s.title || '(không tên)'}</p>
-                      <p className="text-[9px] text-slate-500">👁 {s.views || 0} · ❤ {s.likes || 0} · {s.status === 'hidden' ? '🙈 Đang ẩn' : '✅ Đang hiện'}</p>
+                      <p className="text-[11px] font-bold text-white truncate">{s.title || '(không tên)'} {s.creator_handle ? <span className="text-[10px] text-[#f36f21] font-normal">· @{s.creator_handle}</span> : s.author ? <span className="text-[10px] text-slate-500 font-normal">· {s.author}</span> : null}</p>
+                      <p className="text-[9px] text-slate-500">👁 {s.views || 0} · ❤ {s.likes || 0} · {s.status === 'hidden' ? '🙈 Đang ẩn' : '✅ Đang hiện'} {s.creator_name ? '· ' + s.creator_name : ''}</p>
                     </div>
                     <button
                       onClick={async () => {

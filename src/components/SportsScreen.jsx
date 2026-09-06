@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Trophy, CalendarDays, ListOrdered, Clapperboard, Play, Radio, X, ChevronRight } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Trophy, CalendarDays, ListOrdered, Clapperboard, Play, Radio, X, ChevronRight, RefreshCw } from 'lucide-react';
 import { useI18n } from '../contexts/I18nContext';
 import { LEAGUES, fetchLeague, fetchSportsIndex, fetchSportsVideos, parseVideoUrl } from '../services/sports';
 import RacingSection from './RacingSection';
@@ -24,6 +24,13 @@ function isLive(ev) {
 }
 function isPostponed(ev) {
   return ev.strPostponed === 'yes' || /postpon|cancel/i.test(String(ev.strStatus || ''));
+}
+function fmtHM(ts) {
+  try {
+    const d = new Date(ts);
+    const p = (n) => String(n).padStart(2, '0');
+    return `${p(d.getHours())}:${p(d.getMinutes())}`;
+  } catch { return ''; }
 }
 
 function TeamBadge({ src, name, size = 'w-8 h-8' }) {
@@ -94,14 +101,35 @@ export default function SportsScreen({ channels = [], onSelectChannel }) {
   const [showExplorer, setShowExplorer] = useState(false);
   const [sportsIdx, setSportsIdx] = useState(null);
   const [explorerSport, setExplorerSport] = useState('');
+  // Tự cập nhật kết quả + BXH: thời điểm dữ liệu mới nhất & nút làm mới tay
+  const [updatedAt, setUpdatedAt] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshRef = useRef(null);
 
   const league = (custom && custom.id === leagueId) ? custom : (LEAGUES.find(l => l.id === leagueId) || LEAGUES[0]);
 
   useEffect(() => {
     let on = true;
     setLoading(true);
-    fetchLeague(league).then(d => { if (on) { setData(d); setLoading(false); } }).catch(() => { if (on) setLoading(false); });
-    return () => { on = false; };
+    const load = (fresh) => {
+      if (fresh) setRefreshing(true);
+      fetchLeague(league, { fresh })
+        .then(d => { if (on) { setData(d); setLoading(false); setUpdatedAt(Date.now()); } })
+        .catch(() => { if (on) setLoading(false); })
+        .finally(() => { if (on) setRefreshing(false); });
+    };
+    refreshRef.current = () => load(true);
+    load(false);
+    // TỰ CẬP NHẬT: mỗi 60s (khi tab đang mở) lấy kết quả + BXH MỚI NHẤT từ API
+    // (fresh = bỏ cache), quay lại tab sau >30s cũng tự làm mới luôn.
+    const iv = setInterval(() => {
+      if (on && document.visibilityState === 'visible') load(true);
+    }, 60000);
+    const onVis = () => {
+      if (on && document.visibilityState === 'visible' && Date.now() - updatedAt > 30000) load(true);
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => { on = false; clearInterval(iv); document.removeEventListener('visibilitychange', onVis); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leagueId]);
 
@@ -150,6 +178,25 @@ export default function SportsScreen({ channels = [], onSelectChannel }) {
           <div>
             <h1 className="text-[24px] font-black tracking-tight leading-none">{t('sports.title')}</h1>
             <p className="text-[11px] text-stone-500 mt-1">{t('sports.sub')}</p>
+          </div>
+          {/* Trạng thái tự cập nhật + nút làm mới tay */}
+          <div className="ml-auto flex items-center gap-2">
+            {sportTab === 'football' && (
+              <>
+                <span className="hidden sm:flex items-center gap-1.5 text-[10px] font-bold text-stone-500">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  {t('sports.auto')}{updatedAt ? ` · ${fmtHM(updatedAt)}` : ''}
+                </span>
+                <button
+                  onClick={() => refreshRef.current && refreshRef.current()}
+                  disabled={refreshing}
+                  title={t('sports.refresh')}
+                  className="w-8 h-8 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 flex items-center justify-center disabled:opacity-50 active:scale-95"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-stone-300 ${refreshing ? 'animate-spin' : ''}`} />
+                </button>
+              </>
+            )}
           </div>
         </div>
         {/* Tab môn thể thao: Bóng đá | Đua xe */}

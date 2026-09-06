@@ -18,6 +18,8 @@ CHRTV là hệ thống ứng dụng xem truyền hình IPTV chuyên nghiệp, ca
 - **Xem thử 5 phút**: gói Standard bấm được mọi kênh nhưng chỉ xem 5 phút/giờ ngoài gói; hết thì còn kênh TH.
 - **Đang hot**: bảng xếp hạng kênh theo 15 phút gần nhất (`/api/stats/trending`).
 - **Mạng yếu / 4G**: tự hạ độ phân giải và báo cho người xem, tắt/bật trong Cài đặt.
+- **Hiệu năng (fix lag 2026-09)**: EPG đánh chỉ mục 1 lần thay vì quét toàn bộ mỗi lần tra (web hết đơ khi mở player/Toast); player đệm 30s + tắt low-latency (hết đứng hình), tự thử lại khi mạng chập chờn.
+- **Thể thao**: lịch thi đấu + **tỉ số tự cập nhật mỗi 60 giây** (trận đang đá lên đầu, nhãn LIVE), **BXH luôn lấy bảng mới nhất** từ API (TheSportsDB/OpenLigaDB) khi tab đang mở, F1 & motorsport.
 - **🎁 Tặng gói quà kênh cho bạn bè**: Gói cước → *Tặng gói cho bạn bè* — chọn gói + số ngày (+ tên đăng nhập bạn bè để khoá mã chỉ họ nhận được, kèm lời nhắn) → nhận mã `CHRTV-XXXX-XXXX-XXXX` + link chia sẻ `?gift=CODE` (bạn mở link vào thẳng trang nhận quà). API: `/api/gifts/create` · `/api/gifts/mine` · `/api/gifts/redeem`.
 - **Đổi mật khẩu ngay trong app**: Cài đặt → *Đổi mật khẩu* (đo độ mạnh, hiện/ẩn, tuỳ chọn “đăng xuất các thiết bị khác” — thu hồi phiên thật sự vì server đối chiếu bảng `sessions`).
 - **Xác minh email bắt buộc khi đăng ký**: gửi mã 6 số qua Brevo, chưa xác minh không đăng nhập được (UI có nút gửi lại mã + cooldown); khi Worker chưa cấu hình `BREVO_API_KEY` thì rơi về `devCode` hiển thị ngay trên màn hình xác minh.

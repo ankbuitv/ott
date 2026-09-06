@@ -6,7 +6,7 @@ import { parseEpgDate } from '../utils/dateUtils';
 import { useI18n } from '../contexts/I18nContext';
 import { MovieAPI, imgPath, bgPath } from '../services/tmdb';
 import { fetchEvents } from '../services/events';
-import { fetchLeague, LEAGUES } from '../services/sports';
+import { fetchLatestResults, eventIsLive, LEAGUES } from '../services/sports';
 import { API_BASE } from '../services/config';
 import Footer from './Footer';
 import TopChannelsStrip from './TopChannelsStrip';
@@ -58,9 +58,19 @@ export default function HomePage({
     MovieAPI.trending().then(r => { if (on) setTrending((r.results || []).slice(0, 12)); }).catch(() => {});
     fetchEvents().then(ev => { if (on) setEvents(ev || []); }).catch(() => {});
     fetch(`${API_BASE}/api/shorts?limit=12`).then(r => r.json()).then(d => { if (on) setShorts(d.shorts || []); }).catch(() => {});
+    // TỈ SỐ MỚI NHẤT — tự cập nhật mỗi 60s (bỏ qua khi tab ẩn): trận ĐANG ĐÁ lên đầu
     const epl = LEAGUES.find(l => l.id === 'epl');
-    if (epl) fetchLeague(epl).then(d => { if (on) setScores((d.past || []).slice(0, 6)); }).catch(() => {});
-    return () => { on = false; };
+    const loadScores = () => {
+      if (!epl) return;
+      fetchLatestResults(epl)
+        .then(d => { if (on) setScores([...(d.live || []), ...(d.past || [])].slice(0, 6)); })
+        .catch(() => {});
+    };
+    loadScores();
+    const ivScores = setInterval(() => {
+      if (document.visibilityState === 'visible') loadScores();
+    }, 60000);
+    return () => { on = false; clearInterval(ivScores); };
   }, []);
 
   const getEpgNow = useCallback((ch) => {
@@ -327,14 +337,22 @@ export default function HomePage({
               {scores.length === 0 && (
                 <p className="text-[12px] text-stone-600 italic text-center py-6">{t('sports.no_data')}</p>
               )}
-              {scores.map(ev => (
-                <div key={ev.idEvent} className="flex items-center gap-2 rounded-2xl bg-black/30 border border-white/[0.05] px-3 py-2.5">
-                  <span className="text-[10px] font-bold text-stone-500 w-10 shrink-0">{fmtDate(ev.dateEvent)}</span>
+              {scores.map(ev => {
+                const live = eventIsLive(ev);
+                return (
+                <div key={ev.idEvent} className={`flex items-center gap-2 rounded-2xl px-3 py-2.5 border ${live ? 'bg-[#f36f21]/10 border-[#f36f21]/40' : 'bg-black/30 border-white/[0.05]'}`}>
+                  {live ? (
+                    <span className="text-[9px] font-black text-white rounded-full grad-brand px-1.5 py-0.5 w-10 shrink-0 flex items-center justify-center gap-1">
+                      <span className="w-1 h-1 rounded-full bg-white animate-pulse"></span>LIVE
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold text-stone-500 w-10 shrink-0">{fmtDate(ev.dateEvent)}</span>
+                  )}
                   <span className="flex-1 min-w-0 flex items-center justify-end gap-1.5">
                     <span className="text-[12px] font-bold text-slate-200 truncate text-right">{ev.strHomeTeam}</span>
                     {ev.strHomeTeamBadge && <img src={ev.strHomeTeamBadge} alt="" loading="lazy" className="w-6 h-6 object-contain shrink-0" onError={e => { e.target.style.display = 'none'; }} />}
                   </span>
-                  <span className="px-2.5 py-1 rounded-lg bg-white/[0.07] text-[13px] font-black text-white tabular-nums shrink-0">
+                  <span className={`px-2.5 py-1 rounded-lg text-[13px] font-black tabular-nums shrink-0 ${live ? 'bg-[#f36f21]/25 text-[#ffb37a]' : 'bg-white/[0.07] text-white'}`}>
                     {ev.intHomeScore ?? '-'} - {ev.intAwayScore ?? '-'}
                   </span>
                   <span className="flex-1 min-w-0 flex items-center gap-1.5">
@@ -342,7 +360,8 @@ export default function HomePage({
                     <span className="text-[12px] font-bold text-slate-200 truncate">{ev.strAwayTeam}</span>
                   </span>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
           {/* Sự kiện */}

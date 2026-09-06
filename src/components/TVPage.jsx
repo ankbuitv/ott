@@ -68,7 +68,14 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
             if (filter) player.getNetworkingEngine()?.registerRequestFilter(filter);
           } catch {}
           player.configure({
-            streaming: { rebufferingGoal: 2, bufferingGoal: 12, lowLatencyMode: true },
+            // Buffer đậm + tắt low-latency — hết đứng hình trên nguồn dao động mạnh
+            streaming: {
+              rebufferingGoal: 6,
+              bufferingGoal: 30,
+              bufferBehind: 60,
+              lowLatencyMode: false,
+              retryParameters: { maxAttempts: 6, baseDelay: 800, timeout: 15000 },
+            },
             abr: { enabled: true },
             manifest: { retryParameters: { maxAttempts: 3, baseDelay: 1000 } },
           });
@@ -112,8 +119,17 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
         if (isHls && Hls.isSupported()) {
           const hls = new Hls({
             enableWorker: true,
-            lowLatencyMode: true,
-            backBufferLength: 30,
+            lowLatencyMode: false, // nguồn thường (non-LL-HLS): LL mode gây đứng hình
+            backBufferLength: 60,
+            maxBufferLength: 30,   // đệm 30s (mặc định 18s mỏng quá -> lag)
+            maxMaxBufferLength: 120,
+            maxBufferSize: 60 * 1000 * 1000,
+            liveSyncDurationCount: 3,
+            abrEwmaDefaultEstimate: 800000,
+            fragLoadingMaxRetry: 6,
+            levelLoadingMaxRetry: 4,
+            manifestLoadingMaxRetry: 4,
+            fragLoadingMaxRetryTimeout: 8000,
             xhrSetup: (xhr, url) => {
               if (!isProxiedStreamUrl(url)) return;
               const h = applyStreamClientHeaders({}, channel);

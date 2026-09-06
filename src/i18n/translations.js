@@ -447,6 +447,8 @@ const T = {
   'tv.all_channels': { vi: 'Tất cả kênh', en: 'All channels' },
   'sports.title': { vi: 'Thể thao', en: 'Sports' },
   'sports.sub': { vi: 'Kênh thể thao · Lịch thi đấu · Tỉ số · BXH · Video xem lại', en: 'Sports channels · Fixtures · Scores · Tables · Replays' },
+  'sports.auto': { vi: 'Tự cập nhật', en: 'Auto-updated' },
+  'sports.refresh': { vi: 'Làm mới ngay', en: 'Refresh now' },
   'sports.channels': { vi: 'Kênh thể thao', en: 'Sports channels' },
   'sports.fixtures': { vi: 'Lịch sắp tới', en: 'Upcoming fixtures' },
   'sports.results': { vi: 'Kết quả', en: 'Results' },

@@ -149,7 +149,16 @@ export default function VideoPlayer({
             if (filter) player.getNetworkingEngine()?.registerRequestFilter(filter);
           } catch {}
           player.configure({
-            streaming: { rebufferingGoal: 2, bufferingGoal: 12, lowLatencyMode: true },
+            // Buffer đậm hơn + TẮT low-latency: nguồn IPTV VN vốn dao động mạnh,
+            // buffer mỏng 12s + lowLatencyMode trước đây làm đứng hình liên tục
+            // ("xem lag"). Cứ lấy trước 30s, chấp nhận trễ vài giây cho mượt.
+            streaming: {
+              rebufferingGoal: 6,   // đã cạn buffer -> nạp đủ 6s mới phát tiếp
+              bufferingGoal: 30,    // đệm trước tới 30s
+              bufferBehind: 60,     // giữ lại 60s sau lượt xem (tua lại nhanh)
+              lowLatencyMode: false, // LL-HLS chỉ hợp nguồn hỗ trợ, nguồn thường = rebuffer
+              retryParameters: { maxAttempts: 6, baseDelay: 800, timeout: 15000 },
+            },
             abr: { enabled: true, defaultBandwidthEstimate: 2000000 },
           });
           // (13) Mạng yếu / 4G / bật tiết kiệm dữ liệu -> chặn trần độ phân giải
@@ -207,8 +216,19 @@ export default function VideoPlayer({
           const cap = capRef.current; // trần chiều cao (px), 0 = không giới hạn
           const hls = new Hls({
             enableWorker: true,
-            lowLatencyMode: true,
-            backBufferLength: 30,
+            lowLatencyMode: false, // nguồn thường (non-LL-HLS): LL mode gây đứng hình
+            backBufferLength: 60,
+            // Đệm đậm hơn mặc định (18s) — nguồn VN dao động mạnh, buffer dày = mượt
+            maxBufferLength: 30,
+            maxMaxBufferLength: 120,
+            maxBufferSize: 60 * 1000 * 1000, // trần 60MB/tầng
+            liveSyncDurationCount: 3, // lệch live ~3 segment (~9-18s) cho ổn định
+            abrEwmaDefaultEstimate: 800000, // khởi động mức vừa -> lên hình nhanh
+            // Mạng chập chờn: thử lại nhiều hơn trước khi báo lỗi
+            fragLoadingMaxRetry: 6,
+            levelLoadingMaxRetry: 4,
+            manifestLoadingMaxRetry: 4,
+            fragLoadingMaxRetryTimeout: 8000,
             // (13) Mạng yếu/4G: chặn trần bitrate + khởi động ở mức thấp cho lên hình nhanh
             ...(cap ? { maxStarvationDelay: 6 } : {}),
             // Gắn header định danh client cho request tới proxy CHRTV

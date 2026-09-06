@@ -41,79 +41,133 @@ async function getJSON(url, timeoutMs = 12000) {
 
 const memCache = new Map(); // key -> {at, data}
 const TTL = 10 * 60 * 1000;
-function cached(key, loader) {
+function cached(key, loader, ttlMs = TTL) {
   const c = memCache.get(key);
-  if (c && Date.now() - c.at < TTL) return Promise.resolve(c.data);
+  if (c && Date.now() - c.at < ttlMs) return Promise.resolve(c.data);
   return loader().then(d => { memCache.set(key, { at: Date.now(), data: d }); return d; });
 }
 
-// Lịch (5 tháng tới) + kết quả + BXH 1 giải
-export function fetchLeague(league) {
+// Timestamp sự kiện (strTimestamp UTC hoặc dateEvent+strTime) -> ms; 0 nếu không đọc được
+function tsOfEvent(ev) {
+  try {
+    if (ev.strTimestamp) { const d = new Date(/z$/i.test(ev.strTimestamp) ? ev.strTimestamp : ev.strTimestamp + 'Z'); if (!isNaN(d.getTime())) return d.getTime(); }
+    if (ev.dateEvent) { const d = new Date(`${ev.dateEvent}T${ev.strTime || '00:00:00'}`); if (!isNaN(d.getTime())) return d.getTime(); }
+  } catch {}
+  return 0;
+}
+
+// Trạng thái sự kiện TheSportsDB: NS = chưa đá, FT/AOT = hết giờ, số/ký hiệu khác = ĐANG ĐÁ
+const NOT_LIVE = new Set(['NS', 'FT', 'AOT', 'POSTPONED', 'CANCELED', 'CANCELLED', 'ABANDONED', '']);
+export function eventIsLive(ev) {
+  const s = String(ev?.strStatus || '').trim().toUpperCase();
+  return !NOT_LIVE.has(s) && ev?.strPostponed !== 'yes';
+}
+export function eventIsPostponed(ev) {
+  return ev?.strPostponed === 'yes' || /postpon|cancel/i.test(String(ev?.strStatus || ''));
+}
+
+// Lịch (5 tháng tới) + kết quả + BXH 1 giải.
+// Opts: { fresh: true } -> BỎ cache, luôn lấy dữ liệu mới nhất từ API (tự cập nhật).
+export function fetchLeague(league, { fresh = false } = {}) {
   const season = currentSeason();
-  return cached(`league_${league.id}_${season}`, async () => {
-    // Lịch cả mùa → lọc 150 ngày tới (5 tháng), đã đá → kết quả
-    const seasonEvts = await (async () => {
-      try {
-        const d = await getJSON(`${TSB}/eventsseason.php?id=${league.tsdb}&s=${season}`);
-        return Array.isArray(d.events) ? d.events : [];
-      } catch { return []; }
-    })();
-    const tsOf = (ev) => {
-      try {
-        if (ev.strTimestamp) { const d = new Date(/z$/i.test(ev.strTimestamp) ? ev.strTimestamp : ev.strTimestamp + 'Z'); if (!isNaN(d.getTime())) return d.getTime(); }
-        if (ev.dateEvent) { const d = new Date(`${ev.dateEvent}T${ev.strTime || '00:00:00'}`); if (!isNaN(d.getTime())) return d.getTime(); }
-      } catch {}
-      return 0;
-    };
-    const now = Date.now();
-    const horizon = now + 150 * 24 * 3600 * 1000; // 5 tháng
-    let next = [], past = [];
-    if (seasonEvts.length) {
-      const withTs = seasonEvts.map(ev => ({ ev, ts: tsOf(ev) })).filter(x => x.ts > 0);
-      next = withTs.filter(x => x.ts >= now - 3 * 3600 * 1000 && x.ts <= horizon).sort((a, b) => a.ts - b.ts).slice(0, 30).map(x => x.ev);
-      past = withTs.filter(x => x.ts < now - 3 * 3600 * 1000).sort((a, b) => b.ts - a.ts).slice(0, 15).map(x => x.ev);
-    } else {
-      // Fallback endpoint cũ khi eventsseason lỗi
-      const [n2, p2] = await Promise.all([
-        getJSON(`${TSB}/eventsnextleague.php?id=${league.tsdb}`).then(d => d.events || []).catch(() => []),
-        getJSON(`${TSB}/eventspastleague.php?id=${league.tsdb}`).then(d => d.events || []).catch(() => []),
-      ]);
-      next = n2; past = p2;
-    }
-    const [table] = await Promise.all([
-      // BXH: thử TheSportsDB trước, lỗi thì OpenLigaDB (Bundesliga)
-      (async () => {
-        if (!league.cup) {
-          try {
-            const d = await getJSON(`${TSB}/lookuptable.php?id=${league.tsdb}&s=${season}`);
-            if (d && Array.isArray(d.table) && d.table.length) {
-              return d.table.map(r => ({
-                name: r.strTeam, badge: r.strTeamBadge,
-                played: +r.intPlayed || 0, won: +r.intWin || 0, draw: +r.intDraw || 0, lost: +r.intLoss || 0,
-                gf: +r.intGoalsFor || 0, ga: +r.intGoalsAgainst || 0, gd: (+r.intGoalsFor || 0) - (+r.intGoalsAgainst || 0),
-                points: +r.intPoints || 0,
-              }));
-            }
-          } catch {}
-        }
-        if (league.olb) {
-          try {
-            const rows = await getJSON(`${OLB}/getbltable/${league.olb}/${currentSeasonShort()}`);
-            if (Array.isArray(rows) && rows.length) {
-              return rows.map(r => ({
-                name: r.teamName, badge: r.teamIconUrl,
-                played: r.matches || 0, won: r.won || 0, draw: r.draw || 0, lost: r.lost || 0,
-                gf: r.goals || 0, ga: r.opponentGoals || 0, gd: r.goalDiff || 0,
-                points: r.points || 0,
-              }));
-            }
-          } catch {}
-        }
-        return [];
-      })(),
+  const key = `league_${league.id}_${season}`;
+  if (fresh) {
+    // ghi đè cache bằng dữ liệu mới rồi trả về
+    return loadLeagueData(league, season).then(d => { memCache.set(key, { at: Date.now(), data: d }); return d; })
+      .catch(() => {
+        // API lỗi (mạng/chưa có dữ liệu mùa mới) -> dùng cache cũ nếu còn
+        const c = memCache.get(key);
+        if (c) return c.data;
+        throw new Error('SPORTS_FETCH_FAILED');
+      });
+  }
+  return cached(key, () => loadLeagueData(league, season));
+}
+
+async function loadLeagueData(league, season) {
+  // Lịch cả mùa → lọc 150 ngày tới (5 tháng), đã đá → kết quả
+  const seasonEvts = await (async () => {
+    try {
+      const d = await getJSON(`${TSB}/eventsseason.php?id=${league.tsdb}&s=${season}`);
+      return Array.isArray(d.events) ? d.events : [];
+    } catch { return []; }
+  })();
+  const now = Date.now();
+  const horizon = now + 150 * 24 * 3600 * 1000; // 5 tháng
+  let next = [], past = [];
+  if (seasonEvts.length) {
+    const withTs = seasonEvts.map(ev => ({ ev, ts: tsOfEvent(ev) })).filter(x => x.ts > 0);
+    next = withTs.filter(x => x.ts >= now - 3 * 3600 * 1000 && x.ts <= horizon).sort((a, b) => a.ts - b.ts).slice(0, 30).map(x => x.ev);
+    past = withTs.filter(x => x.ts < now - 3 * 3600 * 1000).sort((a, b) => b.ts - a.ts).slice(0, 15).map(x => x.ev);
+  } else {
+    // Fallback endpoint cũ khi eventsseason lỗi
+    const [n2, p2] = await Promise.all([
+      getJSON(`${TSB}/eventsnextleague.php?id=${league.tsdb}`).then(d => d.events || []).catch(() => []),
+      getJSON(`${TSB}/eventspastleague.php?id=${league.tsdb}`).then(d => d.events || []).catch(() => []),
     ]);
-    return { next, past, table };
-  });
+    next = n2; past = p2;
+  }
+  const [table] = await Promise.all([
+    // BXH: thử TheSportsDB trước, lỗi thì OpenLigaDB (Bundesliga)
+    (async () => {
+      if (!league.cup) {
+        try {
+          const d = await getJSON(`${TSB}/lookuptable.php?id=${league.tsdb}&s=${season}`);
+          if (d && Array.isArray(d.table) && d.table.length) {
+            return d.table.map(r => ({
+              name: r.strTeam, badge: r.strTeamBadge,
+              played: +r.intPlayed || 0, won: +r.intWin || 0, draw: +r.intDraw || 0, lost: +r.intLoss || 0,
+              gf: +r.intGoalsFor || 0, ga: +r.intGoalsAgainst || 0, gd: (+r.intGoalsFor || 0) - (+r.intGoalsAgainst || 0),
+              points: +r.intPoints || 0,
+            }));
+          }
+        } catch {}
+      }
+      if (league.olb) {
+        try {
+          const rows = await getJSON(`${OLB}/getbltable/${league.olb}/${currentSeasonShort()}`);
+          if (Array.isArray(rows) && rows.length) {
+            return rows.map(r => ({
+              name: r.teamName, badge: r.teamIconUrl,
+              played: r.matches || 0, won: r.won || 0, draw: r.draw || 0, lost: r.lost || 0,
+              gf: r.goals || 0, ga: r.opponentGoals || 0, gd: r.goalDiff || 0,
+              points: r.points || 0,
+            }));
+          }
+        } catch {}
+      }
+      return [];
+    })(),
+  ]);
+  return { next, past, table };
+}
+
+// TỈ SỐ MỚI NHẤT (tự cập nhật): trận ĐANG ĐÁ (strStatus = 1H/HT/72'...) + vừa kết thúc.
+// Cache rất ngắn (45s) để poll mỗi phút là có dữ liệu mới thật.
+export function fetchLatestResults(league) {
+  const season = currentSeason();
+  return cached(`latest_${league.id}_${season}`, async () => {
+    let evts = [];
+    try {
+      const d = await getJSON(`${TSB}/eventsseason.php?id=${league.tsdb}&s=${season}`);
+      if (Array.isArray(d.events)) evts = d.events;
+    } catch {}
+    if (!evts.length) {
+      try {
+        const d = await getJSON(`${TSB}/eventspastleague.php?id=${league.tsdb}`);
+        return { live: [], past: (Array.isArray(d.events) ? d.events : []).slice(0, 15) };
+      } catch { return { live: [], past: [] }; }
+    }
+    const now = Date.now();
+    const withTs = evts.map(ev => ({ ev, ts: tsOfEvent(ev) })).filter(x => x.ts > 0);
+    const live = withTs
+      .filter(({ ev, ts }) => eventIsLive(ev) && ts >= now - 5 * 3600 * 1000)
+      .sort((a, b) => b.ts - a.ts).slice(0, 15).map(x => x.ev);
+    const past = withTs
+      .filter(({ ev, ts }) => String(ev.strStatus || '').toUpperCase() === 'FT' && ts < now + 3600 * 1000)
+      .sort((a, b) => b.ts - a.ts).slice(0, 15).map(x => x.ev);
+    return { live, past };
+  }, 45 * 1000);
 }
 
 // Icon theo môn thể thao (explorer "Môn khác")

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Upload, Link, Trash2, Plus, Check, AlertCircle, FileText } from 'lucide-react';
 import { getCustomM3uSources, setCustomM3uSources } from '../hooks/useStorage';
+import { parseM3U as parseM3UShared } from '../utils/m3uParser';
 
 export default function M3UImporter({ onImport, onClose }) {
   const [sources, setSources] = useState(getCustomM3uSources());
@@ -41,56 +42,29 @@ export default function M3UImporter({ onImport, onClose }) {
     setImporting(false);
   };
 
+  // Dùng parser dùng chung: hỗ trợ #EXTVLCOPT:http-user-agent (Dalvik...),
+  // #KODIPROP manifest/license (cả dạng hex kid:key lẫn JSON base64url)
   const parseM3UFromText = (text) => {
-    const lines = text.split(/\r?\n/);
-    const channels = [];
-    let current = null;
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (line.startsWith('#EXTINF:')) {
-        current = {};
-        const idM = line.match(/tvg-id="([^"]+)"/i);
-        current.channel_id = idM ? idM[1] : `custom_${channels.length + 1}`;
-        const nameM = line.match(/tvg-name="([^"]+)"/i);
-        const cIdx = line.lastIndexOf(',');
-        current.name = nameM ? nameM[1] : (cIdx !== -1 ? line.substring(cIdx + 1).trim() : `Kênh ${channels.length + 1}`);
-        const logoM = line.match(/tvg-logo="([^"]+)"/i);
-        current.logo = logoM ? logoM[1] : '';
-        const grpM = line.match(/group-title="([^"]+)"/i);
-        current.group_title = grpM ? grpM[1] : 'Import';
-        current.catchup_type = 'append';
-        current.catchup_days = 7;
-      } else if (line.startsWith('#KODIPROP:')) {
-        if (!current) continue;
-        const prop = line.substring('#KODIPROP:'.length).trim();
-        const licKeyM = prop.match(/license_key=(.*)/);
-        if (licKeyM) {
-          try {
-            const obj = JSON.parse(licKeyM[1]);
-            if (obj?.keys?.[0]) {
-              const { kid, k } = obj.keys[0];
-              if (kid && k) {
-                // base64 -> hex
-                const rawKid = atob(kid.replace(/-/g,'+').replace(/_/g,'/'));
-                const rawK = atob(k.replace(/-/g,'+').replace(/_/g,'/'));
-                let hexKid = '', hexK = '';
-                for (let j = 0; j < rawKid.length; j++) hexKid += rawKid.charCodeAt(j).toString(16).padStart(2,'0');
-                for (let j = 0; j < rawK.length; j++) hexK += rawK.charCodeAt(j).toString(16).padStart(2,'0');
-                if (hexKid.length === 32 && hexK.length === 32) {
-                  current.clearKeyId = hexKid;
-                  current.clearKey = hexK;
-                }
-              }
-            }
-          } catch {}
-        }
-      } else if (line && !line.startsWith('#') && current) {
-        current.stream_url = line;
-        channels.push(current);
-        current = null;
-      }
+    try {
+      const parsed = parseM3UShared(text) || [];
+      return parsed.map((ch, i) => ({
+        channel_id: ch.channel_id || `custom_${i + 1}`,
+        name: ch.name || `Kênh ${i + 1}`,
+        logo: ch.logo || '',
+        group_title: ch.group_title || 'Import',
+        stream_url: ch.stream_url || ch.url || '',
+        catchup_type: ch.catchup_type || 'append',
+        catchup_days: ch.catchup_days ?? 7,
+        user_agent: ch.user_agent || '',
+        referer: ch.referer || '',
+        manifest_type: ch.manifest_type || '',
+        license_type: ch.license_type || '',
+        clearKeyId: ch.clearKeyId || ch.clear_key_id || '',
+        clearKey: ch.clearKey || ch.clear_key || '',
+      })).filter((ch) => !!ch.stream_url);
+    } catch {
+      return [];
     }
-    return channels;
   };
 
   return (

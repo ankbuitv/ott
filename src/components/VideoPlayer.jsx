@@ -6,7 +6,7 @@ import {
   ChevronUp, ChevronDown, RefreshCw, Signal, Info, X, List,
   Settings, Monitor, Gauge, Wifi, Activity, Hash, Timer,
   Camera, PictureInPicture2 as PiP, Volume1, Captions, AudioLines,
-  Share2, Cast, Airplay, Users, Send, Smile, PartyPopper, Tv
+  Share2, Cast, Airplay, Users, Send, Smile, PartyPopper, Tv, Smartphone
 } from 'lucide-react';
 import FocusableWrapper from './FocusableWrapper';
 import { formatTimeHHMM, calculateProgramProgress } from '../utils/dateUtils';
@@ -19,6 +19,7 @@ import {
   joinRoom, leaveRoom, sendPartyChat, sendPartyReaction, sendPartyState, onPartyMessage, PARTY_EMOJIS,
 } from '../services/watchParty';
 import { isProxiedStreamUrl, refreshStreamToken, applyStreamClientHeaders, makeStreamRequestFilter } from '../services/streamGuard';
+import { UA_PRESETS, effectiveUA, getGlobalUA, setChannelUA, setGlobalUA, shortUA } from '../services/userAgent';
 import { parseEpgDate } from '../utils/dateUtils';
 
 const FALLBACK_STREAM_URL_HTTP = "http://bore.pub:30113/hls/index.m3u8";
@@ -63,6 +64,14 @@ export default function VideoPlayer({
   const [showChannelList, setShowChannelList] = useState(false);
   const [showSleepTimer, setShowSleepTimer] = useState(false);
   const [showVolumeSlider, setShowVolumeSlider] = useState(false);
+  const [showUAMenu, setShowUAMenu] = useState(false);
+  const [uaTick, setUaTick] = useState(0); // ép re-render khi đổi UA
+  const [customUA, setCustomUA] = useState('');
+  const uaOverrideRef = useRef('');
+  // UA hiệu lực: override user > '' (server tự dùng UA kênh/VLC)
+  const channelRequiredUA = channel?.user_agent || '';
+  const currentUAOverride = (() => { try { return effectiveUA(channel); } catch { return ''; } })();
+  const displayUA = currentUAOverride || channelRequiredUA || 'VLC/3.0.21 LibVLC/3.0.21';
 
   const [videoStats, setVideoStats] = useState({ resolution: 'N/A', fps: 0, bitrate: 0, bufferLength: 0, codec: 'N/A', width: 0, height: 0, droppedFrames: 0, decodedFrames: 0 });
   const [availableTracks, setAvailableTracks] = useState([]);
@@ -124,6 +133,9 @@ export default function VideoPlayer({
       setShowQualityMenu(false);
       setShowVolumeSlider(false);
       setShowSleepTimer(false);
+      setShowUAMenu(false);
+      setShowAudioMenu(false);
+      setShowSubtitleMenu(false);
     }, 5000);
   }, []);
 
@@ -282,7 +294,7 @@ export default function VideoPlayer({
     if (partyRoom) params.set('party', partyRoom.replace('party:', ''));
     const url = `${base}?${params.toString()}`;
     try {
-      if (navigator.share) await navigator.share({ title: channel?.name || 'CHRTV', url });
+      if (navigator.share) await navigator.share({ title: channel?.name || 'CHRTV PLAY', url });
       else {
         await navigator.clipboard.writeText(url);
         addToast(t('player.copy_link'), 'success');
@@ -320,7 +332,7 @@ export default function VideoPlayer({
         const mimeType = isMpdUrl(activeUrl) ? 'application/dash+xml' : 'application/x-mpegurl';
         const mediaInfo = new window.chrome.cast.media.MediaInfo(activeUrl, mimeType);
         mediaInfo.metadata = new window.chrome.cast.media.GenericMediaMetadata();
-        mediaInfo.metadata.title = channel?.name || 'CHRTV';
+        mediaInfo.metadata.title = channel?.name || 'CHRTV PLAY';
         const req = new window.chrome.cast.media.LoadRequest(mediaInfo);
         await session.loadMedia(req);
         addToast(`Đang chiếu ${channel?.name || ''} lên TV 📺`, 'success');
@@ -379,7 +391,11 @@ export default function VideoPlayer({
     setIsBuffering(true);
 
     // === 2. Đặt filter xoay token + header upstream UA cho lần load này ===
-    const channelUa = channel?.user_agent;
+    // Ưu tiên override của user (chọn trong player, lưu localStorage) — fix kênh cần Dalvik
+    let userUaOverride = '';
+    try { userUaOverride = effectiveUA(channel); } catch {}
+    uaOverrideRef.current = userUaOverride;
+    const channelUa = userUaOverride || channel?.user_agent;
     let catchupAt = 0;
     if (isCatchupMode && catchupProgram?.start) {
       try { catchupAt = Math.floor(parseEpgDate(catchupProgram.start).getTime() / 1000); } catch (e) {}
@@ -392,7 +408,8 @@ export default function VideoPlayer({
         ne.clearRequestFilters();
         ne.registerRequestFilter((type, req) => {
           applyStreamClientHeaders(req.headers);
-          if (channelUa) { try { req.headers['X-CHRTV-Upstream-UA'] = channelUa; } catch (e) {} }
+          const liveUa = uaOverrideRef.current || channel?.user_agent || '';
+          if (liveUa) { try { req.headers['X-CHRTV-Upstream-UA'] = liveUa; } catch (e) {} }
           const f = streamFilterRef.current; // delegate xoay token (đọc ref — luôn đúng phiên load)
           if (f) { try { return f(type, req); } catch (e) { return true; } }
           return true;
@@ -410,11 +427,12 @@ export default function VideoPlayer({
         
         // ClearKey t? URL ho?c t? channel (M3U #KODIPROP)
         let clearKey = parseClearKey(url);
-        if (!clearKey && channel?.clearKeyId && channel?.clearKey) {
-          clearKey = {
-            keyId: hexToUint8(channel.clearKeyId),
-            key: hexToUint8(channel.clearKey),
-          };
+        const ckId = channel?.clearKeyId || channel?.clear_key_id;
+        const ckKey = channel?.clearKey || channel?.clear_key;
+        if (!clearKey && ckId && ckKey) {
+          try {
+            clearKey = { keyId: hexToUint8(String(ckId)), key: hexToUint8(String(ckKey)) };
+          } catch {}
         }
         if (clearKey) {
           try { player.configure({ drm: { clearKeys: { [ab2hex(clearKey.keyId)]: ab2hex(clearKey.key) } } }); } catch (e) {}
@@ -479,14 +497,14 @@ export default function VideoPlayer({
         const isMpd = isMpdUrl(targetUrl) || channel?.manifest_type === 'mpd';
         if (isMpd && !targetUrl.includes('bore.pub')) {
           setIsFallbackActive(true);
-          setErrorMessage("MPD không phát ???c. ?ã chuy?n sang HLS d? phòng.");
+          setErrorMessage("MPD không phát được. Đã chuyển sang HLS dự phòng.");
           try { await player.load(FALLBACK_STREAM_URL); videoEl.play().catch(() => {}); setIsBuffering(false); }
-          catch { setErrorMessage("Không th? k?t n?i MPD và c? HLS d? phòng."); setIsBuffering(false); }
+          catch { setErrorMessage("Không thể kết nối MPD và cả HLS dự phòng."); setIsBuffering(false); }
         } else {
           setIsFallbackActive(true);
-          setErrorMessage("Lu?ng chính gián ?o?n, chuy?n d? phòng...");
+          setErrorMessage("Luồng chính gián đoạn, chuyển dự phòng...");
           try { await player.load(FALLBACK_STREAM_URL); videoEl.play().catch(() => {}); setIsBuffering(false); }
-          catch { setErrorMessage("Không th? k?t n?i."); setIsBuffering(false); }
+          catch { setErrorMessage("Không thể kết nối."); setIsBuffering(false); }
         }
       }
     };
@@ -546,7 +564,7 @@ export default function VideoPlayer({
         player.removeEventListener('error', onFatalError);
       }
     };
-  }, [streamUrl, parseClearKey, channel?.clearKeyId, channel?.clearKey, channel?.user_agent, channel?.manifest_type]);
+  }, [streamUrl, parseClearKey, channel?.clearKeyId, channel?.clearKey, channel?.clear_key_id, channel?.clear_key, channel?.user_agent, channel?.manifest_type]);
 
   // Real-time stats
   useEffect(() => {
@@ -729,6 +747,7 @@ export default function VideoPlayer({
           if (showChannelList) setShowChannelList(false);
           else if (showInfo) setShowInfo(false);
           else if (showQualityMenu) setShowQualityMenu(false);
+          else if (showUAMenu) setShowUAMenu(false);
           else if (showSleepTimer) setShowSleepTimer(false);
           else if (showVolumeSlider) setShowVolumeSlider(false);
           else if (onClose) onClose();
@@ -758,7 +777,7 @@ export default function VideoPlayer({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [resetOverlayTimer, onPrevChannel, onNextChannel, onClose, showChannelList, showInfo, showQualityMenu, showSleepTimer, showVolumeSlider, isMuted, addToast, togglePiP, takeScreenshot, allChannels]);
+  }, [resetOverlayTimer, onPrevChannel, onNextChannel, onClose, showChannelList, showInfo, showQualityMenu, showUAMenu, showSleepTimer, showVolumeSlider, isMuted, addToast, togglePiP, takeScreenshot, allChannels]);
 
   // Touch gestures (mobile)
   useEffect(() => {
@@ -821,6 +840,40 @@ export default function VideoPlayer({
       if (doubleTapTimeout) clearTimeout(doubleTapTimeout);
     };
   }, [device, volume, addToast, resetOverlayTimer]);
+
+  // ============ UA UPSTREAM (Dalvik fix) ============
+  // Đổi UA rồi tải lại luồng với token mới — không cần thoát player
+  const reloadWithUA = useCallback(async (ua) => {
+    const clean = String(ua || '').replace(/[\r\n\t]+/g, ' ').trim().slice(0, 300);
+    try { setChannelUA(channel?.channel_id, clean); } catch {}
+    try { uaOverrideRef.current = clean || effectiveUA(channel); } catch { uaOverrideRef.current = clean; }
+    setUaTick((x) => x + 1);
+    setShowUAMenu(false);
+    resetOverlayTimer();
+    const p = shakaPlayerRef.current;
+    if (!p || p.destroyed()) return;
+    setIsBuffering(true);
+    setErrorMessage(null);
+    try {
+      let at = 0;
+      if (isCatchupMode && catchupProgram?.start) {
+        try { at = Math.floor(parseEpgDate(catchupProgram.start).getTime() / 1000); } catch {}
+      }
+      tokenRetryRef.current = false;
+      const fresh = await refreshStreamToken(channel, at);
+      const url = fresh || activeUrlRef.current;
+      if (url) {
+        setActiveUrl(url);
+        await p.load(url);
+        videoRef.current?.play().catch(() => {});
+        addToast(clean ? `Đã đổi UA → ${clean.slice(0, 40)}` : 'Đã về chế độ Tự động (theo kênh)', 'success');
+      }
+    } catch (e) {
+      setErrorMessage('Đổi UA xong nhưng tải lại thất bại — thử UA khác.');
+    } finally {
+      setIsBuffering(false);
+    }
+  }, [channel, isCatchupMode, catchupProgram, addToast, resetOverlayTimer]);
 
   const nowProgress = epgNow ? calculateProgramProgress(epgNow.start, epgNow.stop) : 0;
   const filteredChannelList = allChannels.filter(ch => !channelListSearch || ch.name.toLowerCase().includes(channelListSearch.toLowerCase()));
@@ -945,6 +998,10 @@ export default function VideoPlayer({
             <button onClick={(e) => { e.stopPropagation(); setShowQualityMenu(prev=>!prev); setShowAudioMenu(false); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${showQualityMenu ? 'bg-blue-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`}>
               <Settings className="w-3.5 h-3.5" />
             </button>
+            <button onClick={(e) => { e.stopPropagation(); setShowUAMenu(prev=>!prev); setShowQualityMenu(false); setShowAudioMenu(false); setShowSubtitleMenu(false); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all flex items-center gap-1 ${showUAMenu || currentUAOverride ? 'bg-emerald-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`} title={`User-Agent upstream: ${displayUA} (bấm để đổi — nhiều kênh cần Dalvik)`}>
+              <Smartphone className="w-3.5 h-3.5" />
+              <span className="text-[8px] font-bold hidden lg:inline max-w-[64px] truncate">{shortUA(displayUA)}</span>
+            </button>
             <button onClick={(e) => { e.stopPropagation(); setShowInfo(prev=>!prev); resetOverlayTimer(); }} className={`p-1.5 rounded-full transition-all ${showInfo ? 'bg-blue-600 text-white' : 'bg-black/50 text-slate-300 hover:bg-black/70'}`}>
               <Info className="w-3.5 h-3.5" />
             </button>
@@ -987,7 +1044,9 @@ export default function VideoPlayer({
               ))}
               <div className="border-t border-slate-700/40 pt-2 mt-1">
                 <div className="text-[9px] text-slate-600 mb-0.5">Server</div>
-                <div className="text-[9px] text-slate-400 font-mono">CHRTV · {channel?.group_title || ''}</div>
+                <div className="text-[9px] text-slate-400 font-mono">CHRTV PLAY · {channel?.group_title || ''}</div>
+                <div className="text-[9px] text-slate-600 mt-1 mb-0.5">User-Agent upstream</div>
+                <div className="text-[9px] text-emerald-300 font-mono break-all" title={displayUA}>{displayUA.length > 42 ? displayUA.slice(0, 42) + '…' : displayUA}</div>
               </div>
             </div>
           </div>
@@ -1022,6 +1081,45 @@ export default function VideoPlayer({
                 </button>
               ))}
               {availableTracks.length === 0 && <div className="text-[10px] text-slate-500 text-center py-2">Luồng đơn chất lượng</div>}
+            </div>
+          </div>
+        )}
+
+        {/* UA Menu (chọn User-Agent upstream — fix kênh cần Dalvik) */}
+        {showUAMenu && (
+          <div className="absolute top-12 right-3 z-20 w-72 bg-black/85 backdrop-blur-md rounded-xl border border-slate-700/40 p-2 pointer-events-auto shadow-2xl">
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="flex items-center gap-1.5 text-[10px] font-semibold text-emerald-400 uppercase tracking-wider"><Smartphone className="w-3 h-3" /> User-Agent luồng</div>
+              <button onClick={() => setShowUAMenu(false)} className="p-0.5 rounded hover:bg-slate-700/50"><X className="w-3 h-3 text-slate-400" /></button>
+            </div>
+            <div className="px-2 pb-1.5 text-[9px] text-slate-500 leading-snug">
+              Kênh lỗi 403 / không tải được? Thử <b className="text-slate-300">Dalvik/2.1.0</b>. Đổi xong tự tải lại luồng.
+              {channelRequiredUA && (<div className="mt-1 text-slate-400">Kênh yêu cầu: <span className="font-mono text-emerald-300">{channelRequiredUA.slice(0, 48)}{channelRequiredUA.length > 48 ? '…' : ''}</span></div>)}
+            </div>
+            <div className="space-y-0.5 max-h-60 overflow-y-auto">
+              {UA_PRESETS.map((preset) => {
+                const active = (currentUAOverride || '') === preset.ua;
+                return (
+                  <button key={preset.id} onClick={() => reloadWithUA(preset.ua)} className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] transition-all ${active ? 'bg-emerald-600 text-white font-semibold' : 'text-slate-300 hover:bg-slate-800'}`}>
+                    <div className="font-medium flex items-center justify-between">{preset.label}{active && <span className="text-[9px]">● đang dùng</span>}</div>
+                    <div className="text-[9px] opacity-70">{preset.hint}</div>
+                  </button>
+                );
+              })}
+              <div className="pt-1.5 mt-1 border-t border-slate-700/40">
+                <div className="text-[9px] text-slate-500 px-2.5 mb-1">Hoặc nhập UA tùy chỉnh cho kênh này:</div>
+                <div className="flex items-center gap-1.5 px-2.5 pb-1">
+                  <input
+                    value={customUA}
+                    onChange={(e) => setCustomUA(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && customUA.trim()) { reloadWithUA(customUA.trim()); setCustomUA(''); } }}
+                    placeholder="VD: Dalvik/2.1.0 (Linux; U; Android 12; ...)"
+                    className="flex-1 px-2 py-1.5 bg-slate-800/60 border border-slate-700/40 rounded-lg text-[10px] text-white placeholder:text-slate-600 focus:outline-none focus:border-emerald-500/60"
+                  />
+                  <button onClick={() => { if (customUA.trim()) { reloadWithUA(customUA.trim()); setCustomUA(''); } }} className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold rounded-lg">Dùng</button>
+                </div>
+                {(() => { let g = ''; try { g = getGlobalUA(); } catch {} return g ? (<button onClick={() => { try { setGlobalUA(''); } catch {} setUaTick((x) => x + 1); addToast('Đã xoá UA toàn cục', 'info'); }} className="w-full text-center text-[9px] text-slate-500 hover:text-slate-300 py-1">UA toàn cục đang dùng: {g.slice(0, 32)}… (bấm để xoá)</button>) : null; })()}
+              </div>
             </div>
           </div>
         )}

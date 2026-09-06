@@ -97,9 +97,10 @@ export function parseM3U(m3uText) {
       const opt = line.substring('#EXTVLCOPT:'.length).trim();
       const eqIdx = opt.indexOf('=');
       if (eqIdx !== -1) {
-        const key = opt.substring(0, eqIdx).trim();
+        const key = opt.substring(0, eqIdx).trim().toLowerCase();
         const val = opt.substring(eqIdx + 1).trim();
-        if (key === 'http-user-agent') current.user_agent = val;
+        if (key === 'http-user-agent') current.user_agent = val.slice(0, 300);
+        else if (key === 'http-referrer' || key === 'http-referer') current.referer = val.slice(0, 300);
       }
     } else if (line && !line.startsWith('#') && current) {
       current.stream_url = line;

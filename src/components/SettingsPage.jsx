@@ -365,7 +365,7 @@ export default function SettingsPage({ onClose }) {
           <h3 className="text-sm font-bold text-white flex items-center gap-2"><Info className="w-4 h-4 text-slate-400" /> {t('settings.about')}</h3>
           <div className="flex items-center justify-between text-xs">
             <span className="text-slate-400">{t('settings.version')}</span>
-            <span className="text-slate-200 font-bold">CHRTV 1.0.0</span>
+            <span className="text-slate-200 font-bold">CHRTV PLAY 2.0</span>
           </div>
           <div className="flex items-center justify-between text-xs">
             <span className="text-slate-400">Region</span>

@@ -1,29 +1,33 @@
 import React from 'react';
 import { getAvatar } from '../contexts/ProfileContext';
 
-// Logo CHRTV - Clean, bold "CHRTV" with red accent
+// Logo CHRTV PLAY — nút play gradient cam/đỏ trên nền kính mờ + chữ trắng/cam
 export default function Logo({ size = 'md', showSubtext = true, className = '' }) {
   const sizes = {
-    sm: { text: 'text-sm', sub: 'text-[7px]', icon: 'w-5 h-5', ic: 'w-3 h-3' },
-    md: { text: 'text-base', sub: 'text-[8px]', icon: 'w-7 h-7', ic: 'w-4 h-4' },
-    lg: { text: 'text-2xl', sub: 'text-[10px]', icon: 'w-9 h-9', ic: 'w-5 h-5' },
-    xl: { text: 'text-4xl', sub: 'text-xs', icon: 'w-14 h-14', ic: 'w-7 h-7' },
-  }[size] || { text: 'text-base', sub: 'text-[8px]', icon: 'w-7 h-7', ic: 'w-4 h-4' };
+    sm: { main: 'text-sm', play: 'text-[10px]', sub: 'text-[7px]', icon: 'w-6 h-6', ic: 'w-3 h-3', badge: 'text-[8px] px-1 py-px' },
+    md: { main: 'text-lg', play: 'text-xs', sub: 'text-[8px]', icon: 'w-8 h-8', ic: 'w-4 h-4', badge: 'text-[9px] px-1.5 py-px' },
+    lg: { main: 'text-2xl', play: 'text-sm', sub: 'text-[10px]', icon: 'w-10 h-10', ic: 'w-5 h-5', badge: 'text-[10px] px-2 py-0.5' },
+    xl: { main: 'text-4xl', play: 'text-xl', sub: 'text-xs', icon: 'w-14 h-14', ic: 'w-7 h-7', badge: 'text-xs px-2.5 py-0.5' },
+  }[size] || { main: 'text-lg', play: 'text-xs', sub: 'text-[8px]', icon: 'w-8 h-8', ic: 'w-4 h-4', badge: 'text-[9px] px-1.5 py-px' };
 
   return (
     <div className={`flex items-center gap-2 ${className}`}>
-      <div className={`${sizes.icon} bg-gradient-to-br from-[#f36f21] to-[#c2570f] rounded-md flex items-center justify-center shadow-lg shadow-[#f36f21]/20 relative overflow-hidden shrink-0`}>
-        <svg className={`${sizes.ic} text-white relative z-10`} fill="currentColor" viewBox="0 0 24 24">
-          <path d="M8 5v14l11-7z"/>
+      <div className={`${sizes.icon} rounded-xl bg-gradient-to-br from-[#ff8a2a] via-[#f36f21] to-[#c81d4e] flex items-center justify-center shadow-lg shadow-[#f36f21]/30 relative overflow-hidden shrink-0 ring-1 ring-white/20`}>
+        <svg className={`${sizes.ic} text-white relative z-10 ml-px`} fill="currentColor" viewBox="0 0 24 24">
+          <path d="M8 5v14l11-7z" />
         </svg>
-        <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/15 to-transparent"></div>
+        <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/20 to-transparent"></div>
+        <div className="absolute -bottom-1 -right-1 w-1/2 h-1/2 bg-white/10 rounded-full blur-[2px]"></div>
       </div>
 
       <div className="flex flex-col leading-none">
-        <span className={`${sizes.text} font-black tracking-tight text-white`}>CHRTV</span>
+        <span className="flex items-center gap-1.5">
+          <span className={`${sizes.main} font-black tracking-tight text-white`}>CHRTV</span>
+          <span className={`${sizes.badge} font-black tracking-widest text-white bg-gradient-to-r from-[#ff8a2a] to-[#c81d4e] rounded-md shadow shadow-[#f36f21]/40`}>PLAY</span>
+        </span>
         {showSubtext && (
-          <span className={`${sizes.sub} font-bold tracking-[0.2em] text-[#ff9a3d]/90 mt-0.5`}>
-            IPTV · LIVE
+          <span className={`${sizes.sub} font-bold tracking-[0.18em] text-stone-400 mt-1`}>
+            TRUYỀN HÌNH · PHIM · THỂ THAO
           </span>
         )}
       </div>

@@ -1,6 +1,6 @@
-// Bản dịch cho app CHRTV — 5 ngôn ngữ.
-// Mỗi text có 5 key (vi/en/zh/fil/fr). Dùng t('key') trong component.
-// Thêm ngôn ngữ: thêm key mới + 5 bản dịch.
+// Bản dịch cho app CHRTV PLAY — 15 ngôn ngữ (5 đầy đủ + 10 mở rộng trong extra.js).
+// Dùng t('key') trong component. Key thiếu ở 1 ngôn ngữ sẽ fallback en → vi → key.
+import { EXTRA_LANGUAGES, applyExtra } from './extra.js';
 
 export const LANGUAGES = [
   { code: 'vi',  label: 'Tiếng Việt',     flag: '🇻🇳', country: 'Việt Nam' },
@@ -8,13 +8,14 @@ export const LANGUAGES = [
   { code: 'zh',  label: '中文',            flag: '🇨🇳', country: '中国' },
   { code: 'en',  label: 'English',         flag: '🇬🇧', country: 'International' },
   { code: 'fr',  label: 'Français',        flag: '🇫🇷', country: 'France' },
+  ...EXTRA_LANGUAGES,
 ];
 
 // Hàm tiện: rút gọn bản dịch (nếu 1 ngôn ngữ chưa có → fallback vi → en → key)
 // Dùng cú pháp: { vi: '...', en: '...', zh: '...', fil: '...', fr: '...' }
 const T = {
   // ============== APP CHUNG ==============
-  'app.brand': { vi: 'CHRTV', en: 'CHRTV', zh: 'CHRTV', fil: 'CHRTV', fr: 'CHRTV' },
+  'app.brand': { vi: 'CHRTV PLAY', en: 'CHRTV PLAY', zh: 'CHRTV PLAY', fil: 'CHRTV PLAY', fr: 'CHRTV PLAY' },
   'app.tagline': { vi: 'Truyền hình & phim trực tuyến', en: 'Live TV & Movies Online', zh: '在线电视与电影', fil: 'Live TV at Mga Pelikula Online', fr: 'TV en direct & Films en ligne' },
   'app.search.placeholder': { vi: 'Tìm kênh, phim...', en: 'Search channels, movies...', zh: '搜索频道、电影...', fil: 'Maghanap ng channel, pelikula...', fr: 'Rechercher chaînes, films...' },
   'app.live_now': { vi: 'TRỰC TIẾP', en: 'LIVE NOW', zh: '直播中', fil: 'LIVE NGAYON', fr: 'EN DIRECT' },
@@ -39,6 +40,7 @@ const T = {
   'app.watch': { vi: 'Xem', en: 'Watch', zh: '观看', fil: 'Panoorin', fr: 'Regarder' },
   'app.watch_now': { vi: 'Xem ngay', en: 'Watch now', zh: '立即观看', fil: 'Panoorin na', fr: 'Regarder' },
   'app.favorites': { vi: 'Yêu thích', en: 'Favorites', zh: '收藏', fil: 'Mga Paborito', fr: 'Favoris' },
+  'plans.free_hint': { vi: 'Tạm miễn phí kích hoạt — bấm để xem gói', en: 'Free activation for now — tap to view plans', zh: '目前免费开通 — 点击查看套餐', fil: 'Libreng activation sa ngayon — pindutin para makita ang plan', fr: 'Activation gratuite pour le moment — voir les offres' },
 
   // ============== SHORTS ==============
   'shorts.title': { vi: '🎬 Shorts', en: '🎬 Shorts', zh: '🎬 短视频', fil: '🎬 Shorts', fr: '🎬 Shorts' },
@@ -49,7 +51,7 @@ const T = {
   'shorts.share': { vi: 'Chia sẻ', en: 'Share', zh: '分享', fil: 'I-share', fr: 'Partager' },
 
   // ============== WELCOME ==============
-  'welcome.title': { vi: 'Chào mừng đến CHRTV', en: 'Welcome to CHRTV', zh: '欢迎使用 CHRTV', fil: 'Maligayang pagdating sa CHRTV', fr: 'Bienvenue sur CHRTV' },
+  'welcome.title': { vi: 'Chào mừng đến CHRTV PLAY', en: 'Welcome to CHRTV PLAY', zh: '欢迎使用 CHRTV PLAY', fil: 'Maligayang pagdating sa CHRTV PLAY', fr: 'Bienvenue sur CHRTV PLAY' },
   'welcome.sub': { vi: 'Truyền hình • Phim • Thể thao — xem miễn phí ngay', en: 'Live TV • Movies • Sports — watch free now', zh: '电视 • 电影 • 体育 — 立即免费观看', fil: 'Live TV • Pelikula • Sports — libre pang panoorin', fr: 'TV • Films • Sport — regardez gratuitement' },
   'welcome.f1': { vi: 'Hàng trăm kênh truyền hình trong nước & quốc tế', en: 'Hundreds of local & international channels', zh: '数百个国内与国际电视频道', fil: 'Daang-daang channel sa Pilipinas at global', fr: 'Des centaines de chaînes locales et internationales' },
   'welcome.f2': { vi: 'Phim & series mới — cập nhật liên tục', en: 'New movies & series — updated daily', zh: '最新电影与剧集 — 每日更新', fil: 'Mga bagong pelikula at series — araw-araw', fr: 'Nouveaux films et séries — chaque jour' },
@@ -253,6 +255,9 @@ const T = {
   'langpicker.suggest': { vi: '🌍 Gợi ý theo vị trí của bạn', en: '🌍 Suggested for your region', zh: '🌍 根据您的位置推荐', fil: '🌍 Inirerekomenda para sa iyong rehiyon', fr: '🌍 Suggéré pour votre région' },
 };
 
+// Gộp 10 ngôn ngữ mở rộng (ja/ko/th/id/ms/hi/de/es/pt/ru) vào bảng chính
+applyExtra(T);
+
 // ========== HÀM TIỆN ==========
 export function translate(key, lang) {
   const entry = T[key];
@@ -273,6 +278,17 @@ export function detectLang() {
     if (['Asia/Shanghai','Asia/Hong_Kong','Asia/Taipei','Asia/Chongqing','Asia/Harbin'].includes(tz) || locale.startsWith('zh')) return 'zh';
     // France / Belgium / Suisse / Canada (Pháp ngữ)
     if (['Europe/Paris','Europe/Brussels','Europe/Zurich','America/Montreal'].includes(tz) || locale.startsWith('fr')) return 'fr';
+    // Nhóm mở rộng
+    if (['Asia/Tokyo'].includes(tz) || locale.startsWith('ja')) return 'ja';
+    if (['Asia/Seoul'].includes(tz) || locale.startsWith('ko')) return 'ko';
+    if (['Asia/Bangkok'].includes(tz) || locale.startsWith('th')) return 'th';
+    if (['Asia/Jakarta','Asia/Makassar','Asia/Jayapura'].includes(tz) || locale.startsWith('id')) return 'id';
+    if (['Asia/Kuala_Lumpur','Asia/Kuching'].includes(tz) || locale.startsWith('ms')) return 'ms';
+    if (['Asia/Kolkata','Asia/Calcutta','Asia/Colombo'].includes(tz) || locale.startsWith('hi')) return 'hi';
+    if (['Europe/Berlin','Europe/Vienna'].includes(tz) || locale.startsWith('de')) return 'de';
+    if (['Europe/Madrid','America/Mexico_City'].includes(tz) || locale.startsWith('es')) return 'es';
+    if (locale.startsWith('pt')) return 'pt';
+    if (['Europe/Moscow','Europe/Samara'].includes(tz) || locale.startsWith('ru')) return 'ru';
     // Mặc định
     return 'en';
   } catch { return 'en'; }

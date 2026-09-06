@@ -67,7 +67,7 @@ function corsHeadersFor(request, env) {
   return {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-CHRTV-Client",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-CHRTV-Client, X-CHRTV-Upstream-UA, X-CHRTV-Upstream-Referer",
     "Access-Control-Max-Age": "86400",
     "Vary": "Origin",
   };
@@ -628,7 +628,7 @@ const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS user_settings (user_id INTEGER PRIMARY KEY, theme TEXT DEFAULT 'dark', default_quality TEXT DEFAULT 'auto', buffer_goal INTEGER DEFAULT 10, language TEXT DEFAULT 'vi', parental_pin TEXT DEFAULT '', parental_enabled INTEGER DEFAULT 0, settings_json TEXT DEFAULT '{}', updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS user_favorites (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, channel_id TEXT NOT NULL, sort_order INTEGER DEFAULT 0, group_name TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, channel_id))`,
   `CREATE TABLE IF NOT EXISTS watch_history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, channel_id TEXT NOT NULL, last_position INTEGER DEFAULT 0, watch_count INTEGER DEFAULT 1, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, channel_id))`,
-  `CREATE TABLE IF NOT EXISTS channels (id INTEGER PRIMARY KEY AUTOINCREMENT, channel_id TEXT UNIQUE NOT NULL, name TEXT NOT NULL, logo TEXT DEFAULT '', group_title TEXT DEFAULT '', stream_url TEXT NOT NULL, catchup_type TEXT DEFAULT 'append', catchup_days INTEGER DEFAULT 7, is_active INTEGER DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS channels (id INTEGER PRIMARY KEY AUTOINCREMENT, channel_id TEXT UNIQUE NOT NULL, name TEXT NOT NULL, logo TEXT DEFAULT '', group_title TEXT DEFAULT '', stream_url TEXT NOT NULL, catchup_type TEXT DEFAULT 'append', catchup_days INTEGER DEFAULT 7, is_active INTEGER DEFAULT 1, user_agent TEXT DEFAULT '', referer TEXT DEFAULT '', manifest_type TEXT DEFAULT '', license_type TEXT DEFAULT '', clear_key_id TEXT DEFAULT '', clear_key TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS channel_ratings (id INTEGER PRIMARY KEY AUTOINCREMENT, channel_id TEXT NOT NULL, user_id INTEGER NOT NULL, rating INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(channel_id, user_id))`,
   `CREATE TABLE IF NOT EXISTS notifications (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, body TEXT NOT NULL, type TEXT DEFAULT 'info', channel_id TEXT DEFAULT '', url TEXT DEFAULT '', is_read INTEGER DEFAULT 0, target TEXT DEFAULT 'all', created_by INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, expires_at INTEGER DEFAULT 0)`,
   `CREATE TABLE IF NOT EXISTS analytics (id INTEGER PRIMARY KEY AUTOINCREMENT, event TEXT NOT NULL, user_id INTEGER DEFAULT 0, channel_id TEXT DEFAULT '', data TEXT DEFAULT '{}', ip TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
@@ -674,12 +674,18 @@ async function ensureSchema(env) {
     } else {
       for (const sql of SCHEMA_STATEMENTS) await env.DB.prepare(sql).run();
     }
-    // MIGRATION: bảng channels cũ (tạo trước khi có cột is_active) → tự thêm cột.
+    // MIGRATION: bảng channels cũ → tự thêm cột mới (is_active, UA, DRM...).
     // Nếu cột đã tồn tại, lệnh này fail và bị bỏ qua — không sao.
-    try {
-      await env.DB.prepare("ALTER TABLE channels ADD COLUMN is_active INTEGER DEFAULT 1").run();
-    } catch (e) {
-      // cột đã tồn tại hoặc lỗi khác — bỏ qua
+    for (const stmt of [
+      "ALTER TABLE channels ADD COLUMN is_active INTEGER DEFAULT 1",
+      "ALTER TABLE channels ADD COLUMN user_agent TEXT DEFAULT ''",
+      "ALTER TABLE channels ADD COLUMN referer TEXT DEFAULT ''",
+      "ALTER TABLE channels ADD COLUMN manifest_type TEXT DEFAULT ''",
+      "ALTER TABLE channels ADD COLUMN license_type TEXT DEFAULT ''",
+      "ALTER TABLE channels ADD COLUMN clear_key_id TEXT DEFAULT ''",
+      "ALTER TABLE channels ADD COLUMN clear_key TEXT DEFAULT ''",
+    ]) {
+      try { await env.DB.prepare(stmt).run(); } catch (e) { /* cột đã có — bỏ qua */ }
     }
     // MIGRATION: users — banned (khoá tài khoản), totp (2FA)
     for (const stmt of [
@@ -758,6 +764,13 @@ function publicChannel(ch) {
     group_title: ch.group_title || "",
     catchup_type: ch.catchup_type || "append",
     catchup_days: ch.catchup_days || 7,
+    // Metadata phát lại (KHÔNG phải stream_url): client dùng để hiển thị + gửi UA đúng cho upstream
+    user_agent: ch.user_agent || "",
+    referer: ch.referer || "",
+    manifest_type: ch.manifest_type || "",
+    license_type: ch.license_type || "",
+    clearKeyId: ch.clear_key_id || ch.clearKeyId || "",
+    clearKey: ch.clear_key || ch.clearKey || "",
   };
 }
 
@@ -783,6 +796,7 @@ async function handlePlaylist(env, request) {
 function parseM3U(text) {
   const lines = text.split(/\r?\n/);
   const channels = []; let cur = null;
+  const cleanUA = (s) => String(s || "").replace(/[\r\n\t]+/g, " ").slice(0, 300).trim();
   for (const line of lines) {
     const l = line.trim();
     if (l.startsWith("#EXTINF:")) {
@@ -793,6 +807,52 @@ function parseM3U(text) {
       cur.group_title = (l.match(/group-title="([^"]+)"/i) || [])[1] || "Tổng Hợp";
       cur.catchup_type = (l.match(/catchup-type="([^"]+)"/i) || [])[1] || "append";
       cur.catchup_days = parseInt((l.match(/catchup-days="([^"]+)"/i) || [])[1] || "7", 10);
+    } else if (l.startsWith("#EXTVLCOPT:") && cur) {
+      // VD: #EXTVLCOPT:http-user-agent=Dalvik/2.1.0 — nhiều kênh TV360/FPT yêu cầu UA này
+      const opt = l.substring("#EXTVLCOPT:".length).trim();
+      const eq = opt.indexOf("=");
+      if (eq !== -1) {
+        const k = opt.substring(0, eq).trim().toLowerCase();
+        const v = opt.substring(eq + 1).trim();
+        if (k === "http-user-agent" && v) cur.user_agent = cleanUA(v);
+        else if ((k === "http-referrer" || k === "http-referer") && v) cur.referer = v.slice(0, 300);
+      }
+    } else if (l.startsWith("#KODIPROP:") && cur) {
+      const prop = l.substring("#KODIPROP:".length).trim();
+      const mt = prop.match(/manifest_type=([^\s]+)/i);
+      if (mt) cur.manifest_type = mt[1].slice(0, 16);
+      const lt = prop.match(/license_type=([^\s]+)/i);
+      if (lt) cur.license_type = lt[1].slice(0, 32);
+      const lk = prop.match(/license_key=(.*)/);
+      if (lk) {
+        // Hỗ trợ cả 2 dạng: "kid:key" (hex) và {"keys":[{"kid":"...","k":"..."}]} (base64url)
+        const raw = lk[1].trim();
+        const hexPair = raw.match(/^([a-fA-F0-9]{32})\s*:\s*([a-fA-F0-9]{32})$/);
+        if (hexPair) { cur.clear_key_id = hexPair[1].toLowerCase(); cur.clear_key = hexPair[2].toLowerCase(); }
+        else {
+          try {
+            const obj = JSON.parse(raw);
+            const first = obj && obj.keys && obj.keys[0];
+            if (first && first.kid && first.k) {
+              const b64ToHex = (b) => {
+                try {
+                  let s = String(b).replace(/-/g, "+").replace(/_/g, "/");
+                  while (s.length % 4) s += "=";
+                  const bin = atob(s); let hex = "";
+                  for (let i = 0; i < bin.length; i++) hex += bin.charCodeAt(i).toString(16).padStart(2, "0");
+                  return hex;
+                } catch { return ""; }
+              };
+              let kid = String(first.kid), k = String(first.k);
+              if (!/^[a-fA-F0-9]{32}$/.test(kid)) { const h = b64ToHex(kid); if (h.length === 32) kid = h; }
+              if (!/^[a-fA-F0-9]{32}$/.test(k)) { const h = b64ToHex(k); if (h.length === 32) k = h; }
+              if (/^[a-fA-F0-9]{32}$/i.test(kid) && /^[a-fA-F0-9]{32}$/i.test(k)) {
+                cur.clear_key_id = kid.toLowerCase(); cur.clear_key = k.toLowerCase();
+              }
+            }
+          } catch {}
+        }
+      }
     } else if (l && !l.startsWith("#") && cur) {
       cur.stream_url = l; channels.push(cur); cur = null;
     }
@@ -965,6 +1025,12 @@ const PROXY_ALLOWED_HOSTS_DEFAULT = [
   "fptplay53.net", "fptplay.net", "seenow.vn", "mytvnet.vn", "tv360.vn",
   "vtvdigital.vn", "vtv.sub.id", "undo.it", "cvtv.xyz", "freem3u.xyz",
   "kbs.co.kr", "ankb.qzz.io",
+  // Kênh quốc tế trong playlist
+  "akamaized.net", "amagi.tv", "tubi.video", "france24.com", "nhkworld.jp",
+  "cloudfront.net", "amazonaws.com",
+  // TV360/FPT custom + dự phòng
+  "dpdns.org", "duckdns.org",
+  "198.58.104.90:8989", "206.212.244.63",
   // Stream dự phòng (dùng port 30113 — khai báo host:port rõ ràng)
   "bore.pub:30113",
 ];
@@ -1081,8 +1147,13 @@ async function handleProxy(request, env) {
   }
 
   const proxyBase = `${reqUrl.origin}${reqUrl.pathname}`;
+  let proxyUA = "VLC/3.0.21 LibVLC/3.0.21";
+  try {
+    const o = String(request.headers.get("X-CHRTV-Upstream-UA") || "").replace(/[\r\n]+/g, " ").trim().slice(0, 300);
+    if (o) proxyUA = o;
+  } catch {}
   const fetchOpts = {
-    headers: { "User-Agent": "VLC/3.0.21 LibVLC/3.0.21", "Accept": "*/*", "Referer": target.origin + "/" },
+    headers: { "User-Agent": proxyUA, "Accept": "*/*", "Referer": target.origin + "/" },
     signal: AbortSignal.timeout(8000),
     redirect: "manual",
   };
@@ -1239,12 +1310,16 @@ function streamErr(obj, status, request, env) {
 }
 
 // ---- GATING theo nhóm kênh: Standard=VN, Recreational=VN+PHIM, VIP=tất cả ----
-const CHRTV_VN_RE = /(vtv|htv|thvl|sctv|antv|qu\u1ed1c gia|nh\u00e2n d\u00e2n|qu\u1ed1c h\u1ed9i|truy\u1ec1n h\u00ecnh vi\u1ec7t nam|\u0111\u1ecba ph\u01b0\u01a1ng|h\u00e0 n\u1ed9i|v\u0129nh long|c\u1ea7n th\u01a1|vietnam|n\u00f4ng nghi\u1ec7p|ph\u1ed5 th\u00f4ng|d\u00e2n t\u1ed9c)/i;
-const CHRTV_PHIM_RE = /(phim|movie|cinema|film|hollywood|classic|series|drama)/i;
+// Khớp playlist thực tế: "TH - Truyền hình Việt"->VN, "BOX - Giải trí"->PHIM, "SPORTS"->KHAC
+function normGroupChrtv(s) {
+  return String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+}
 function classifyGroupChrtv(g) {
-  g = String(g || "");
-  if (CHRTV_PHIM_RE.test(g)) return "PHIM";
-  if (CHRTV_VN_RE.test(g)) return "VN";
+  const n = normGroupChrtv(g);
+  if (!n) return "VN";
+  if (/\b(th\s*truyen\s*hinh\s*viet|truyen\s*hinh\s*viet)\b/.test(n)) return "VN";
+  if (/(box|giai\s*tri|phim|movie|cinema|film|hollywood|classic|series|drama|hbo|axn|warner|cinemax|discovery|nat\s*geo|cartoon|anim|kids|thieu\s*nhi)/.test(n)) return "PHIM";
+  if (/(viet(\s*nam)?|\bvn\b|vtv|htv|thvl|sctv|vtc|vtvcab|antv|quoc\s*gia|nhan\s*dan|quoc\s*hoi|dia\s*phuong|ha\s*noi|vinh\s*long|can\s*tho|nong\s*nghiep|pho\s*thong|dan\s*toc|truyen\s*hinh|tong\s*hop|du\s*phong|fpt\s*su\s*kien)/.test(n)) return "VN";
   return "KHAC";
 }
 function planAllowsGroupChrtv(plan, g) {
@@ -1464,7 +1539,22 @@ async function handleStreamProxy(request, env) {
   const upstreamUrl = await applyUpstreamCredential(env, ch, target);
 
   // 6) Fetch upstream — redirect phải giữ nguyên origin
-  const upstreamHeaders = { "User-Agent": "VLC/3.0.21 LibVLC/3.0.21", "Accept": "*/*", "Referer": target.origin + "/" };
+  // UA upstream: ưu tiên override từ client (người dùng chọn trong player, VD Dalvik),
+  // sau đó tới UA yêu cầu của kênh (từ #EXTVLCOPT trong M3U), cuối cùng mặc định VLC.
+  const cleanHeaderVal = (s, max) => String(s || "").replace(/[\r\n]+/g, " ").trim().slice(0, max || 300);
+  let upstreamUA = "VLC/3.0.21 LibVLC/3.0.21";
+  let upstreamRef = target.origin + "/";
+  try {
+    const overrideUA = cleanHeaderVal(request.headers.get("X-CHRTV-Upstream-UA") || "", 300);
+    const overrideRef = cleanHeaderVal(request.headers.get("X-CHRTV-Upstream-Referer") || "", 300);
+    const channelUA = cleanHeaderVal((ch && (ch.user_agent || ch.userAgent)) || "", 300);
+    const channelRef = cleanHeaderVal((ch && ch.referer) || "", 300);
+    if (overrideUA) upstreamUA = overrideUA;
+    else if (channelUA) upstreamUA = channelUA;
+    if (overrideRef) upstreamRef = overrideRef;
+    else if (channelRef) upstreamRef = channelRef;
+  } catch {}
+  const upstreamHeaders = { "User-Agent": upstreamUA, "Accept": "*/*", "Referer": upstreamRef };
   const range = request.headers.get("Range");
   if (range) upstreamHeaders["Range"] = range;
   let resp;
@@ -1601,7 +1691,15 @@ async function handleAuth(path, request, env) {
     const hash = hashPassword(password, env);
 
     try {
-      const { results } = await env.DB.prepare("SELECT id, username, email, display_name, avatar_url, role, email_verified, banned, totp_secret, totp_enabled FROM users WHERE (email = ? OR username = ?) AND password_hash = ?").bind(login, login, hash).all();
+      // FIX VIP: SELECT phải kèm plan để client biết gói sau khi đăng nhập lại
+      let results = [];
+      try {
+        const r = await env.DB.prepare("SELECT id, username, email, display_name, avatar_url, role, email_verified, banned, totp_secret, totp_enabled, plan FROM users WHERE (email = ? OR username = ?) AND password_hash = ?").bind(login, login, hash).all();
+        results = r.results || [];
+      } catch {
+        const r2 = await env.DB.prepare("SELECT id, username, email, display_name, avatar_url, role, email_verified, banned, totp_secret, totp_enabled FROM users WHERE (email = ? OR username = ?) AND password_hash = ?").bind(login, login, hash).all();
+        results = r2.results || [];
+      }
       if (results.length === 0) {
         // Ghi nhận lần sai để rate limit
         try { await env.DB.prepare("INSERT INTO login_attempts (login, ip) VALUES (?, ?)").bind(login, ip).run(); } catch {}
@@ -1646,6 +1744,8 @@ async function handleAuth(path, request, env) {
       // Track analytics
       try { await env.DB.prepare("INSERT INTO analytics (event, user_id, data) VALUES ('login', ?, ?)").bind(user.id, JSON.stringify({ login })).run(); } catch {}
 
+      if (!user.plan) user.plan = "standard";
+      try { delete user.totp_secret; } catch {}
       return json({ success: true, token, user }, 200, request, env);
     } catch (e) {
       return json({ error: "Lỗi đăng nhập" }, 500, request, env);
@@ -2072,7 +2172,12 @@ async function handleAdmin(path, request, env, ctx) {
   if (path === "/admin/channels" && request.method === "POST") {
     const ch = await request.json().catch(() => ({}));
     if (!ch.channel_id || !ch.name || !ch.stream_url) return json({ error: "Thiếu thông tin kênh" }, 400, request, env);
-    await env.DB.prepare("INSERT OR REPLACE INTO channels (channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").bind(ch.channel_id, ch.name, ch.logo || "", ch.group_title || "", ch.stream_url, ch.catchup_type || "append", ch.catchup_days || 7, ch.is_active !== undefined ? ch.is_active : 1).run();
+    try {
+      await env.DB.prepare("INSERT OR REPLACE INTO channels (channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days, is_active, user_agent, referer, manifest_type, license_type, clear_key_id, clear_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(ch.channel_id, ch.name, ch.logo || "", ch.group_title || "", ch.stream_url, ch.catchup_type || "append", ch.catchup_days || 7, ch.is_active !== undefined ? ch.is_active : 1, (ch.user_agent || "").slice(0, 300), (ch.referer || "").slice(0, 300), (ch.manifest_type || "").slice(0, 16), (ch.license_type || "").slice(0, 32), (ch.clear_key_id || ch.clearKeyId || "").slice(0, 64), (ch.clear_key || ch.clearKey || "").slice(0, 64)).run();
+    } catch {
+      await env.DB.prepare("INSERT OR REPLACE INTO channels (channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").bind(ch.channel_id, ch.name, ch.logo || "", ch.group_title || "", ch.stream_url, ch.catchup_type || "append", ch.catchup_days || 7, ch.is_active !== undefined ? ch.is_active : 1).run();
+    }
+    try { _chanCache = null; } catch {}
     await logAudit(env, adminUser?.id || 0, "channel.upsert", { channel_id: ch.channel_id, name: ch.name });
     return json({ success: true }, 200, request, env);
   }
@@ -2373,7 +2478,7 @@ async function handleChannels(env, request) {
   if (hasDB(env)) {
     await ensureSchema(env);
     try {
-      const { results } = await env.DB.prepare("SELECT id, channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days FROM channels WHERE is_active = 1 ORDER BY id ASC").all();
+      const { results } = await env.DB.prepare("SELECT * FROM channels WHERE is_active = 1 ORDER BY id ASC").all();
       if (results && results.length > 0 && !refresh) return json({ success: true, channels: results.map(publicChannel) }, 200, request, env);
     } catch (e) { console.error("handleChannels D1 error:", e?.message || e); }
   }
@@ -2390,12 +2495,13 @@ async function writeChannels(env, list) {
   if (!hasDB(env) || !list || list.length === 0) return 0;
   try {
     await ensureSchema(env);
-    const values = list.map(ch => [ch.channel_id, ch.name, ch.logo || "", ch.group_title || "Khác", ch.stream_url, ch.catchup_type || "append", ch.catchup_days || 7]);
+    const fullValues = list.map(ch => [ch.channel_id, ch.name, ch.logo || "", ch.group_title || "Khác", ch.stream_url, ch.catchup_type || "append", ch.catchup_days || 7, ch.user_agent || "", ch.referer || "", ch.manifest_type || "", ch.license_type || "", ch.clear_key_id || ch.clearKeyId || "", ch.clear_key || ch.clearKey || ""]);
+    const baseValues = list.map(ch => [ch.channel_id, ch.name, ch.logo || "", ch.group_title || "Khác", ch.stream_url, ch.catchup_type || "append", ch.catchup_days || 7]);
     let ok = false;
-    // Thử INSERT có cột is_active (schema mới)
+    // Schema mới: kèm UA + DRM
     try {
-      const stmt = env.DB.prepare("INSERT OR REPLACE INTO channels (channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, 1)");
-      const rows = values.map(v => stmt.bind(...v));
+      const stmt = env.DB.prepare("INSERT OR REPLACE INTO channels (channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days, is_active, user_agent, referer, manifest_type, license_type, clear_key_id, clear_key) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)");
+      const rows = fullValues.map(v => stmt.bind(...v));
       if (typeof env.DB.batch === "function") {
         await env.DB.batch([env.DB.prepare("DELETE FROM channels")]);
         for (let i = 0; i < rows.length; i += 50) await env.DB.batch(rows.slice(i, i + 50));
@@ -2405,12 +2511,28 @@ async function writeChannels(env, list) {
       }
       ok = true;
     } catch (e) {
-      console.error("[channels] INSERT with is_active failed, retry without:", e?.message || e);
+      console.error("[channels] INSERT full failed, retry base:", e?.message || e);
     }
-    // DB quá cũ (thiếu cột is_active) → fallback INSERT không có cột này
+    if (!ok) {
+      try {
+        const stmt = env.DB.prepare("INSERT OR REPLACE INTO channels (channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, 1)");
+        const rows = baseValues.map(v => stmt.bind(...v));
+        if (typeof env.DB.batch === "function") {
+          await env.DB.batch([env.DB.prepare("DELETE FROM channels")]);
+          for (let i = 0; i < rows.length; i += 50) await env.DB.batch(rows.slice(i, i + 50));
+        } else {
+          await env.DB.prepare("DELETE FROM channels").run();
+          for (const row of rows) await row.run();
+        }
+        ok = true;
+      } catch (e2) {
+        console.error("[channels] INSERT with is_active failed, retry without:", e2?.message || e2);
+      }
+    }
+    // DB quá cũ → fallback INSERT không có cột mới
     if (!ok) {
       const stmt = env.DB.prepare("INSERT OR REPLACE INTO channels (channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days) VALUES (?, ?, ?, ?, ?, ?, ?)");
-      const rows = values.map(v => stmt.bind(...v));
+      const rows = baseValues.map(v => stmt.bind(...v));
       if (typeof env.DB.batch === "function") {
         await env.DB.batch([env.DB.prepare("DELETE FROM channels")]);
         for (let i = 0; i < rows.length; i += 50) await env.DB.batch(rows.slice(i, i + 50));
@@ -2419,6 +2541,7 @@ async function writeChannels(env, list) {
         for (const row of rows) await row.run();
       }
     }
+    try { _chanCache = null; } catch {}
     console.error(`[channels] wrote ${list.length} channels to D1`);
     return list.length;
   } catch (e) { console.error("writeChannels error:", e?.message || e); return 0; }

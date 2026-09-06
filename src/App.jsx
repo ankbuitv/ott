@@ -24,6 +24,7 @@ import BroadcastBanner from './components/BroadcastBanner';
 import FocusableWrapper from './components/FocusableWrapper';
 import MoviesScreen from './components/MoviesScreen';
 import ShortsScreen from './components/ShortsScreen';
+import ChannelCard from './components/ChannelCard';
 import { SkeletonGrid } from './components/SkeletonLoader';
 
 import { DeviceProvider, useDevice } from './contexts/DeviceContext';
@@ -46,18 +47,19 @@ function AppContent() {
   const device = useDevice();
   const { settings } = useSettings();
   const { addToast } = useToast();
-  const { user, isAuthenticated, token } = useAuth();
+  const { user, isAuthenticated, token, effectivePlan } = useAuth();
   const { currentProfile } = useProfile();
   const { hasPicked, resetPicker, t } = useI18n();
   const guestMode = !isAuthenticated || !user;
   const effUser = guestMode ? GUEST_USER : user;
+  const effPlan = guestMode ? 'standard' : (effectivePlan || user?.plan || 'standard');
+  const [showLangPicker, setShowLangPicker] = useState(!hasPicked());
+  const [showAuth, setShowAuth] = useState(false);
+  const [movieToOpen, setMovieToOpen] = useState(null); // phim được chọn từ TopNav search
   const promptLogin = useCallback((msg) => {
     if (msg) addToast(msg, 'info');
     setShowAuth(true);
   }, [addToast]);
-  const [showLangPicker, setShowLangPicker] = useState(!hasPicked());
-  const [showAuth, setShowAuth] = useState(false);
-  const [movieToOpen, setMovieToOpen] = useState(null); // phim được chọn từ TopNav search
 
   const [activeTab, setActiveTab] = useState(() => {
     return localStorage.getItem('chrtv_tab') || 'channels';
@@ -140,13 +142,23 @@ function AppContent() {
   }, [channels]);
 
   const filteredChannels = useMemo(() => {
-    return channels.filter(ch => {
+    let list = channels.filter(ch => {
       const matchCat = selectedCategory === 'Tất Cả' || ch.group_title === selectedCategory;
       const matchSearch = !searchQuery || ch.name.toLowerCase().includes(searchQuery.toLowerCase());
       const matchParental = !settings.parentalEnabled || !settings.hiddenGroups?.includes(ch.group_title);
       return matchCat && matchSearch && matchParental;
     });
-  }, [channels, selectedCategory, searchQuery, settings]);
+    // Tab Yêu thích / Lịch sử: lọc đúng theo dữ liệu user (fix bug hiện toàn bộ kênh)
+    if (activeTab === 'favorites') {
+      const favSet = new Set(favorites || []);
+      list = list.filter(ch => favSet.has(ch.channel_id));
+    } else if (activeTab === 'history') {
+      const order = new Map((watchHistory || []).map((h, i) => [h.channel_id, i]));
+      list = list.filter(ch => order.has(ch.channel_id))
+        .sort((a, b) => (order.get(a.channel_id) ?? 999) - (order.get(b.channel_id) ?? 999));
+    }
+    return list;
+  }, [channels, selectedCategory, searchQuery, settings, activeTab, favorites, watchHistory]);
 
   // P0-B: URL phát được xin TỪ SERVER (kèm JWT + kiểm tra gói phía server) —
   // client không còn giữ stream_url gốc, không tự build URL stream nữa.
@@ -190,13 +202,13 @@ function AppContent() {
       promptLogin(`"${channel.name}" cần đăng nhập để xem — đăng ký miễn phí nhé!`);
       return;
     }
-    if (channel && !guestMode && !planAllows(user?.plan, channel.group_title)) {
+    if (channel && !guestMode && !planAllows(effPlan, channel.group_title)) {
       addToast(`"${channel.name}" thuộc gói cao hơn — vào Mua Gói kích hoạt (tạm miễn phí)`, 'error');
       setActiveTab('plans');
       return;
     }
     openChannel(channel);
-  }, [addToast, user?.plan, guestMode, promptLogin, openChannel]);
+  }, [addToast, effPlan, guestMode, promptLogin, openChannel]);
 
   const handlePlayCatchup = useCallback((channel, program) => {
     // Xem CHƯƠNG TRÌNH đã phát (catchup) => bắt buộc đăng nhập
@@ -205,7 +217,7 @@ function AppContent() {
       return;
     }
     // Catchup cũng phải đúng gói của kênh đó
-    if (!planAllows(user?.plan, channel?.group_title)) {
+    if (!planAllows(effPlan, channel?.group_title)) {
       addToast(`"${channel.name}" thuộc gói cao hơn — vào Mua Gói kích hoạt (tạm miễn phí)`, 'error');
       setActiveTab('plans');
       return;
@@ -213,7 +225,7 @@ function AppContent() {
     let at = 0;
     try { at = Math.floor(parseEpgDate(program?.start).getTime() / 1000); } catch {}
     openChannel(channel, { catchup: program, at });
-  }, [addToast, user?.plan, guestMode, promptLogin, openChannel]);
+  }, [addToast, effPlan, guestMode, promptLogin, openChannel]);
 
   const handleToggleFavorite = useCallback(async (channelId) => {
     const isFav = favorites.includes(channelId);
@@ -312,8 +324,11 @@ function AppContent() {
         <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onShowSettings={() => setShowSettings(true)} onShowAdmin={() => setShowAdmin(true)} />
 
         <main className="flex-1 flex flex-col h-full overflow-y-auto pb-16 md:pb-0">
+          <div className="px-5 md:px-8 pt-3 max-w-[1400px] mx-auto w-full">
+            <BroadcastBanner />
+          </div>
           {activeTab === 'epg' ? (
-            <EpgGridTimeline channels={channels} epgData={epgData} onPlayCatchup={handlePlayCatchup} onSelectChannel={handleSelectChannel} />
+            <EpgGridTimeline channels={channels} epgData={epgData} onPlayCatchup={handlePlayCatchup} onSelectChannel={handleSelectChannel} onRequireLogin={promptLogin} />
           ) : activeTab === 'shorts' ? (
             <ShortsScreen
               channels={channels}
@@ -355,17 +370,18 @@ function AppContent() {
                   ) : (
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                       {filteredChannels.map(ch => (
-                        <FocusableWrapper key={ch.channel_id} onClick={() => handleSelectChannel(ch)} className="card rounded-2xl bg-stone-900/40 border border-stone-800 hover:border-[#f36f21]/40 overflow-hidden cursor-pointer">
-                          <div className="relative aspect-[4/3] bg-gradient-to-br from-stone-700 to-stone-900 flex items-center justify-center">
-                            <img src={ch.logo} alt="" className="w-16 h-16 object-contain" onError={e => { e.target.style.display = 'none'; }} />
-                            <div className="absolute top-3 left-3 px-2 py-0.5 bg-[#f36f21] text-[10px] font-bold rounded">LIVE</div>
-                          </div>
-                          <div className="p-4">
-                            <p className="font-bold text-base">{ch.name}</p>
-                            <p className="text-[11px] text-stone-500">{ch.group_title}</p>
-                            <button className="mt-3 w-full py-1.5 btn-orange text-white text-[10px] font-bold rounded-lg transition">{t('app.watch')}</button>
-                          </div>
-                        </FocusableWrapper>
+                        <ChannelCard
+                          key={ch.channel_id}
+                          channel={ch}
+                          isFavorite={favorites.includes(ch.channel_id)}
+                          onSelect={handleSelectChannel}
+                          onToggleFavorite={handleToggleFavorite}
+                          onShowInfo={() => {
+                            const epg = getEpgForChannel(ch.channel_id);
+                            setChannelInfoModal({ channel: ch, epgNow: epg.now, epgNext: epg.next, isFav: favorites.includes(ch.channel_id) });
+                          }}
+                          epgNow={getEpgForChannel(ch.channel_id).now}
+                        />
                       ))}
                     </div>
                   )}
@@ -397,7 +413,7 @@ function AppContent() {
       )}
 
       {channelInfoModal && (
-        <ChannelInfoModal channel={channelInfoModal.channel} epgNow={channelInfoModal.epgNow} epgNext={channelInfoModal.epgNext} isFavorite={channelInfoModal.isFav} onPlay={handleSelectChannel} onToggleFavorite={handleToggleFavorite} onClose={() => setChannelInfoModal(null)} />
+        <ChannelInfoModal channel={channelInfoModal.channel} epgNow={channelInfoModal.epgNow} epgNext={channelInfoModal.epgNext} isFavorite={favorites.includes(channelInfoModal.channel.channel_id)} onPlay={handleSelectChannel} onToggleFavorite={handleToggleFavorite} onClose={() => setChannelInfoModal(null)} onRequireLogin={promptLogin} />
       )}
       <KeyboardShortcuts open={showKeyboardShortcuts} onClose={() => setShowKeyboardShortcuts(false)} />
       <AuthModal open={showAuth} onClose={() => setShowAuth(false)} />

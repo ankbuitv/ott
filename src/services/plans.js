@@ -1,8 +1,8 @@
 import { API_BASE } from "./config";
 
-// ===== GÓI CƯỚC CHRTV — tạm thời FREE toàn bộ =====
-// standard     : chỉ kênh truyền hình Việt Nam
-// recreational : kênh VN + kênh Phim
+// ===== GÓI CƯỚC CHRTV PLAY — tạm thời FREE toàn bộ =====
+// standard     : chỉ kênh truyền hình Việt Nam (nhóm "TH - Truyền hình Việt" + VTV/HTV/...)
+// recreational : kênh VN + kênh Phim/Giải trí (nhóm "BOX - Giải trí" / phim)
 // vip          : tất cả (VN + Phim + Thể thao + Quốc tế)
 export const SUPPORT_EMAIL = "support@ankb.qzz.io";
 
@@ -11,12 +11,12 @@ export const PLANS = [
     code: "standard", name: "STANDARD", rank: 1,
     tagline: "Kênh Việt Nam", color: "#42a5f5",
     allows: ["Kênh truyền hình Việt Nam (VTV, HTV, THVL, SCTV...)"],
-    not: ["Kênh Phim", "Kênh Thể thao & Quốc tế"],
+    not: ["Kênh Phim / Giải trí", "Kênh Thể thao & Quốc tế"],
   },
   {
     code: "recreational", name: "RECREATIONAL", rank: 2,
     tagline: "Kênh VN + Kênh Phim", color: "#ab47bc",
-    allows: ["Toàn bộ kênh Việt Nam", "Các kênh Phim (Hollywood Classics...)"],
+    allows: ["Toàn bộ kênh Việt Nam", "Các kênh Phim / Giải trí (BOX, HBO, AXN...)"],
     not: ["Kênh Thể thao & Quốc tế"],
   },
   {
@@ -29,14 +29,32 @@ export const PLANS = [
 
 export function planByCode(code) { return PLANS.find((p) => p.code === (code || "").toLowerCase()) || null; }
 
-const VN_RE = /(vtv|htv|thvl|sctv|antv|quốc gia|nhân dân|quốc hội|truyền hình việt nam|địa phương|hà nội|vĩnh long|cần thơ|vietnam|\bvn\b|nông nghiệp|phổ thông|dân tộc)/i;
-const PHIM_RE = /(phim|movie|cinema|film|hollywood|classic|series|drama)/i;
+// Chuẩn hoá chuỗi nhóm để so sánh không dấu + thường
+function normGroup(s) {
+  return String(s || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
 
-// Phân loại kênh theo group_title: 'VN' | 'PHIM' | 'KHAC' (quốc tế/thể thao/khác)
+// Phân loại kênh theo group_title: 'VN' | 'PHIM' | 'KHAC' (thể thao/quốc tế/khác)
+// Khớp với playlist thực tế:
+//   "TH - Truyền hình Việt" -> VN | "BOX - Giải trí"/phim -> PHIM | "SPORTS - Thể thao" -> KHAC
 export function classifyGroup(groupTitle = "") {
-  const g = String(groupTitle || "");
-  if (PHIM_RE.test(g)) return "PHIM";
-  if (VN_RE.test(g)) return "VN";
+  const raw = String(groupTitle || "");
+  const g = normGroup(raw);
+  if (!g) return "VN"; // nhóm trống = kênh VN mặc định (FTA)
+
+  // PHIM / Giải trí — check trước vì tên kênh VN cũng có thể chứa "phim" (HTVC Phim...)
+  // nhưng group "TH - Truyền hình Việt" phải luôn là VN.
+  if (/\b(th\s*truyen\s*hinh\s*viet|truyen\s*hinh\s*viet)\b/.test(g)) return "VN";
+  if (/(box|giai\s*tri|phim|movie|cinema|film|hollywood|classic|series|drama|hbo|axn|warner|cinemax|discovery|nat\s*geo|cartoon|anim|kids|thieu\s*nhi)/.test(g)) return "PHIM";
+
+  // VN — tên nhóm hoặc mã đài Việt
+  if (/(viet(\s*nam)?|\bvn\b|vtv|htv|thvl|sctv|vtc|vtvcab|antv|quoc\s*gia|nhan\s*dan|quoc\s*hoi|dia\s*phuong|ha\s*noi|vinh\s*long|can\s*tho|nong\s*nghiep|pho\s*thong|dan\s*toc|truyen\s*hinh|tong\s*hop|du\s*phong|fpt\s*su\s*kien)/.test(g)) return "VN";
+
   return "KHAC";
 }
 
@@ -47,6 +65,14 @@ export function planAllows(plan, groupTitle = "") {
   const cls = classifyGroup(groupTitle);
   if (code === "recreational") return cls === "VN" || cls === "PHIM";
   return cls === "VN"; // standard / mặc định
+}
+
+// Gói tối thiểu để xem 1 nhóm kênh (dùng cho thông báo nâng cấp)
+export function minPlanForGroup(groupTitle = "") {
+  const cls = classifyGroup(groupTitle);
+  if (cls === "VN") return "standard";
+  if (cls === "PHIM") return "recreational";
+  return "vip";
 }
 
 function authHeaders() {

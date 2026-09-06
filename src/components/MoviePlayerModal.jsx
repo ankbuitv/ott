@@ -166,7 +166,7 @@ export default function MoviePlayerModal({ movie, onClose }) {
             <div className="z-10 max-w-sm text-center px-6">
               <p className="text-3xl mb-3">🎬</p>
               <h3 className="text-sm font-bold text-white mb-1">Chưa có nguồn phát hợp lệ</h3>
-              <p className="text-xs text-stone-500">Nội dung này sẽ phát trực tiếp khi CHRTV có nguồn bản quyền. Theo dõi mục Tin tức để biết thêm.</p>
+              <p className="text-xs text-stone-500">Nội dung này sẽ phát trực tiếp khi CHRTV PLAY có nguồn bản quyền. Theo dõi mục Tin tức để biết thêm.</p>
             </div>
           )}
           {current && (

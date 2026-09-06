@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { findEpgForChannel } from '../utils/epgMatch';
 import { parseEpgDate } from '../utils/dateUtils';
 import { useI18n } from '../contexts/I18nContext';
+import LiveStrip from './LiveStrip';
 
 /**
  * TRANG CHỦ (kiểu mytv 2026-09):
@@ -123,6 +124,8 @@ export default function HomePage({
 
   return (
     <div className="bg-[#0b0b0d] text-white pb-10">
+      {/* ===== DẢI ĐANG TRỰC TIẾP ===== */}
+      <LiveStrip channels={channels} epgData={epgData} onSelect={onSelectChannel} />
       {/* ===== HERO CAROUSEL (mytv) ===== */}
       {heroCh && (
         <section className="relative mx-3 md:mx-5 mt-3 rounded-2xl overflow-hidden anim-fade-up" style={{ height: 'min(56vh, 460px)', minHeight: 340 }}>

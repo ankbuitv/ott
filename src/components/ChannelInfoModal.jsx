@@ -1,8 +1,73 @@
-import React from 'react';
-import { X, Radio, Globe, Clock, Heart, Play, Tv } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { X, Radio, Globe, Clock, Heart, Play, Tv, Star } from 'lucide-react';
 import { formatTimeHHMM } from '../utils/dateUtils';
+import { getRating, postRating } from '../services/ratings';
+import { hasUserToken } from '../services/session';
 
-export default function ChannelInfoModal({ channel, epgNow, epgNext, isFavorite, onPlay, onToggleFavorite, onClose }) {
+function ChannelRating({ channelId, onRequireLogin }) {
+  const [avg, setAvg] = useState(0);
+  const [count, setCount] = useState(0);
+  const [mine, setMine] = useState(0);
+  const [hover, setHover] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const logged = hasUserToken();
+
+  useEffect(() => {
+    let alive = true;
+    if (!logged) return undefined;
+    getRating(channelId).then((r) => {
+      if (!alive) return;
+      setAvg(r.avg || 0); setCount(r.count || 0); setMine(r.userRating || 0);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [channelId, logged]);
+
+  const rate = useCallback(async (v) => {
+    if (!logged) {
+      if (onRequireLogin) onRequireLogin('Đăng nhập để đánh giá kênh nhé — miễn phí!');
+      return;
+    }
+    if (busy) return;
+    setBusy(true);
+    try {
+      await postRating(channelId, v);
+      const r = await getRating(channelId);
+      setAvg(r.avg || 0); setCount(r.count || 0); setMine(r.userRating || v);
+    } catch (e) {
+      if (e?.code === 'LOGIN_REQUIRED' && onRequireLogin) onRequireLogin('Đăng nhập để đánh giá kênh nhé — miễn phí!');
+    }
+    setBusy(false);
+  }, [channelId, logged, busy, onRequireLogin]);
+
+  return (
+    <div className="bg-slate-900/60 rounded-lg p-2.5 border border-slate-800/30">
+      <div className="text-[10px] text-slate-500 font-semibold uppercase mb-1 flex items-center gap-1">
+        <Star className="w-3 h-3" /> Đánh giá kênh
+      </div>
+      <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-0.5">
+          {[1, 2, 3, 4, 5].map((v) => (
+            <button
+              key={v}
+              onClick={() => rate(v)}
+              onMouseEnter={() => setHover(v)}
+              onMouseLeave={() => setHover(0)}
+              className="p-0.5 transition-transform hover:scale-125"
+              title={`${v} sao`}
+            >
+              <Star className={`w-5 h-5 ${(hover || mine) >= v ? 'fill-amber-400 text-amber-400' : 'text-slate-600'}`} />
+            </button>
+          ))}
+        </div>
+        <span className="text-[10px] text-slate-400 ml-1">
+          {count > 0 ? `${Number(avg || 0).toFixed(1)} ★ · ${count} lượt` : (logged ? 'Chưa có đánh giá — bạn là người đầu tiên!' : 'Đăng nhập để đánh giá')}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+export default function ChannelInfoModal({ channel, epgNow, epgNext, isFavorite, onPlay, onToggleFavorite, onClose, onRequireLogin }) {
   if (!channel) return null;
   return (
     <div className="fixed inset-0 z-[160] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
@@ -47,6 +112,8 @@ export default function ChannelInfoModal({ channel, epgNow, epgNext, isFavorite,
               <p className="text-[10px] text-slate-600">{formatTimeHHMM(epgNext.start)}</p>
             </div>
           )}
+
+          <ChannelRating channelId={channel.channel_id} onRequireLogin={onRequireLogin} />
 
           <div className="space-y-1.5 pt-1">
             <div className="flex items-center justify-between text-xs">

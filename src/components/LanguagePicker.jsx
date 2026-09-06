@@ -40,9 +40,9 @@ export default function LanguagePicker({ onClose }) {
           </div>
         </div>
 
-        {/* Grid 5 ngôn ngữ */}
+        {/* Grid 15 ngôn ngữ — cuộn khi dài */}
         <div className="px-6 pb-6">
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 max-h-[46vh] overflow-y-auto pr-1">
             {languages.map(l => {
               const isSelected = selected === l.code;
               const isDetected = detectedLang === l.code;

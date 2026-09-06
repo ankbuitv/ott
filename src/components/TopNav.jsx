@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Logo from './Logo';
-import { Bell, Check, BellRing } from 'lucide-react';
+import { Bell, Check, BellRing, Globe } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useI18n } from '../contexts/I18nContext';
 import { MovieAPI, imgPath } from '../services/tmdb';
@@ -9,7 +9,7 @@ import { enablePush, disablePush, isPushEnabled } from '../services/push';
 
 function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, setActiveTab, activeTab, onSelectChannel, onSelectMovie, onShowAuth }) {
   const { isAuthenticated, logout } = useAuth();
-  const { t } = useI18n();
+  const { t, lang, setLang, languages } = useI18n();
   const [searchFocused, setSearchFocused] = useState(false);
   const [movieResults, setMovieResults] = useState([]);
   const [searchingMovies, setSearchingMovies] = useState(false);
@@ -23,6 +23,9 @@ function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, s
   });
   const [pushOn, setPushOn] = useState(false);
   const notifRef = useRef(null);
+  const [langOpen, setLangOpen] = useState(false);
+  const langRef = useRef(null);
+  const curLang = (languages || []).find((l) => l.code === lang);
 
   const unreadCount = notifs.filter((n) => {
     const ts = new Date((n.created_at || '').replace(' ', 'T') + 'Z').getTime() || 0;
@@ -44,7 +47,10 @@ function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, s
   }, []);
 
   useEffect(() => {
-    const h = (e) => { if (notifRef.current && !notifRef.current.contains(e.target)) setNotifOpen(false); };
+    const h = (e) => {
+      if (notifRef.current && !notifRef.current.contains(e.target)) setNotifOpen(false);
+      if (langRef.current && !langRef.current.contains(e.target)) setLangOpen(false);
+    };
     window.addEventListener('mousedown', h);
     return () => window.removeEventListener('mousedown', h);
   }, []);
@@ -194,6 +200,39 @@ function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, s
       </div>
 
       <div className="flex items-center gap-1.5 md:gap-2">
+        <div className="relative" ref={langRef}>
+          <button
+            onClick={() => setLangOpen((o) => !o)}
+            className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 transition"
+            title={t('settings.choose_lang')}
+            aria-label={t('settings.choose_lang')}
+          >
+            <Globe className="w-4 h-4 text-stone-300" />
+            <span className="text-base leading-none">{curLang?.flag || '🌐'}</span>
+            <span className="hidden lg:inline text-[11px] font-bold text-stone-300 uppercase">{lang}</span>
+          </button>
+          {langOpen && (
+            <div className="absolute right-0 top-full mt-2 w-56 max-w-[80vw] bg-[#141419] border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50">
+              <div className="px-4 py-2.5 border-b border-white/5 text-xs font-bold">{t('settings.choose_lang')}</div>
+              <div className="max-h-80 overflow-y-auto p-1.5">
+                {(languages || []).map((l) => (
+                  <button
+                    key={l.code}
+                    onClick={() => { setLang(l.code); setLangOpen(false); }}
+                    className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-left transition ${l.code === lang ? 'bg-[#f36f21]/15 text-white' : 'hover:bg-white/5 text-stone-300'}`}
+                  >
+                    <span className="text-lg leading-none">{l.flag}</span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-xs font-bold truncate">{l.label}</span>
+                      <span className="block text-[10px] text-stone-500 truncate">{l.country}</span>
+                    </span>
+                    {l.code === lang && <Check className="w-4 h-4 text-[#ff9a3d] shrink-0" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
         <button
           onClick={() => setActiveTab && setActiveTab('shorts')}
           className={`w-9 h-9 rounded-full flex items-center justify-center text-sm transition ${activeTab === 'shorts' ? 'bg-[#f36f21] text-white' : 'bg-white/5 hover:bg-white/10 text-slate-200'}`}
@@ -262,7 +301,7 @@ function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, s
             <button onClick={logout} className="text-[10px] text-stone-500 hover:text-[#ff9a3d] ml-1">{t('nav.logout')}</button>
           </div>
         ) : (
-          <button onClick={() => onShowAuth?.() || (setActiveTab && setActiveTab('movies'))} className="px-4 py-2 bg-white text-black text-sm font-bold rounded-xl hover:bg-stone-200 transition">{t('nav.login')}</button>
+          <button onClick={() => { if (onShowAuth) onShowAuth(); else if (setActiveTab) setActiveTab('movies'); }} className="px-4 py-2 bg-white text-black text-sm font-bold rounded-xl hover:bg-stone-200 transition">{t('nav.login')}</button>
         )}
       </div>
     </nav>

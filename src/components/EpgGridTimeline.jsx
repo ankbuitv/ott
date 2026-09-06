@@ -1,9 +1,22 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useI18n } from '../contexts/I18nContext';
 import { useDevice } from '../contexts/DeviceContext';
-import { Calendar, Clock, Play, Search, Filter, Tv, Radio } from 'lucide-react';
+import { useToast } from '../contexts/ToastContext';
+import { Calendar, Clock, Play, Search, Filter, Tv, Radio, Bell, BellRing, X, Trash2 } from 'lucide-react';
 import FocusableWrapper from './FocusableWrapper';
+import SearchEPG from './SearchEPG';
 import { formatTimeHHMM, formatDateVN, parseEpgDate } from '../utils/dateUtils';
+import { getReminders, addReminder, deleteReminder } from '../services/reminders';
+import { hasUserToken } from '../services/session';
+
+// Format giờ nhắc cho worker (SQLite DATETIME "YYYY-MM-DD HH:MM:SS", giờ local)
+function fmtRemind(ts) {
+  try {
+    const d = new Date(ts);
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  } catch { return ''; }
+}
 
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 
@@ -26,14 +39,60 @@ export default function EpgGridTimeline({
   epgData = null,
   onPlayCatchup,
   onSelectChannel,
+  onRequireLogin,
 }) {
   const { t } = useI18n();
   const device = useDevice();
+  const { addToast } = useToast();
   const useSpatial = !!device.isTV; // chỉ TV mới cần D-pad focus
 
   const [selectedCategory, setSelectedCategory] = useState(t('movies.genre.all'));
   const [selectedDayOffset, setSelectedDayOffset] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showProgSearch, setShowProgSearch] = useState(false);
+  const [reminders, setReminders] = useState([]);
+  const [showReminders, setShowReminders] = useState(false);
+
+  // Tải danh sách hẹn nhắc (chỉ khi đã đăng nhập)
+  const reloadReminders = useCallback(async () => {
+    if (!hasUserToken()) { setReminders([]); return; }
+    try { setReminders(await getReminders()); } catch { setReminders([]); }
+  }, []);
+  useEffect(() => { reloadReminders(); }, [reloadReminders]);
+
+  const remindedKeys = useMemo(() => {
+    const s = new Set();
+    for (const r of reminders || []) s.add(`${r.channel_id}||${r.program_title}`);
+    return s;
+  }, [reminders]);
+
+  // Bật/tắt hẹn nhắc cho 1 chương trình tương lai
+  const toggleRemind = useCallback(async (channel, prog) => {
+    if (!hasUserToken()) {
+      if (onRequireLogin) onRequireLogin('Đăng nhập để hẹn nhắc chương trình nhé — miễn phí!');
+      return;
+    }
+    const key = `${channel.channel_id}||${prog.title}`;
+    try {
+      if (remindedKeys.has(key)) {
+        const found = (reminders || []).find((r) => `${r.channel_id}||${r.program_title}` === key);
+        if (found) await deleteReminder(found.id);
+        addToast('Đã huỷ hẹn nhắc', 'info');
+      } else {
+        await addReminder({ channel_id: channel.channel_id, program_title: prog.title, remind_at: fmtRemind(prog._startTs || parseEpgDate(prog.start).getTime()) });
+        addToast(`Đã hẹn nhắc "${prog.title}"`, 'success');
+      }
+      reloadReminders();
+    } catch (e) {
+      if (e?.code === 'LOGIN_REQUIRED' && onRequireLogin) onRequireLogin('Đăng nhập để hẹn nhắc chương trình nhé — miễn phí!');
+      else addToast('Không lưu được hẹn nhắc — thử lại nhé', 'error');
+    }
+  }, [remindedKeys, reminders, reloadReminders, addToast, onRequireLogin]);
+
+  const handleDeleteReminder = useCallback(async (id) => {
+    try { await deleteReminder(id); reloadReminders(); }
+    catch { addToast('Xoá hẹn nhắc thất bại', 'error'); }
+  }, [reloadReminders, addToast]);
 
   const dateTabs = useMemo(() => {
     const tabs = [];
@@ -153,17 +212,70 @@ export default function EpgGridTimeline({
           </div>
           <h1 className="text-xl font-extrabold text-white">EPG & Xem Lại</h1>
         </div>
-        <div className="relative w-full md:w-64">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-          <input
-            type="text"
-            placeholder="Tìm kênh..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-[#f36f21]/60 transition-colors"
-          />
+        <div className="flex items-center gap-2 w-full md:w-auto">
+          <div className="relative flex-1 md:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+            <input
+              type="text"
+              placeholder="Tìm kênh..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-[#f36f21]/60 transition-colors"
+            />
+          </div>
+          <button
+            onClick={() => setShowProgSearch((v) => !v)}
+            className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all whitespace-nowrap ${showProgSearch ? 'bg-[#f36f21]/15 text-[#ff9a3d] border-[#f36f21]/40' : 'bg-slate-900/80 text-slate-300 border-slate-800 hover:border-slate-600'}`}
+            title="Tìm theo tên chương trình trên mọi kênh"
+          >
+            Tìm chương trình
+          </button>
+          <div className="relative">
+            <button
+              onClick={() => { setShowReminders((v) => !v); reloadReminders(); }}
+              className={`p-2 rounded-xl border transition-all ${showReminders ? 'bg-amber-500/15 text-amber-300 border-amber-500/40' : 'bg-slate-900/80 text-slate-300 border-slate-800 hover:border-slate-600'}`}
+              title="Hẹn nhắc của tôi"
+            >
+              <Bell className="w-4 h-4" />
+              {reminders.length > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-black text-[10px] font-black flex items-center justify-center">
+                  {reminders.length > 9 ? '9+' : reminders.length}
+                </span>
+              )}
+            </button>
+            {showReminders && (
+              <div className="absolute right-0 top-full mt-2 w-80 max-w-[85vw] bg-[#141419] border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50">
+                <div className="px-4 py-2.5 border-b border-white/5 flex items-center justify-between">
+                  <span className="text-xs font-bold flex items-center gap-1.5"><BellRing className="w-3.5 h-3.5 text-amber-400" /> Hẹn nhắc của tôi</span>
+                  <button onClick={() => setShowReminders(false)} className="p-1 hover:bg-white/10 rounded-lg"><X className="w-3.5 h-3.5 text-slate-400" /></button>
+                </div>
+                <div className="max-h-72 overflow-y-auto">
+                  {reminders.length === 0 ? (
+                    <p className="px-4 py-6 text-center text-[11px] text-slate-500">Chưa có hẹn nhắc nào.<br />Bấm vào chương trình sắp tới để hẹn nhắc 🔔</p>
+                  ) : reminders.map((r) => (
+                    <div key={r.id} className="px-4 py-2.5 border-b border-white/5 flex items-center gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[11px] font-bold truncate">{r.program_title}</p>
+                        <p className="text-[10px] text-slate-500">{r.channel_id} · {String(r.remind_at || '').slice(0, 16)}</p>
+                      </div>
+                      <button onClick={() => handleDeleteReminder(r.id)} className="p-1.5 hover:bg-[#f36f21]/20 rounded-lg" title="Xoá hẹn nhắc">
+                        <Trash2 className="w-3.5 h-3.5 text-slate-500 hover:text-[#ff9a3d]" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Tìm chương trình theo tên (mọi kênh) */}
+      {showProgSearch && (
+        <div className="mb-3">
+          <SearchEPG epgData={epgData} channels={channels} onPlayCatchup={onPlayCatchup} onSelectChannel={onSelectChannel} />
+        </div>
+      )}
 
       {/* Day Tabs */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-2 mb-3 scrollbar-none">
@@ -221,6 +333,8 @@ export default function EpgGridTimeline({
               useSpatial={useSpatial}
               onSelectChannel={onSelectChannel}
               onPlayCatchup={onPlayCatchup}
+              onToggleRemind={toggleRemind}
+              remindedKeys={remindedKeys}
             />
           ))
         )}
@@ -234,7 +348,7 @@ export default function EpgGridTimeline({
  * hàng sắp lọt viewport — IntersectionObserver rootMargin 400px). Memo hoá để đổi
  * tab ngày/category không re-render lại các hàng chưa đổi dữ liệu.
  */
-const EpgRow = React.memo(function EpgRow({ channel, programs, useSpatial, onSelectChannel, onPlayCatchup }) {
+const EpgRow = React.memo(function EpgRow({ channel, programs, useSpatial, onSelectChannel, onPlayCatchup, onToggleRemind, remindedKeys }) {
   const rowRef = useRef(null);
   const [inView, setInView] = useState(false);
 
@@ -286,6 +400,8 @@ const EpgRow = React.memo(function EpgRow({ channel, programs, useSpatial, onSel
               useSpatial={useSpatial}
               onSelectChannel={onSelectChannel}
               onPlayCatchup={onPlayCatchup}
+              onToggleRemind={onToggleRemind}
+              reminded={remindedKeys?.has(`${channel.channel_id}||${prog.title}`)}
             />
           ))
         )}
@@ -321,10 +437,11 @@ function ChannelTag({ useSpatial, channel, onSelectChannel }) {
  * Chip chương trình — memo hoá: chỉ re-render khi đổi prog/state.
  * Trạng thái: past (xem lại) / live / soon (≤5p vào sống) / future.
  */
-const ProgrammeChip = React.memo(function ProgrammeChip({ prog, channel, nowTs, useSpatial, onSelectChannel, onPlayCatchup }) {
+const ProgrammeChip = React.memo(function ProgrammeChip({ prog, channel, nowTs, useSpatial, onSelectChannel, onPlayCatchup, onToggleRemind, reminded }) {
   const isPast = prog._stopTs < nowTs;
   const isLiveNow = prog._startTs <= nowTs && prog._stopTs >= nowTs;
   const isSoon = !isPast && !isLiveNow && prog._startTs <= nowTs + 5 * 60 * 1000;
+  const isFuture = !isPast && !isLiveNow;
 
   const handleClick = useCallback(() => {
     if (isPast) {
@@ -333,8 +450,11 @@ const ProgrammeChip = React.memo(function ProgrammeChip({ prog, channel, nowTs, 
     } else if (isLiveNow || isSoon) {
       // Đang phát / sắp phát trong 5 phút -> vào sống
       if (onSelectChannel) onSelectChannel(channel);
+    } else if (onToggleRemind) {
+      // Tương lai: bấm để bật/tắt hẹn nhắc
+      onToggleRemind(channel, prog);
     }
-  }, [isPast, isLiveNow, isSoon, channel, prog, onPlayCatchup, onSelectChannel]);
+  }, [isPast, isLiveNow, isSoon, channel, prog, onPlayCatchup, onSelectChannel, onToggleRemind]);
 
   const content = (
     <>
@@ -357,6 +477,11 @@ const ProgrammeChip = React.memo(function ProgrammeChip({ prog, channel, nowTs, 
           {isSoon && (
             <span className="px-1 py-px text-[9px] font-medium rounded bg-sky-900/50 text-sky-300 flex items-center gap-0.5">
               <Clock className="w-2 h-2" /> Sắp phát
+            </span>
+          )}
+          {isFuture && !isSoon && (
+            <span className={`px-1 py-px text-[9px] font-medium rounded flex items-center gap-0.5 ${reminded ? 'bg-amber-500/30 text-amber-300' : 'bg-slate-800/60 text-slate-400'}`}>
+              <Bell className="w-2 h-2" /> {reminded ? 'Đã hẹn' : 'Nhắc tôi'}
             </span>
           )}
         </div>

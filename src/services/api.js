@@ -24,7 +24,7 @@ export async function fetchChannels() {
     { channel_id: "HTV7.vn", name: "HTV7 HD", logo: "https://vtv.sub.id/images/htv7.png", group_title: "HTV", stream_url: "https://vtv.sub.id/htv7/index.m3u8", catchup_type: "append", catchup_days: 7 },
     { channel_id: "HTV9.vn", name: "HTV9 HD", logo: "https://vtv.sub.id/images/htv9.png", group_title: "HTV", stream_url: "https://vtv.sub.id/htv9/index.m3u8", catchup_type: "append", catchup_days: 7 },
     { channel_id: "ON_SPORTS.vn", name: "ON Sports+", logo: "https://vtv.sub.id/images/onsports.png", group_title: "Thể Thao", stream_url: "https://vtv.sub.id/onsports/index.m3u8", catchup_type: "append", catchup_days: 7 },
-    { channel_id: "FALLBACK_LIVE", name: "CHRTV Stream Dự Phòng", logo: CHRTV_LOGO_URL, group_title: "Dự Phòng", stream_url: DEFAULT_FALLBACK_STREAM, catchup_type: "default", catchup_days: 7 }
+    { channel_id: "FALLBACK_LIVE", name: "CHRTV PLAY Dự Phòng", logo: CHRTV_LOGO_URL, group_title: "Dự Phòng", stream_url: DEFAULT_FALLBACK_STREAM, catchup_type: "default", catchup_days: 7 }
   ];
 }
 

@@ -47,7 +47,7 @@ export default function PlansScreen() {
       </div>
 
       <div className="max-w-[1100px] mx-auto px-6">
-        <h1 className="text-center text-[30px] font-black italic tracking-wide pt-8">MUA GÓI CHRTV</h1>
+        <h1 className="text-center text-[30px] font-black italic tracking-wide pt-8">MUA GÓI CHRTV PLAY</h1>
         <p className="text-center text-[13px] text-slate-500 mt-2 flex items-center justify-center gap-1.5">
           <BadgeCheck className="w-4 h-4 text-emerald-500" />
           Ưu đãi ra mắt: <b className="text-emerald-600">TẤT CẢ CÁC GÓI TẠM MIỄN PHÍ</b> — hỗ trợ qua email {SUPPORT_EMAIL}

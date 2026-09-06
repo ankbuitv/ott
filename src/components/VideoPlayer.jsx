@@ -66,7 +66,8 @@ export default function VideoPlayer({
   const [loadToken, setLoadToken] = useState(0);
   // Lỗi phát -> popup (không tự chuyển dự phòng)
   const showStreamError = (msg) => { setErrorMessage(msg); setShowErrorPopup(true); setIsBuffering(false); };
-  const clearStreamError = () => { setErrorMessage(null); setShowErrorPopup(false); };
+  const showErrorPopupRef = useRef(false); // chống popup trùng khi lỗi fatal dồn dập
+  const clearStreamError = () => { setErrorMessage(null); setShowErrorPopup(false); showErrorPopupRef.current = false; };
   const retryStream = () => { clearStreamError(); setIsBuffering(true); setLoadToken(x => x + 1); };
   const [activeUrl, setActiveUrl] = useState(streamUrl || '');
   const streamFilterRef = useRef(null);  // filter xoay token manifest theo kênh/điểm bắt đầu hiện tại
@@ -593,8 +594,14 @@ export default function VideoPlayer({
           }
           /* rơi xuống fallback bên dưới */
         }
-        // Kênh lỗi -> hiện popup báo lỗi (KHÔNG tự chuyển dự phòng)
-        showStreamError(t('vp.err_play', { msg: errText ? errText.slice(0, 120) : '' }));
+        // Kênh lỗi -> popup thân thiện, GIẤU mã kỹ thuật (Shaka error 1002...) — vẫn giữ kênh + nút thử lại
+        let cleanMsg = String(errText || '')
+          .replace(/shaka[^a-z0-9]error[^a-z0-9]*\d+[^]*/gi, '')
+          .replace(/\berror\s*\d+\b[^]*/gi, '')
+          .replace(/\b(1001|1002|1003|2001|3000|4000|5000)\b/g, '')
+          .replace(/\s{2,}/g, ' ').trim();
+        if (/^\d+$/.test(cleanMsg) || /^(network|http|load|failed)[^a-z]*$/i.test(cleanMsg)) cleanMsg = '';
+        showStreamError(t('vp.err_play', { msg: cleanMsg ? cleanMsg.slice(0, 120) : '' }));
       }
     };
 
@@ -622,7 +629,16 @@ export default function VideoPlayer({
       const isTokenIssue =
         /TOKEN_(INVALID|EXPIRED|SID_MISMATCH|USER_MISMATCH|SCOPE)|PLAN_REQUIRED|LOGIN_REQUIRED/.test(code) ||
         [401, 403].includes(httpStatus);
-      if (!isTokenIssue || tokenRetryRef.current) return;
+      if (!isTokenIssue) {
+        // Lỗi fatal giữa chừng (vd mất luồng) -> popup thân thiện, KHÔNG hiện mã Shaka
+        const sev = detail.severity;
+        if ((sev === 2 || sev === '2' || sev === 'CRITICAL') && !showErrorPopupRef.current) {
+          showErrorPopupRef.current = true;
+          showStreamError(t('vp.err_play', { msg: '' }));
+        }
+        return;
+      }
+      if (tokenRetryRef.current) return;
       const u = activeUrlRef.current;
       if (!isProxiedStreamUrl(u)) return;
       tokenRetryRef.current = true;

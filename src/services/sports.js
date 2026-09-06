@@ -13,6 +13,7 @@ export const LEAGUES = [
   { id: 'ucl', name: 'Cúp C1 châu Âu', short: 'UCL', tsdb: '4480', flag: '🏆', cup: true },
   { id: 'vleague1', name: 'V.League 1', short: 'V.League 1', tsdb: '4803', flag: '🇻🇳' },
   { id: 'vleague2', name: 'V.League 2', short: 'V.League 2', tsdb: '5214', flag: '🇻🇳' },
+  { id: 'nba', name: 'NBA — Bóng rổ Mỹ', short: 'NBA', tsdb: '4387', flag: '🏀' },
 ];
 
 // Mùa giải hiện tại: từ tháng 7 tính mùa mới (2026-2027)
@@ -113,6 +114,63 @@ export function fetchLeague(league) {
     ]);
     return { next, past, table };
   });
+}
+
+// Icon theo môn thể thao (explorer "Môn khác")
+export const SPORT_ICONS = {
+  Soccer: '⚽', Basketball: '🏀', Baseball: '⚾', 'American Football': '🏈', 'Ice Hockey': '🏒',
+  Tennis: '🎾', Golf: '⛳', Motorsport: '🏎️', Fighting: '🥊', Boxing: '🥊', MMA: '🥋',
+  Volleyball: '🏐', Rugby: '🏉', Cricket: '🏏', 'Field Hockey': '🏑', Badminton: '🏸',
+  'Table Tennis': '🏓', Swimming: '🏊', Athletics: '🏃', Cycling: '🚴', Olympics: '🏅',
+  Esports: '🎮', eSports: '🎮', ESports: '🎮', Darts: '🎯', Snooker: '🎱', Chess: '♟️',
+  Surfing: '🏄', Sailing: '⛵', Skiing: '⛷️', Skating: '⛸️', Gymnastics: '🤸',
+  Handball: '🤾', 'Water Polo': '🤽', Rowing: '🚣', Climbing: '🧗', Karate: '🥋',
+};
+
+// Danh mục toàn bộ môn + giải từ TheSportsDB (cache 24h) — Esports, cầu lông,
+// bóng chày, bóng rổ, bơi, Olympic... có gì hiện nấy, chọn là xem lịch/KQ/BXH ngay
+let _sportsIndex = null;
+export async function fetchSportsIndex() {
+  if (_sportsIndex) return _sportsIndex;
+  try {
+    const raw = localStorage.getItem('chrtv_sports_index');
+    if (raw) {
+      const j = JSON.parse(raw);
+      if (j?.at && Date.now() - j.at < 24 * 3600 * 1000 && Array.isArray(j.sports)) {
+        _sportsIndex = j; return j;
+      }
+    }
+  } catch {}
+  const out = { at: Date.now(), sports: [] };
+  try {
+    const d = await getJSON(`${TSB}/all_leagues.php`, 15000);
+    const leagues = Array.isArray(d?.leagues) ? d.leagues : [];
+    const bySport = {};
+    for (const l of leagues) {
+      const sport = String(l.strSport || 'Other').trim() || 'Other';
+      const id = String(l.idLeague || '').trim();
+      if (!id) continue;
+      (bySport[sport] = bySport[sport] || []).push({
+        tsdb: id,
+        name: String(l.strLeague || '').trim() || ('League ' + id),
+        country: String(l.strCountry || '').trim(),
+        badge: String(l.strBadge || ''),
+      });
+    }
+    const names = Object.keys(bySport).sort((a, b) =>
+      (a === 'Soccer' ? -1 : b === 'Soccer' ? 1 : bySport[b].length - bySport[a].length));
+    out.sports = names.map((name) => ({
+      name,
+      icon: SPORT_ICONS[name] || '🏟️',
+      count: bySport[name].length,
+      leagues: bySport[name]
+        .sort((a, b) => (b.badge ? 1 : 0) - (a.badge ? 1 : 0))
+        .slice(0, 60),
+    }));
+    _sportsIndex = out;
+    try { localStorage.setItem('chrtv_sports_index', JSON.stringify(out)); } catch {}
+  } catch {}
+  return out;
 }
 
 // Video xem lại do admin đăng

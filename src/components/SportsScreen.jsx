@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Trophy, CalendarDays, ListOrdered, Clapperboard, Play, Radio, X, ChevronRight } from 'lucide-react';
 import { useI18n } from '../contexts/I18nContext';
-import { LEAGUES, fetchLeague, fetchSportsVideos, parseVideoUrl } from '../services/sports';
+import { LEAGUES, fetchLeague, fetchSportsIndex, fetchSportsVideos, parseVideoUrl } from '../services/sports';
 import RacingSection from './RacingSection';
 import MatchDetailModal from './MatchDetailModal';
 
-const SPORT_RE = /sport|thể thao|the thao|espn|bein|k\+|onsport|fpt.*sport|bóng đá|bong da|star sport|golf|tennis/i;
+const SPORT_RE = /sport|thể thao|the thao|espn|bein|k\+|onsport|fpt.*sport|bóng đá|bong da|star sport|golf|tennis|bóng rổ|bong ro|basket|baseball|bóng chày|cầu lông|cau long|badminton|bơi|swim|olympic|esport|e-sport|đua xe|dua xe|racing|boxing|wwe|wimbledon|roland|nba|f1\b/i;
 
 function fmtDT(ts, dateEvent, strTime) {
   try {
@@ -89,15 +89,44 @@ export default function SportsScreen({ channels = [], onSelectChannel }) {
   const [playing, setPlaying] = useState(null);
   const [sportTab, setSportTab] = useState('football'); // football | racing
   const [selMatch, setSelMatch] = useState(null);
+  // Explorer "Môn khác": Esports, cầu lông, bóng chày, bơi, Olympic... (TSDB có gì hiện nấy)
+  const [custom, setCustom] = useState(null); // league object tự chọn từ explorer
+  const [showExplorer, setShowExplorer] = useState(false);
+  const [sportsIdx, setSportsIdx] = useState(null);
+  const [explorerSport, setExplorerSport] = useState('');
 
-  const league = LEAGUES.find(l => l.id === leagueId) || LEAGUES[0];
+  const league = (custom && custom.id === leagueId) ? custom : (LEAGUES.find(l => l.id === leagueId) || LEAGUES[0]);
 
   useEffect(() => {
     let on = true;
     setLoading(true);
     fetchLeague(league).then(d => { if (on) { setData(d); setLoading(false); } }).catch(() => { if (on) setLoading(false); });
     return () => { on = false; };
-  }, [leagueId]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leagueId]);
+
+  useEffect(() => {
+    if (!showExplorer || sportsIdx) return;
+    let on = true;
+    fetchSportsIndex().then(idx => {
+      if (!on) return;
+      setSportsIdx(idx);
+      if (!explorerSport && idx?.sports?.length) {
+        const prefer = idx.sports.find(sp => sp.name !== 'Soccer') || idx.sports[0];
+        setExplorerSport(prefer.name);
+      }
+    }).catch(() => {});
+    return () => { on = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showExplorer]);
+
+  const pickExplorerLeague = (l) => {
+    const obj = { id: `x_${l.tsdb}`, name: l.name, short: l.name, tsdb: l.tsdb, flag: l.badge || '🏟️', customBadge: l.badge || '' };
+    setCustom(obj);
+    setLeagueId(obj.id);
+    setShowExplorer(false);
+    try { document.querySelector('main')?.scrollTo({ top: 0 }); } catch {}
+  };
 
   useEffect(() => {
     let on = true;
@@ -140,6 +169,28 @@ export default function SportsScreen({ channels = [], onSelectChannel }) {
         {/* League chips */}
         {sportTab === 'football' && (
         <div className="relative flex gap-1.5 overflow-x-auto scrollbar-none mt-3 pb-1">
+          {custom && (
+            <button
+              key={custom.id}
+              onClick={() => setLeagueId(custom.id)}
+              className={`shrink-0 pl-2 pr-1.5 py-1.5 rounded-full text-[12px] font-bold transition-all active:scale-95 flex items-center gap-1.5 ${
+                leagueId === custom.id
+                  ? 'grad-brand text-white shadow-lg shadow-[#f36f21]/30'
+                  : 'bg-white/[0.06] text-stone-300 hover:bg-white/[0.12] hover:text-white'
+              }`}
+            >
+              {custom.customBadge ? <img src={custom.customBadge} alt="" className="w-5 h-5 object-contain" onError={e => { e.target.style.display = 'none'; }} /> : <span>{custom.flag}</span>}
+              <span className="max-w-[140px] truncate">{custom.short}</span>
+              <span
+                role="button" tabIndex={0}
+                onClick={(e) => { e.stopPropagation(); setCustom(null); setLeagueId('epl'); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') { setCustom(null); setLeagueId('epl'); } }}
+                className="w-5 h-5 rounded-full bg-black/30 hover:bg-black/60 flex items-center justify-center"
+              >
+                <X className="w-3 h-3" />
+              </span>
+            </button>
+          )}
           {LEAGUES.map(l => (
             <button
               key={l.id}
@@ -153,7 +204,63 @@ export default function SportsScreen({ channels = [], onSelectChannel }) {
               <span>{l.flag}</span> {l.short}
             </button>
           ))}
+          <button
+            onClick={() => setShowExplorer(v => !v)}
+            className={`shrink-0 px-3.5 py-2 rounded-full text-[12px] font-black transition-all active:scale-95 flex items-center gap-1.5 border border-dashed ${
+              showExplorer ? 'border-[#f36f21] text-[#ff9a3d] bg-[#f36f21]/10' : 'border-white/20 text-stone-300 hover:border-white/40 hover:text-white'
+            }`}
+          >
+            🌍 {t('sports.more')}
+          </button>
         </div>
+        )}
+        {/* Explorer: chọn môn -> chọn giải */}
+        {sportTab === 'football' && showExplorer && (
+          <div className="relative mt-3 rounded-2xl border border-white/10 bg-black/30 p-3.5">
+            <p className="text-[11px] text-stone-400 mb-2.5">🌍 <b className="text-stone-200">{t('sports.more_title')}</b> · {t('sports.more_hint')}</p>
+            {!sportsIdx ? (
+              <div className="flex items-center gap-2 text-[12px] text-stone-500 py-3">
+                <span className="w-4 h-4 border-2 border-[#f36f21] border-t-transparent rounded-full animate-spin" /> {t('app.loading')}
+              </div>
+            ) : (
+              <>
+                <div className="flex gap-1.5 overflow-x-auto scrollbar-none pb-2">
+                  {(sportsIdx.sports || []).map(sp => (
+                    <button
+                      key={sp.name}
+                      onClick={() => setExplorerSport(sp.name)}
+                      className={`shrink-0 px-3 py-1.5 rounded-full text-[12px] font-bold transition-all active:scale-95 ${
+                        explorerSport === sp.name ? 'grad-brand text-white shadow' : 'bg-white/[0.06] text-stone-300 hover:bg-white/[0.12]'
+                      }`}
+                    >
+                      {sp.icon} {sp.name} <span className="opacity-60 text-[10px]">{sp.count}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5 max-h-[240px] overflow-y-auto pr-1">
+                  {((sportsIdx.sports || []).find(sp => sp.name === explorerSport)?.leagues || []).map(l => (
+                    <button
+                      key={l.tsdb}
+                      onClick={() => pickExplorerLeague(l)}
+                      className={`flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-left text-[12px] font-bold transition-all active:scale-[0.98] ${
+                        custom?.tsdb === l.tsdb ? 'bg-[#f36f21]/15 border border-[#f36f21]/40 text-white' : 'bg-white/[0.04] border border-transparent text-stone-300 hover:bg-white/[0.09] hover:text-white'
+                      }`}
+                    >
+                      {l.badge ? (
+                        <img src={l.badge} alt="" loading="lazy" className="w-7 h-7 object-contain shrink-0" onError={e => { e.target.style.display = 'none'; }} />
+                      ) : (
+                        <span className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center text-sm shrink-0">🏟️</span>
+                      )}
+                      <span className="min-w-0">
+                        <span className="block truncate">{l.name}</span>
+                        {l.country ? <span className="block text-[10px] font-medium text-stone-500 truncate">{l.country}</span> : null}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
         )}
       </div>
 

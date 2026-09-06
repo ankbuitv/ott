@@ -628,6 +628,7 @@ const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS feedback (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER DEFAULT 0, channel_id TEXT DEFAULT '', message TEXT NOT NULL, client_info TEXT DEFAULT '', status TEXT DEFAULT 'new', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS shorts (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT DEFAULT '', caption TEXT DEFAULT '', video_url TEXT NOT NULL, thumb_url TEXT DEFAULT '', duration INTEGER DEFAULT 0, author TEXT DEFAULT '', views INTEGER DEFAULT 0, likes INTEGER DEFAULT 0, status TEXT DEFAULT 'live', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS qr_logins (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE NOT NULL, user_id INTEGER DEFAULT 0, status TEXT DEFAULT 'pending', device_info TEXT DEFAULT '', created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, subtitle TEXT DEFAULT '', image_url TEXT DEFAULT '', link_type TEXT DEFAULT 'none', link_value TEXT DEFAULT '', starts_at TEXT DEFAULT '', ends_at TEXT DEFAULT '', is_active INTEGER DEFAULT 1, sort_order INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS plans (code TEXT PRIMARY KEY, name TEXT NOT NULL, rank INTEGER DEFAULT 1, price INTEGER DEFAULT 0, price_text TEXT DEFAULT '', tagline TEXT DEFAULT '', allows TEXT DEFAULT '[]', color TEXT DEFAULT '#f36f21', is_active INTEGER DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,  
   `CREATE TABLE IF NOT EXISTS user_settings (user_id INTEGER PRIMARY KEY, theme TEXT DEFAULT 'dark', default_quality TEXT DEFAULT 'auto', buffer_goal INTEGER DEFAULT 10, language TEXT DEFAULT 'vi', parental_pin TEXT DEFAULT '', parental_enabled INTEGER DEFAULT 0, settings_json TEXT DEFAULT '{}', updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS user_favorites (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, channel_id TEXT NOT NULL, sort_order INTEGER DEFAULT 0, group_name TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, channel_id))`,
@@ -706,6 +707,13 @@ async function ensureSchema(env) {
       await env.DB.prepare("INSERT OR IGNORE INTO plans (code, name, rank, price, price_text, tagline, allows, color) VALUES ('standard', 'STANDARD', 1, 0, 'TẠM FREE', 'Kênh Việt Nam', ?, '#42a5f5')").bind(JSON.stringify(["Kênh truyền hình Việt Nam (VTV, HTV, THVL, SCTV...)"])).run();
       await env.DB.prepare("INSERT OR IGNORE INTO plans (code, name, rank, price, price_text, tagline, allows, color) VALUES ('recreational', 'RECREATIONAL', 2, 0, 'TẠM FREE', 'Kênh VN + Kênh Phim', ?, '#ab47bc')").bind(JSON.stringify(["Toàn bộ kênh Việt Nam", "Các kênh Phim / Giải trí (BOX, HBO, AXN...)"])).run();
       await env.DB.prepare("INSERT OR IGNORE INTO plans (code, name, rank, price, price_text, tagline, allows, color) VALUES ('vip', 'VIP', 3, 0, 'TẠM FREE', 'Xem hết — tất cả kênh', ?, '#f36f21')").bind(JSON.stringify(["Toàn bộ kênh VN + Phim + Thể thao", "Kênh Quốc tế & đặc biệt", "Ưu tiên hỗ trợ 24/7"])).run();
+      try {
+        const { results: evCount } = await env.DB.prepare("SELECT COUNT(*) AS c FROM events").all();
+        if (!evCount?.[0]?.c) {
+          await env.DB.prepare("INSERT INTO events (title, subtitle, image_url, link_type, link_value, sort_order) VALUES (?, ?, ?, 'tab', 'movies', 0)").bind("🎬 Kho phim bom tấn", "Hàng nghìn phim & TV show — xem miễn phí", "").run();
+          await env.DB.prepare("INSERT INTO events (title, subtitle, image_url, link_type, link_value, sort_order) VALUES (?, ?, ?, 'tab', 'plans', 1)").bind("💎 Khuyến mãi ra mắt", "Kích hoạt mọi gói cước MIỄN PHÍ trong thời gian ưu đãi", "").run();
+        }
+      } catch {}
     } catch {}
     schemaReady = true;
     return true;
@@ -764,6 +772,14 @@ async function handleAPI(path, request, env, ctx) {
       const plans = (results || []).map(p => ({ ...p, allows: JSON.parse(p.allows || "[]") }));
       return json({ success: true, plans }, 200, request, env);
     } catch { return json({ success: true, plans: [] }, 200, request, env); }
+  }
+  if (path === "/api/events" && request.method === "GET") {
+    await ensureSchema(env);
+    try {
+      const now = new Date().toISOString().slice(0, 19).replace("T", " ");
+      const { results } = await env.DB.prepare("SELECT id, title, subtitle, image_url, link_type, link_value FROM events WHERE is_active = 1 AND (starts_at = '' OR starts_at IS NULL OR starts_at <= ?) AND (ends_at = '' OR ends_at IS NULL OR ends_at >= ?) ORDER BY sort_order ASC, id DESC LIMIT 20").bind(now, now).all();
+      return json({ success: true, events: results || [] }, 200, request, env);
+    } catch { return json({ success: true, events: [] }, 200, request, env); }
   }
   if (path === "/api/shorts/react") return await handleShortReact(request, env);
   if (path === "/auth/qr/request" || path === "/auth/qr/approve" || path === "/auth/qr/poll") return await handleQrLogin(request, env);
@@ -2245,6 +2261,28 @@ async function handleAdmin(path, request, env, ctx) {
     if (["standard", "recreational", "vip"].includes(String(code).toLowerCase())) return json({ error: "Không xoá gói mặc định — hãy tắt hiển thị." }, 400, request, env);
     await env.DB.prepare("DELETE FROM plans WHERE code = ?").bind(code).run();
     _planRankCache = { at: 0, map: null };
+    return json({ success: true }, 200, request, env);
+  }
+  if (path === "/admin/events" && request.method === "GET") {
+    const { results } = await env.DB.prepare("SELECT * FROM events ORDER BY sort_order ASC, id DESC").all();
+    return json({ success: true, events: results || [] }, 200, request, env);
+  }
+  if (path === "/admin/events" && request.method === "POST") {
+    const b = await request.json().catch(() => ({}));
+    if (!b.title) return json({ error: "Thiếu tiêu đề" }, 400, request, env);
+    await env.DB.prepare("INSERT INTO events (title, subtitle, image_url, link_type, link_value, starts_at, ends_at, is_active, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(String(b.title).slice(0, 120), String(b.subtitle || "").slice(0, 300), String(b.image_url || "").slice(0, 500), String(b.link_type || "none").slice(0, 20), String(b.link_value || "").slice(0, 300), String(b.starts_at || "").slice(0, 19), String(b.ends_at || "").slice(0, 19), b.is_active === 0 ? 0 : 1, parseInt(b.sort_order) || 0).run();
+    return json({ success: true }, 200, request, env);
+  }
+  if (path === "/admin/events" && request.method === "PUT") {
+    const b = await request.json().catch(() => ({}));
+    if (!b.id) return json({ error: "Thiếu id" }, 400, request, env);
+    await env.DB.prepare("UPDATE events SET title = COALESCE(?, title), subtitle = COALESCE(?, subtitle), image_url = COALESCE(?, image_url), link_type = COALESCE(?, link_type), link_value = COALESCE(?, link_value), starts_at = COALESCE(?, starts_at), ends_at = COALESCE(?, ends_at), is_active = COALESCE(?, is_active), sort_order = COALESCE(?, sort_order) WHERE id = ?").bind(b.title ?? null, b.subtitle ?? null, b.image_url ?? null, b.link_type ?? null, b.link_value ?? null, b.starts_at ?? null, b.ends_at ?? null, b.is_active ?? null, b.sort_order ?? null, b.id).run();
+    return json({ success: true }, 200, request, env);
+  }
+  if (path === "/admin/events" && request.method === "DELETE") {
+    const { id } = await request.json().catch(() => ({}));
+    if (!id) return json({ error: "Thiếu id" }, 400, request, env);
+    await env.DB.prepare("DELETE FROM events WHERE id = ?").bind(id).run();
     return json({ success: true }, 200, request, env);
   }
   // Feedback báo lỗi kênh (1 chạm từ player)

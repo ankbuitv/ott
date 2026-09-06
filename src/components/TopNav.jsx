@@ -283,14 +283,6 @@ function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, s
           )}
         </div>
         <button
-          onClick={() => setActiveTab && setActiveTab('shorts')}
-          className={`w-9 h-9 rounded-full flex items-center justify-center text-sm transition ${activeTab === 'shorts' ? 'bg-[#f36f21] text-white' : 'bg-white/5 hover:bg-white/10 text-slate-200'}`}
-          title={t('nav.shortcuts')}
-          aria-label={t('nav.shortcuts')}
-        >
-          ▶️
-        </button>
-        <button
           onClick={() => setActiveTab && setActiveTab('plans')}
           className="hidden sm:flex items-center gap-1.5 px-4 py-2 rounded-lg text-[12px] font-extrabold text-white btn-orange"
           title={t('plans.free_hint')}

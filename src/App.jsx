@@ -21,6 +21,7 @@ import AuthScreen from './components/AuthScreen';
 import ProfileGate from './components/ProfileGate';
 import AdminPanel from './components/AdminPanel';
 import HomePage from './components/HomePage';
+import TVPage from './components/TVPage';
 import BroadcastBanner from './components/BroadcastBanner';
 import FocusableWrapper from './components/FocusableWrapper';
 import MoviesScreen from './components/MoviesScreen';
@@ -79,6 +80,11 @@ function AppContent() {
   const [isCatchupMode, setIsCatchupMode] = useState(false);
   const [catchupProgram, setCatchupProgram] = useState(null);
   const [isPlayerOpen, setIsPlayerOpen] = useState(false);
+  // Trang TV xem kênh riêng (player inline + EPG)
+  const [tvChannel, setTvChannel] = useState(null);
+  const [tvStreamUrl, setTvStreamUrl] = useState(null);
+  const [tvLoading, setTvLoading] = useState(false);
+  const tvAutoTried = useRef(false);
   const [miniPlayer, setMiniPlayer] = useState(false);
   const [miniPos, setMiniPos] = useState({ x: 0, y: 0 });
   const miniDrag = useRef(null);
@@ -256,6 +262,57 @@ function AppContent() {
     openChannel(channel);
   }, [addToast, effPlan, guestMode, promptLogin, openChannel]);
 
+  // Mở kênh trên trang TV (player inline, không overlay)
+  const handleOpenTvChannel = useCallback(async (channel) => {
+    if (!channel) return;
+    if (channel && guestMode && !planAllows('standard', channel.group_title)) {
+      promptLogin(t('app.need_login_ch', { name: channel.name }));
+      return;
+    }
+    if (channel && !guestMode && !planAllows(effPlan, channel.group_title)) {
+      addToast(t('app.plan_needed', { name: channel.name }), 'error');
+      setActiveTab('plans');
+      return;
+    }
+    setTvLoading(true);
+    try {
+      const url = await requestStreamAccess(channel, {});
+      if (!url) throw Object.assign(new Error('NO_URL'), { code: 'TOKEN_ERROR' });
+      setTvChannel(channel);
+      setTvStreamUrl(url);
+    } catch (e) {
+      const code = e?.code || String(e?.message || '');
+      if (code === 'LOGIN_REQUIRED') promptLogin(t('app.need_login_ch', { name: channel.name }));
+      else if (code === 'PLAN_REQUIRED') { addToast(t('app.plan_needed', { name: channel.name }), 'error'); setActiveTab('plans'); }
+      else if (code !== 'NO_SESSION') addToast(t('app.stream_fail'), 'error');
+    } finally {
+      setTvLoading(false);
+    }
+  }, [addToast, effPlan, guestMode, promptLogin, t]);
+
+  const handleNextTv = useCallback(() => {
+    if (!tvChannel || channels.length === 0) return;
+    const idx = channels.findIndex(c => c.channel_id === tvChannel.channel_id);
+    handleOpenTvChannel(channels[(idx + 1) % channels.length]);
+  }, [tvChannel, channels, handleOpenTvChannel]);
+
+  const handlePrevTv = useCallback(() => {
+    if (!tvChannel || channels.length === 0) return;
+    const idx = channels.findIndex(c => c.channel_id === tvChannel.channel_id);
+    handleOpenTvChannel(channels[(idx - 1 + channels.length) % channels.length]);
+  }, [tvChannel, channels, handleOpenTvChannel]);
+
+  // Vào trang TV lần đầu → tự mở Vietnam Today
+  useEffect(() => {
+    if (activeTab !== 'tv') { tvAutoTried.current = false; return; }
+    if (tvAutoTried.current || tvChannel || tvStreamUrl || tvLoading || channels.length === 0) return;
+    tvAutoTried.current = true;
+    const def = channels.find(c => /vietnam\s*today/i.test(`${c.channel_id || ''} ${c.name || ''}`))
+      || channels.find(c => /today/i.test(`${c.channel_id || ''} ${c.name || ''}`))
+      || channels[0];
+    if (def) handleOpenTvChannel(def);
+  }, [activeTab, channels, tvChannel, tvStreamUrl, tvLoading, handleOpenTvChannel]);
+
   const handlePlayCatchup = useCallback((channel, program) => {
     // Xem CHƯƠNG TRÌNH đã phát (catchup) => bắt buộc đăng nhập
     if (guestMode) {
@@ -404,7 +461,25 @@ function AppContent() {
           <div className="px-5 md:px-8 pt-3 max-w-[1400px] mx-auto w-full">
             <BroadcastBanner />
           </div>
-          {activeTab === 'epg' ? (
+          {activeTab === 'tv' ? (
+            <TVPage
+              channels={channels}
+              epgData={epgData}
+              tvChannel={tvChannel}
+              tvStreamUrl={tvStreamUrl}
+              tvLoading={tvLoading}
+              onOpenTvChannel={handleOpenTvChannel}
+              onPlayCatchup={handlePlayCatchup}
+              onToggleFavorite={handleToggleFavorite}
+              favorites={favorites}
+              onNextTv={handleNextTv}
+              onPrevTv={handlePrevTv}
+              onCloseTv={() => { setTvChannel(null); setTvStreamUrl(null); }}
+              partyRoom={deepPartyRoom}
+              userName={currentProfile?.name || effUser?.display_name || effUser?.username || t('app.guest')}
+              getEpgForChannel={getEpgForChannel}
+            />
+          ) : activeTab === 'epg' ? (
             <EpgGridTimeline channels={channels} epgData={epgData} onPlayCatchup={handlePlayCatchup} onSelectChannel={handleSelectChannel} onRequireLogin={promptLogin} />
           ) : activeTab === 'shorts' ? (
             <ShortsScreen
@@ -435,6 +510,8 @@ function AppContent() {
                   searchQuery={searchQuery}
                   setSearchQuery={setSearchQuery}
                   isLoading={isLoading}
+                  onSelectMovie={(m) => { setMovieToOpen(m); goTab('movies'); }}
+                  onGoTab={goTab}
                 />
               ) : (
                 <div className="max-w-[1400px] mx-auto px-8 py-8">

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Users, BarChart3, Bell, Radio, Send, Eye, TrendingUp, Calendar, Plus, Trash2, Save, X, ScrollText, Ban, KeyRound, ShieldCheck, ChevronDown, Flag, Clapperboard, Crown } from 'lucide-react';
+import { Settings, Users, BarChart3, Bell, Radio, Send, Eye, TrendingUp, Calendar, Plus, Trash2, Save, X, ScrollText, Ban, KeyRound, ShieldCheck, ChevronDown, Flag, Clapperboard, Crown, PartyPopper } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { API_BASE } from '../services/config';
@@ -38,6 +38,9 @@ export default function AdminPanel({ onClose }) {
   const [feedback, setFeedback] = useState([]);
   const [shorts, setShorts] = useState([]);
   const [shortForm, setShortForm] = useState({ title: '', caption: '', video_url: '', thumb_url: '', author: 'CHRTV' });
+  const [events, setEvents] = useState([]);
+  const [evForm, setEvForm] = useState({ title: '', subtitle: '', image_url: '', link_type: 'none', link_value: '', starts_at: '', ends_at: '', sort_order: 0 });
+  const [editingEv, setEditingEv] = useState(null);
   const [plans, setPlans] = useState([]);
   const [planForm, setPlanForm] = useState({ code: '', name: '', rank: 1, price: 0, price_text: '', tagline: '', allows: '', color: '#f36f21' });
   const [editingPlan, setEditingPlan] = useState(null);
@@ -78,6 +81,7 @@ export default function AdminPanel({ onClose }) {
     fetch(`${BASE}/admin/stream-credentials`, { headers }).then(r => r.json()).then(d => setCreds(d.credentials || [])).catch(() => {});
     fetch(`${BASE}/admin/feedback`, { headers }).then(r => r.json()).then(d => setFeedback(d.feedback || [])).catch(() => {});
     fetch(`${BASE}/admin/shorts`, { headers }).then(r => r.json()).then(d => setShorts(d.shorts || [])).catch(() => {});
+    fetch(`${BASE}/admin/events`, { headers }).then(r => r.json()).then(d => setEvents(d.events || [])).catch(() => {});
     fetch(`${BASE}/admin/plans`, { headers }).then(r => r.json()).then(d => setPlans(d.plans || [])).catch(() => {});
   }, [token]);
 
@@ -230,7 +234,7 @@ export default function AdminPanel({ onClose }) {
         </div>
 
         <div className="flex border-b border-slate-800/40 overflow-x-auto">
-          {[{ id: 'stats', label: 'Thống kê', icon: BarChart3 }, { id: 'users', label: 'Người dùng', icon: Users }, { id: 'audit', label: 'Nhật ký', icon: ScrollText }, { id: 'notify', label: 'Thông báo', icon: Bell }, { id: 'broadcast', label: 'Broadcast', icon: Send }, { id: 'epg', label: 'EPG kênh', icon: Calendar }, { id: 'analytics', label: 'Analytics', icon: TrendingUp }, { id: 'credentials', label: 'Chìa khoá stream', icon: KeyRound }, { id: 'feedback', label: 'Báo lỗi', icon: Flag }, { id: 'shorts', label: 'Shorts', icon: Clapperboard }, { id: 'plans', label: 'Gói cước', icon: Crown }].map(t => (
+          {[{ id: 'stats', label: 'Thống kê', icon: BarChart3 }, { id: 'users', label: 'Người dùng', icon: Users }, { id: 'audit', label: 'Nhật ký', icon: ScrollText }, { id: 'notify', label: 'Thông báo', icon: Bell }, { id: 'broadcast', label: 'Broadcast', icon: Send }, { id: 'epg', label: 'EPG kênh', icon: Calendar }, { id: 'analytics', label: 'Analytics', icon: TrendingUp }, { id: 'credentials', label: 'Chìa khoá stream', icon: KeyRound }, { id: 'feedback', label: 'Báo lỗi', icon: Flag }, { id: 'shorts', label: 'Shorts', icon: Clapperboard }, { id: 'plans', label: 'Gói cước', icon: Crown }, { id: 'events', label: 'Sự kiện', icon: PartyPopper }].map(t => (
             <button key={t.id} onClick={() => setTab(t.id)} className={`flex items-center gap-1.5 px-4 py-2 text-[11px] font-semibold transition-all whitespace-nowrap ${tab === t.id ? 'text-[#ff9a3d] border-b-2 border-[#f36f21]' : 'text-slate-500 hover:text-white'}`}>
               <t.icon className="w-3 h-3" /> {t.label}
             </button>
@@ -573,6 +577,118 @@ export default function AdminPanel({ onClose }) {
                   <input type="number" min={0} value={planForm.price} onChange={e => setPlanForm({ ...planForm, price: e.target.value })} placeholder="Giá VNĐ (0 = free)" className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
                 </div>
                 <button type="submit" className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold rounded-xl flex items-center justify-center gap-1.5"><Plus className="w-3.5 h-3.5" /> Thêm gói</button>
+              </form>
+            </div>
+          )}
+          {tab === 'events' && (
+            <div className="space-y-3">
+              <div className="rounded-lg border border-fuchsia-600/30 bg-fuchsia-950/20 p-3">
+                <p className="text-[11px] text-fuchsia-200/90 leading-relaxed">
+                  Banner chạy đầu <b>trang chủ</b>. Bấm vào banner sẽ: <b>none</b> = không làm gì · <b>tab</b> = mở mục (movies/tv/epg/plans) · <b>channel</b> = mở kênh (điền channel_id) · <b>url</b> = mở link ngoài.
+                </p>
+              </div>
+              <div className="space-y-2">
+                {events.length === 0 && <p className="text-xs text-slate-500 text-center py-3">Chưa có sự kiện nào</p>}
+                {events.map(ev => {
+                  const ed = editingEv === ev.id;
+                  return (
+                    <div key={ev.id} className="bg-slate-900/40 rounded-xl px-3 py-2.5 border border-slate-800/30 space-y-2">
+                      <div className="flex items-center gap-2.5">
+                        {ev.image_url ? <img src={ev.image_url} alt="" className="w-14 h-9 object-cover rounded-md shrink-0" onError={e => e.target.style.display = 'none'} /> : <span className="w-14 h-9 rounded-md grad-brand flex items-center justify-center text-base shrink-0">🎉</span>}
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[12px] font-black text-white truncate">{ev.title}</p>
+                          <p className="text-[9px] text-slate-500 truncate">{ev.link_type !== 'none' ? `${ev.link_type}:${ev.link_value}` : 'không link'} · thứ tự {ev.sort_order} {ev.is_active === 0 ? '· 🙈 ẩn' : ''}</p>
+                        </div>
+                        <button onClick={() => { setEditingEv(ed ? null : ev.id); setEvForm({ title: ev.title || '', subtitle: ev.subtitle || '', image_url: ev.image_url || '', link_type: ev.link_type || 'none', link_value: ev.link_value || '', starts_at: (ev.starts_at || '').replace(' ', 'T').slice(0, 16), ends_at: (ev.ends_at || '').replace(' ', 'T').slice(0, 16), sort_order: ev.sort_order || 0 }); }} className="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-slate-800 text-slate-300 hover:text-white">{ed ? 'Đóng' : 'Sửa'}</button>
+                        <button
+                          onClick={async () => {
+                            const ns = ev.is_active === 0 ? 1 : 0;
+                            await fetch(`${BASE}/admin/events`, { method: 'PUT', headers, body: JSON.stringify({ id: ev.id, is_active: ns }) });
+                            setEvents(prev => prev.map(x => x.id === ev.id ? { ...x, is_active: ns } : x));
+                          }}
+                          className="p-1.5 text-slate-500 hover:text-white" title={ev.is_active === 0 ? 'Hiện' : 'Ẩn'}
+                        ><Eye className="w-3.5 h-3.5" /></button>
+                        <button
+                          onClick={async () => {
+                            if (!confirm('Xoá sự kiện này?')) return;
+                            await fetch(`${BASE}/admin/events`, { method: 'DELETE', headers, body: JSON.stringify({ id: ev.id }) });
+                            setEvents(prev => prev.filter(x => x.id !== ev.id));
+                          }}
+                          className="p-1.5 text-slate-500 hover:text-[#ff9a3d]" title="Xoá"
+                        ><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
+                      {ed && (
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                          <input value={evForm.title} onChange={e => setEvForm({ ...evForm, title: e.target.value })} placeholder="Tiêu đề" className="col-span-2 bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                          <input value={evForm.subtitle} onChange={e => setEvForm({ ...evForm, subtitle: e.target.value })} placeholder="Mô tả ngắn" className="col-span-2 bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                          <input value={evForm.image_url} onChange={e => setEvForm({ ...evForm, image_url: e.target.value })} placeholder="Ảnh banner https://... (trống = nền gradient)" className="col-span-2 bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                          <select value={evForm.link_type} onChange={e => setEvForm({ ...evForm, link_type: e.target.value })} className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-2 py-1.5 text-[11px] text-white">
+                            <option value="none">Không link</option>
+                            <option value="tab">Mở mục (tab)</option>
+                            <option value="channel">Mở kênh</option>
+                            <option value="url">Link ngoài</option>
+                          </select>
+                          <input value={evForm.link_value} onChange={e => setEvForm({ ...evForm, link_value: e.target.value })} placeholder="movies / channel_id / https://..." className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[9px] text-slate-500 shrink-0">Từ</span>
+                            <input type="datetime-local" value={evForm.starts_at} onChange={e => setEvForm({ ...evForm, starts_at: e.target.value })} className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-1.5 py-1.5 text-[10px] text-white" />
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[9px] text-slate-500 shrink-0">Đến</span>
+                            <input type="datetime-local" value={evForm.ends_at} onChange={e => setEvForm({ ...evForm, ends_at: e.target.value })} className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-1.5 py-1.5 text-[10px] text-white" />
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] text-slate-500">Thứ tự</span>
+                            <input type="number" value={evForm.sort_order} onChange={e => setEvForm({ ...evForm, sort_order: e.target.value })} className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-2 py-1.5 text-[11px] text-white" />
+                          </div>
+                          <button
+                            onClick={async () => {
+                              const body = { ...evForm, id: ev.id, sort_order: parseInt(evForm.sort_order) || 0, starts_at: (evForm.starts_at || '').replace('T', ' ').slice(0, 19), ends_at: (evForm.ends_at || '').replace('T', ' ').slice(0, 19) };
+                              const r = await fetch(`${BASE}/admin/events`, { method: 'PUT', headers, body: JSON.stringify(body) });
+                              const d = await r.json();
+                              if (d.success) {
+                                addToast('Đã lưu sự kiện', 'success');
+                                setEditingEv(null);
+                                fetch(`${BASE}/admin/events`, { headers }).then(r2 => r2.json()).then(dd => setEvents(dd.events || [])).catch(() => {});
+                              } else addToast(d.error || 'Lỗi', 'error');
+                            }}
+                            className="py-2 btn-orange text-white text-[11px] font-bold rounded-xl"
+                          >Lưu</button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!evForm.title.trim()) { addToast('Nhập tiêu đề', 'error'); return; }
+                  const body = { ...evForm, sort_order: parseInt(evForm.sort_order) || 0, starts_at: (evForm.starts_at || '').replace('T', ' ').slice(0, 19), ends_at: (evForm.ends_at || '').replace('T', ' ').slice(0, 19) };
+                  const r = await fetch(`${BASE}/admin/events`, { method: 'POST', headers, body: JSON.stringify(body) });
+                  const d = await r.json();
+                  if (d.success) {
+                    addToast('Đã thêm sự kiện!', 'success');
+                    setEvForm({ title: '', subtitle: '', image_url: '', link_type: 'none', link_value: '', starts_at: '', ends_at: '', sort_order: 0 });
+                    fetch(`${BASE}/admin/events`, { headers }).then(r2 => r2.json()).then(dd => setEvents(dd.events || [])).catch(() => {});
+                  } else addToast(d.error || 'Lỗi', 'error');
+                }}
+                className="space-y-2 bg-slate-900/40 rounded-xl p-3 border border-slate-800/40"
+              >
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Thêm sự kiện mới</p>
+                <input value={evForm.title} onChange={e => setEvForm({ ...evForm, title: e.target.value })} placeholder="Tiêu đề (vd: 🎉 Chung kết AFF Cup)" className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                <input value={evForm.subtitle} onChange={e => setEvForm({ ...evForm, subtitle: e.target.value })} placeholder="Mô tả ngắn" className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                <input value={evForm.image_url} onChange={e => setEvForm({ ...evForm, image_url: e.target.value })} placeholder="Ảnh banner https://... (trống = nền gradient)" className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                <div className="grid grid-cols-2 gap-2">
+                  <select value={evForm.link_type} onChange={e => setEvForm({ ...evForm, link_type: e.target.value })} className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-2 py-1.5 text-[11px] text-white">
+                    <option value="none">Không link</option>
+                    <option value="tab">Mở mục (tab)</option>
+                    <option value="channel">Mở kênh</option>
+                    <option value="url">Link ngoài</option>
+                  </select>
+                  <input value={evForm.link_value} onChange={e => setEvForm({ ...evForm, link_value: e.target.value })} placeholder="movies / channel_id / https://..." className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                </div>
+                <button type="submit" className="w-full py-2 bg-fuchsia-600 hover:bg-fuchsia-500 text-white text-[11px] font-bold rounded-xl flex items-center justify-center gap-1.5"><Plus className="w-3.5 h-3.5" /> Thêm sự kiện</button>
               </form>
             </div>
           )}

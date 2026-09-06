@@ -5305,5 +5305,3 @@ function handleWebSocket(request, env, ctx) {
 
   return new Response(null, { status: 101, webSocket: client });
 }
-ew Response(null, { status: 101, webSocket: client });
-}

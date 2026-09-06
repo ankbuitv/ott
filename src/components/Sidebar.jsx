@@ -10,6 +10,7 @@ function HeartIcon() { return <svg className="w-5 h-5" fill="none" stroke="curre
 function CrownIcon() { return <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M2 18h20l-2-9-5 4-3-7-3 7-5-4-2 9z"/></svg>; }
 function ClockIcon() { return <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>; }
 function TvIcon() { return <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M8 21h8m-4-3v3"/></svg>; }
+function SportsIcon() { return <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7l2.5 1.8-1 2.9h-3l-1-2.9z" fill="currentColor" stroke="none"/><path d="M12 3v4M5.5 8.5l3.5 2M18.5 8.5l-3.5 2M7 20l1.5-3.5M17 20l-1.5-3.5"/></svg>; }
 function ShortsIcon() { return <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24"><rect x="6" y="2.5" width="12" height="19" rx="3"/><path d="M10.5 9.5v5l4.5-2.5z" fill="currentColor" stroke="none"/></svg>; }
 function SettingsIcon() { return <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>; }
 
@@ -23,10 +24,10 @@ export default function Sidebar({ activeTab, setActiveTab, onShowSettings, onSho
   const navItems = [
     { id: 'channels', label: t('nav.home').toUpperCase(), icon: HomeIcon },
     { id: 'tv', label: 'TV', icon: TvIcon },
+    { id: 'sports', label: 'SPORT', icon: SportsIcon },
     { id: 'epg', label: 'EPG', icon: CalendarIcon },
     { id: 'movies', label: t('nav.movies').toUpperCase(), icon: FilmIcon },
     { id: 'shorts', label: t('nav.shortcuts').toUpperCase(), icon: ShortsIcon },
-    { id: 'plans', label: t('nav.plans').toUpperCase(), icon: CrownIcon },
   ];
 
   return (

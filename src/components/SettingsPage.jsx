@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, RotateCcw, Eye, EyeOff, Globe, Database, Shield, Monitor, Trash2, Languages, Moon, Sun, MapPin, Info, Cpu, Leaf, Copy, CheckCircle2, ShieldOff, Palette, Tv, Trophy, Smartphone, LogOut, QrCode } from 'lucide-react';
+import { Settings, RotateCcw, Crown, Eye, EyeOff, Globe, Database, Shield, Monitor, Trash2, Languages, Moon, Sun, MapPin, Info, Cpu, Leaf, Copy, CheckCircle2, ShieldOff, Palette, Tv, Trophy, Smartphone, LogOut, QrCode } from 'lucide-react';
 import QrScanner from './QrScanner';
+import PlansScreen from './PlansScreen';
 import { BADGES, getStats, fmtHours, badgeName, badgeDesc } from '../services/achievements';
 import { API_BASE } from '../services/config';
 import { useSettings } from '../contexts/SettingsContext';
@@ -134,6 +135,7 @@ export default function SettingsPage({ onClose }) {
     { id: 'sessions', label: t('settings.sessions'), Icon: Smartphone },
     { id: 'badges', label: t('settings.ach_title'), Icon: Trophy },
     { id: '2fa', label: '2FA', Icon: QrCode },
+    { id: 'plans', label: t('nav.plans'), Icon: Crown },
     { id: 'about', label: t('settings.about'), Icon: Info },
   ];
 
@@ -174,6 +176,7 @@ export default function SettingsPage({ onClose }) {
         </nav>
         {/* RIGHT: content */}
         <div className="flex-1 min-w-0 w-full">
+        {active === 'plans' ? <PlansScreen /> : (<>
         {/* ===== NGÔN NGỮ ===== */}
         {active === 'lang' && (
         <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 shadow-xl shadow-black/30 space-y-4 md:col-span-2">
@@ -591,6 +594,7 @@ export default function SettingsPage({ onClose }) {
           </div>
         </div>
         )}
+        </>)}
         </div>
       </div>
     </div>

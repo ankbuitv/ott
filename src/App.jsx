@@ -22,6 +22,7 @@ import ProfileGate from './components/ProfileGate';
 import AdminPanel from './components/AdminPanel';
 import HomePage from './components/HomePage';
 import TVPage from './components/TVPage';
+import SportsScreen from './components/SportsScreen';
 import BroadcastBanner from './components/BroadcastBanner';
 import FocusableWrapper from './components/FocusableWrapper';
 import MoviesScreen from './components/MoviesScreen';
@@ -479,6 +480,8 @@ function AppContent() {
               userName={currentProfile?.name || effUser?.display_name || effUser?.username || t('app.guest')}
               getEpgForChannel={getEpgForChannel}
             />
+          ) : activeTab === 'sports' ? (
+            <SportsScreen channels={channels} onSelectChannel={handleSelectChannel} />
           ) : activeTab === 'epg' ? (
             <EpgGridTimeline channels={channels} epgData={epgData} onPlayCatchup={handlePlayCatchup} onSelectChannel={handleSelectChannel} onRequireLogin={promptLogin} />
           ) : activeTab === 'shorts' ? (

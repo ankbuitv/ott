@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Users, BarChart3, Bell, Radio, Send, Eye, TrendingUp, Calendar, Plus, Trash2, Save, X, ScrollText, Ban, KeyRound, ShieldCheck, ChevronDown, Flag, Clapperboard, Crown, PartyPopper } from 'lucide-react';
+import { Settings, Users, BarChart3, Bell, Radio, Send, Eye, TrendingUp, Calendar, Plus, Trash2, Save, X, ScrollText, Ban, KeyRound, ShieldCheck, ChevronDown, Flag, Clapperboard, Crown, PartyPopper, Video } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { API_BASE } from '../services/config';
@@ -41,6 +41,8 @@ export default function AdminPanel({ onClose }) {
   const [events, setEvents] = useState([]);
   const [evForm, setEvForm] = useState({ title: '', subtitle: '', image_url: '', link_type: 'none', link_value: '', starts_at: '', ends_at: '', sort_order: 0 });
   const [editingEv, setEditingEv] = useState(null);
+  const [sportsVids, setSportsVids] = useState([]);
+  const [svForm, setSvForm] = useState({ title: '', league: '', thumb_url: '', video_url: '', duration: '', sort_order: 0 });
   const [plans, setPlans] = useState([]);
   const [planForm, setPlanForm] = useState({ code: '', name: '', rank: 1, price: 0, price_text: '', tagline: '', allows: '', color: '#f36f21' });
   const [editingPlan, setEditingPlan] = useState(null);
@@ -82,6 +84,7 @@ export default function AdminPanel({ onClose }) {
     fetch(`${BASE}/admin/feedback`, { headers }).then(r => r.json()).then(d => setFeedback(d.feedback || [])).catch(() => {});
     fetch(`${BASE}/admin/shorts`, { headers }).then(r => r.json()).then(d => setShorts(d.shorts || [])).catch(() => {});
     fetch(`${BASE}/admin/events`, { headers }).then(r => r.json()).then(d => setEvents(d.events || [])).catch(() => {});
+    fetch(`${BASE}/admin/sports-videos`, { headers }).then(r => r.json()).then(d => setSportsVids(d.videos || [])).catch(() => {});
     fetch(`${BASE}/admin/plans`, { headers }).then(r => r.json()).then(d => setPlans(d.plans || [])).catch(() => {});
   }, [token]);
 
@@ -234,7 +237,7 @@ export default function AdminPanel({ onClose }) {
         </div>
 
         <div className="flex border-b border-slate-800/40 overflow-x-auto">
-          {[{ id: 'stats', label: 'Thống kê', icon: BarChart3 }, { id: 'users', label: 'Người dùng', icon: Users }, { id: 'audit', label: 'Nhật ký', icon: ScrollText }, { id: 'notify', label: 'Thông báo', icon: Bell }, { id: 'broadcast', label: 'Broadcast', icon: Send }, { id: 'epg', label: 'EPG kênh', icon: Calendar }, { id: 'analytics', label: 'Analytics', icon: TrendingUp }, { id: 'credentials', label: 'Chìa khoá stream', icon: KeyRound }, { id: 'feedback', label: 'Báo lỗi', icon: Flag }, { id: 'shorts', label: 'Shorts', icon: Clapperboard }, { id: 'plans', label: 'Gói cước', icon: Crown }, { id: 'events', label: 'Sự kiện', icon: PartyPopper }].map(t => (
+          {[{ id: 'stats', label: 'Thống kê', icon: BarChart3 }, { id: 'users', label: 'Người dùng', icon: Users }, { id: 'audit', label: 'Nhật ký', icon: ScrollText }, { id: 'notify', label: 'Thông báo', icon: Bell }, { id: 'broadcast', label: 'Broadcast', icon: Send }, { id: 'epg', label: 'EPG kênh', icon: Calendar }, { id: 'analytics', label: 'Analytics', icon: TrendingUp }, { id: 'credentials', label: 'Chìa khoá stream', icon: KeyRound }, { id: 'feedback', label: 'Báo lỗi', icon: Flag }, { id: 'shorts', label: 'Shorts', icon: Clapperboard }, { id: 'plans', label: 'Gói cước', icon: Crown }, { id: 'events', label: 'Sự kiện', icon: PartyPopper }, { id: 'sportsvids', label: 'Video TT', icon: Video }].map(t => (
             <button key={t.id} onClick={() => setTab(t.id)} className={`flex items-center gap-1.5 px-4 py-2 text-[11px] font-semibold transition-all whitespace-nowrap ${tab === t.id ? 'text-[#ff9a3d] border-b-2 border-[#f36f21]' : 'text-slate-500 hover:text-white'}`}>
               <t.icon className="w-3 h-3" /> {t.label}
             </button>
@@ -690,6 +693,68 @@ export default function AdminPanel({ onClose }) {
                 </div>
                 <button type="submit" className="w-full py-2 bg-fuchsia-600 hover:bg-fuchsia-500 text-white text-[11px] font-bold rounded-xl flex items-center justify-center gap-1.5"><Plus className="w-3.5 h-3.5" /> Thêm sự kiện</button>
               </form>
+            </div>
+          )}
+          {tab === 'sportsvids' && (
+            <div className="space-y-3">
+              <div className="rounded-lg border border-emerald-600/30 bg-emerald-950/20 p-3">
+                <p className="text-[11px] text-emerald-200/90 leading-relaxed">
+                  Video xem lại trong trang <b>Thể thao</b>. Link YouTube (watch/shorts/youtu.be) tự nhúng · mp4 phát trực tiếp.
+                </p>
+              </div>
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!svForm.title.trim() || !svForm.video_url.trim()) { addToast('Nhập tiêu đề + link video', 'error'); return; }
+                  const r = await fetch(`${BASE}/admin/sports-videos`, { method: 'POST', headers, body: JSON.stringify({ ...svForm, sort_order: parseInt(svForm.sort_order) || 0 }) });
+                  const d = await r.json();
+                  if (d.success) {
+                    addToast('Đã thêm video!', 'success');
+                    setSvForm({ title: '', league: '', thumb_url: '', video_url: '', duration: '', sort_order: 0 });
+                    fetch(`${BASE}/admin/sports-videos`, { headers }).then(r2 => r2.json()).then(dd => setSportsVids(dd.videos || [])).catch(() => {});
+                  } else addToast(d.error || 'Lỗi', 'error');
+                }}
+                className="space-y-2 bg-slate-900/40 rounded-xl p-3 border border-slate-800/40"
+              >
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Thêm video xem lại</p>
+                <input value={svForm.title} onChange={e => setSvForm({ ...svForm, title: e.target.value })} placeholder="Tiêu đề (vd: Highlights MU 2-1 Everton)" className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                <input value={svForm.video_url} onChange={e => setSvForm({ ...svForm, video_url: e.target.value })} placeholder="Link YouTube hoặc mp4 https://..." className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                <div className="grid grid-cols-3 gap-2">
+                  <input value={svForm.league} onChange={e => setSvForm({ ...svForm, league: e.target.value })} placeholder="Giải (EPL...)" className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                  <input value={svForm.duration} onChange={e => setSvForm({ ...svForm, duration: e.target.value })} placeholder="Dài (10:24)" className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                  <input type="number" value={svForm.sort_order} onChange={e => setSvForm({ ...svForm, sort_order: e.target.value })} placeholder="Thứ tự" className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                </div>
+                <input value={svForm.thumb_url} onChange={e => setSvForm({ ...svForm, thumb_url: e.target.value })} placeholder="Ảnh bìa https://... (trống cũng được)" className="w-full bg-slate-800/60 border border-slate-700/50 rounded-lg px-2.5 py-1.5 text-[11px] text-white" />
+                <button type="submit" className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold rounded-xl flex items-center justify-center gap-1.5"><Plus className="w-3.5 h-3.5" /> Thêm video</button>
+              </form>
+              <div className="space-y-2">
+                {sportsVids.length === 0 && <p className="text-xs text-slate-500 text-center py-3">Chưa có video nào</p>}
+                {sportsVids.map(v => (
+                  <div key={v.id} className="flex items-center gap-2.5 bg-slate-900/40 rounded-lg px-3 py-2 border border-slate-800/30">
+                    {v.thumb_url ? <img src={v.thumb_url} alt="" className="w-16 h-9 object-cover rounded-md shrink-0" onError={e => e.target.style.display = 'none'} /> : <span className="w-16 h-9 rounded-md grad-brand flex items-center justify-center text-sm shrink-0">⚽</span>}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] font-bold text-white truncate">{v.title}</p>
+                      <p className="text-[9px] text-slate-500">{v.league || '—'} {v.is_active === 0 ? '· 🙈 ẩn' : ''}</p>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        const ns = v.is_active === 0 ? 1 : 0;
+                        await fetch(`${BASE}/admin/sports-videos`, { method: 'PUT', headers, body: JSON.stringify({ id: v.id, is_active: ns }) });
+                        setSportsVids(prev => prev.map(x => x.id === v.id ? { ...x, is_active: ns } : x));
+                      }}
+                      className="p-1.5 text-slate-500 hover:text-white" title={v.is_active === 0 ? 'Hiện' : 'Ẩn'}
+                    ><Eye className="w-3.5 h-3.5" /></button>
+                    <button
+                      onClick={async () => {
+                        if (!confirm('Xoá video này?')) return;
+                        await fetch(`${BASE}/admin/sports-videos`, { method: 'DELETE', headers, body: JSON.stringify({ id: v.id }) });
+                        setSportsVids(prev => prev.filter(x => x.id !== v.id));
+                      }}
+                      className="p-1.5 text-slate-500 hover:text-[#ff9a3d]" title="Xoá"
+                    ><Trash2 className="w-3.5 h-3.5" /></button>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
           {tab === 'shorts' && (

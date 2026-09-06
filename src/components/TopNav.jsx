@@ -282,13 +282,6 @@ function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, s
             </div>
           )}
         </div>
-        <button
-          onClick={() => setActiveTab && setActiveTab('plans')}
-          className="hidden sm:flex items-center gap-1.5 px-4 py-2 rounded-lg text-[12px] font-extrabold text-white btn-orange"
-          title={t('plans.free_hint')}
-        >
-          💎 {t('nav.plans')}
-        </button>
         <div className="relative" ref={notifRef}>
           <button
             onClick={() => { setNotifOpen((o) => !o); if (!notifOpen) setTimeout(markAllRead, 1500); }}

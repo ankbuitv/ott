@@ -628,6 +628,7 @@ const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS feedback (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER DEFAULT 0, channel_id TEXT DEFAULT '', message TEXT NOT NULL, client_info TEXT DEFAULT '', status TEXT DEFAULT 'new', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS shorts (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT DEFAULT '', caption TEXT DEFAULT '', video_url TEXT NOT NULL, thumb_url TEXT DEFAULT '', duration INTEGER DEFAULT 0, author TEXT DEFAULT '', views INTEGER DEFAULT 0, likes INTEGER DEFAULT 0, status TEXT DEFAULT 'live', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS qr_logins (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE NOT NULL, user_id INTEGER DEFAULT 0, status TEXT DEFAULT 'pending', device_info TEXT DEFAULT '', created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS sports_videos (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, league TEXT DEFAULT '', thumb_url TEXT DEFAULT '', video_url TEXT NOT NULL, duration TEXT DEFAULT '', is_active INTEGER DEFAULT 1, sort_order INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, subtitle TEXT DEFAULT '', image_url TEXT DEFAULT '', link_type TEXT DEFAULT 'none', link_value TEXT DEFAULT '', starts_at TEXT DEFAULT '', ends_at TEXT DEFAULT '', is_active INTEGER DEFAULT 1, sort_order INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS plans (code TEXT PRIMARY KEY, name TEXT NOT NULL, rank INTEGER DEFAULT 1, price INTEGER DEFAULT 0, price_text TEXT DEFAULT '', tagline TEXT DEFAULT '', allows TEXT DEFAULT '[]', color TEXT DEFAULT '#f36f21', is_active INTEGER DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,  
   `CREATE TABLE IF NOT EXISTS user_settings (user_id INTEGER PRIMARY KEY, theme TEXT DEFAULT 'dark', default_quality TEXT DEFAULT 'auto', buffer_goal INTEGER DEFAULT 10, language TEXT DEFAULT 'vi', parental_pin TEXT DEFAULT '', parental_enabled INTEGER DEFAULT 0, settings_json TEXT DEFAULT '{}', updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
@@ -780,6 +781,13 @@ async function handleAPI(path, request, env, ctx) {
       const { results } = await env.DB.prepare("SELECT id, title, subtitle, image_url, link_type, link_value FROM events WHERE is_active = 1 AND (starts_at = '' OR starts_at IS NULL OR starts_at <= ?) AND (ends_at = '' OR ends_at IS NULL OR ends_at >= ?) ORDER BY sort_order ASC, id DESC LIMIT 20").bind(now, now).all();
       return json({ success: true, events: results || [] }, 200, request, env);
     } catch { return json({ success: true, events: [] }, 200, request, env); }
+  }
+  if (path === "/api/sports-videos" && request.method === "GET") {
+    await ensureSchema(env);
+    try {
+      const { results } = await env.DB.prepare("SELECT id, title, league, thumb_url, video_url, duration FROM sports_videos WHERE is_active = 1 ORDER BY sort_order ASC, id DESC LIMIT 40").all();
+      return json({ success: true, videos: results || [] }, 200, request, env);
+    } catch { return json({ success: true, videos: [] }, 200, request, env); }
   }
   if (path === "/api/shorts/react") return await handleShortReact(request, env);
   if (path === "/auth/qr/request" || path === "/auth/qr/approve" || path === "/auth/qr/poll") return await handleQrLogin(request, env);
@@ -2283,6 +2291,28 @@ async function handleAdmin(path, request, env, ctx) {
     const { id } = await request.json().catch(() => ({}));
     if (!id) return json({ error: "Thiếu id" }, 400, request, env);
     await env.DB.prepare("DELETE FROM events WHERE id = ?").bind(id).run();
+    return json({ success: true }, 200, request, env);
+  }
+  if (path === "/admin/sports-videos" && request.method === "GET") {
+    const { results } = await env.DB.prepare("SELECT * FROM sports_videos ORDER BY sort_order ASC, id DESC").all();
+    return json({ success: true, videos: results || [] }, 200, request, env);
+  }
+  if (path === "/admin/sports-videos" && request.method === "POST") {
+    const b = await request.json().catch(() => ({}));
+    if (!b.title || !b.video_url) return json({ error: "Thiếu tiêu đề/link video" }, 400, request, env);
+    await env.DB.prepare("INSERT INTO sports_videos (title, league, thumb_url, video_url, duration, is_active, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(String(b.title).slice(0, 160), String(b.league || "").slice(0, 60), String(b.thumb_url || "").slice(0, 500), String(b.video_url).slice(0, 500), String(b.duration || "").slice(0, 20), b.is_active === 0 ? 0 : 1, parseInt(b.sort_order) || 0).run();
+    return json({ success: true }, 200, request, env);
+  }
+  if (path === "/admin/sports-videos" && request.method === "PUT") {
+    const b = await request.json().catch(() => ({}));
+    if (!b.id) return json({ error: "Thiếu id" }, 400, request, env);
+    await env.DB.prepare("UPDATE sports_videos SET title = COALESCE(?, title), league = COALESCE(?, league), thumb_url = COALESCE(?, thumb_url), video_url = COALESCE(?, video_url), duration = COALESCE(?, duration), is_active = COALESCE(?, is_active), sort_order = COALESCE(?, sort_order) WHERE id = ?").bind(b.title ?? null, b.league ?? null, b.thumb_url ?? null, b.video_url ?? null, b.duration ?? null, b.is_active ?? null, b.sort_order ?? null, b.id).run();
+    return json({ success: true }, 200, request, env);
+  }
+  if (path === "/admin/sports-videos" && request.method === "DELETE") {
+    const { id } = await request.json().catch(() => ({}));
+    if (!id) return json({ error: "Thiếu id" }, 400, request, env);
+    await env.DB.prepare("DELETE FROM sports_videos WHERE id = ?").bind(id).run();
     return json({ success: true }, 200, request, env);
   }
   // Feedback báo lỗi kênh (1 chạm từ player)

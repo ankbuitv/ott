@@ -9,7 +9,10 @@ import AuthModal from './components/AuthModal';
 // Khách vãng lai (chưa đăng nhập): vẫn vào web + xem kênh VN bình thường (mức Standard).
 // Xem chương trình đã phát (catchup), phim, hoặc kênh vượt gói => mới yêu cầu đăng nhập.
 const GUEST_USER = { id: 0, username: 'khach', display_name: 'Guest', role: 'guest', plan: '', guest: true };
-import { planAllows } from './services/plans';
+import { planAllows, rankOf } from './services/plans';
+import PrerollAd from './components/PrerollAd';
+import { fetchPreroll, loadPreviewState, subscribePreview, getPreviewState, fmtPreview } from './services/ads';
+import { setPrerollHandler, runPreroll } from './services/prerollGate';
 import TopNav from './components/TopNav';
 import VideoPlayer from './components/VideoPlayer';
 import EpgGridTimeline from './components/EpgGridTimeline';
@@ -63,6 +66,24 @@ function AppContent() {
   const guestMode = !isAuthenticated || !user;
   const effUser = guestMode ? GUEST_USER : user;
   const effPlan = guestMode ? 'standard' : (effectivePlan || user?.plan || 'standard');
+  // (34) Quảng cáo pre-roll + (xem thử 5 phút của gói Standard)
+  const [preroll, setPreroll] = useState(null);
+  const [preview, setPreview] = useState(getPreviewState());
+  useEffect(() => subscribePreview(setPreview), []);
+  useEffect(() => { if (!guestMode) loadPreviewState(); }, [guestMode, effPlan]);
+  useEffect(() => {
+    setPrerollHandler(async (kind, ref) => {
+      const d = await fetchPreroll({ kind, ref });
+      if (!d || !d.ad) return;
+      await new Promise((resolve) => setPreroll({ ad: d.ad, skipAfter: d.skip_after ?? 30, refId: ref, resolve }));
+    });
+    return () => setPrerollHandler(null);
+  }, []);
+  // Gói Standard còn quota -> vẫn cho bấm vào kênh ngoài gói, server sẽ cấp 5 phút xem thử
+  const canOpenChannel = useCallback((plan, groupTitle) => {
+    if (planAllows(plan, groupTitle)) return true;
+    return !guestMode && rankOf(plan) <= 1 && preview.enabled && preview.remaining > 0;
+  }, [guestMode, preview.enabled, preview.remaining]);
   const [showLangPicker, setShowLangPicker] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
   const [movieToOpen, setMovieToOpen] = useState(null); // phim được chọn từ TopNav search
@@ -253,6 +274,7 @@ function AppContent() {
     if (!channel) return;
     if (inBedtime()) { addToast(t('app.bedtime_block'), 'error'); return; }
     setMiniPlayer(false);
+    await runPreroll('channel', channel.channel_id);
     try {
       const url = await requestStreamAccess(channel, { at });
       if (!url) throw Object.assign(new Error('NO_URL'), { code: 'TOKEN_ERROR' });
@@ -280,6 +302,9 @@ function AppContent() {
         promptLogin(catchup
           ? t('app.need_login_catchup')
           : t('app.need_login_ch', { name: channel.name }));
+      } else if (code === 'PREVIEW_EXPIRED') {
+        addToast(e?.message || 'Hết 5 phút xem thử — nâng gói để xem tiếp nhé!', 'error');
+        setActiveTab('plans');
       } else if (code === 'PLAN_REQUIRED') {
         addToast(t('app.plan_needed', { name: channel.name }), 'error');
         setActiveTab('plans');
@@ -295,13 +320,13 @@ function AppContent() {
       promptLogin(t('app.need_login_ch', { name: channel.name }));
       return;
     }
-    if (channel && !guestMode && !planAllows(effPlan, channel.group_title)) {
+    if (channel && !guestMode && !canOpenChannel(effPlan, channel.group_title)) {
       addToast(t('app.plan_needed', { name: channel.name }), 'error');
       setActiveTab('plans');
       return;
     }
     openChannel(channel);
-  }, [addToast, effPlan, guestMode, promptLogin, openChannel]);
+  }, [addToast, effPlan, guestMode, promptLogin, openChannel, canOpenChannel]);
 
   // Mở kênh trên trang TV (player inline, không overlay)
   const handleOpenTvChannel = useCallback(async (channel) => {
@@ -310,12 +335,13 @@ function AppContent() {
       promptLogin(t('app.need_login_ch', { name: channel.name }));
       return;
     }
-    if (channel && !guestMode && !planAllows(effPlan, channel.group_title)) {
+    if (channel && !guestMode && !canOpenChannel(effPlan, channel.group_title)) {
       addToast(t('app.plan_needed', { name: channel.name }), 'error');
       setActiveTab('plans');
       return;
     }
     setTvLoading(true);
+    await runPreroll('channel', channel.channel_id);
     try {
       const url = await requestStreamAccess(channel, {});
       if (!url) throw Object.assign(new Error('NO_URL'), { code: 'TOKEN_ERROR' });
@@ -324,12 +350,13 @@ function AppContent() {
     } catch (e) {
       const code = e?.code || String(e?.message || '');
       if (code === 'LOGIN_REQUIRED') promptLogin(t('app.need_login_ch', { name: channel.name }));
+      else if (code === 'PREVIEW_EXPIRED') { addToast(e?.message || 'Hết 5 phút xem thử — nâng gói để xem tiếp nhé!', 'error'); setActiveTab('plans'); }
       else if (code === 'PLAN_REQUIRED') { addToast(t('app.plan_needed', { name: channel.name }), 'error'); setActiveTab('plans'); }
       else if (code !== 'NO_SESSION') addToast(t('app.stream_fail'), 'error');
     } finally {
       setTvLoading(false);
     }
-  }, [addToast, effPlan, guestMode, promptLogin, t]);
+  }, [addToast, effPlan, guestMode, promptLogin, t, canOpenChannel]);
 
   const handleNextTv = useCallback(() => {
     if (!tvChannel || channels.length === 0) return;
@@ -651,6 +678,26 @@ function AppContent() {
       )}
       {publicHandle && <PublicProfileModal handle={publicHandle} onClose={() => { setPublicHandle(null); try { history.replaceState(null, '', location.pathname); } catch {} }} />}
       <KeyboardShortcuts open={showKeyboardShortcuts} onClose={() => setShowKeyboardShortcuts(false)} />
+
+      {/* (34) Quảng cáo pre-roll — hiện trước khi vào kênh/phim */}
+      {preroll && (
+        <PrerollAd
+          ad={preroll.ad}
+          skipAfter={preroll.skipAfter}
+          refId={preroll.refId}
+          onDone={() => { preroll.resolve?.(); setPreroll(null); }}
+          onUpgrade={() => { setActiveTab('plans'); }}
+        />
+      )}
+
+      {/* Đồng hồ 5 phút xem thử của gói Standard */}
+      {preview.enabled && preview.remaining < preview.total && (isPlayerOpen || tvChannel) && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] px-4 py-2 rounded-full bg-black/80 border border-[#f36f21]/40 backdrop-blur flex items-center gap-2 pointer-events-auto">
+          <span className="text-[11px] font-black tracking-wider text-[#ff9a3d]">XEM THỬ</span>
+          <span className="text-[12px] font-bold text-white">còn {fmtPreview(preview.remaining)}</span>
+          <button onClick={() => setActiveTab('plans')} className="ml-1 px-2.5 py-1 rounded-full bg-[#f36f21] text-white text-[11px] font-black">Nâng gói</button>
+        </div>
+      )}
       <AuthModal open={showAuth} onClose={() => setShowAuth(false)} />
       {showAdmin && user?.role === 'admin' && <AdminPanel onClose={() => { setShowAdmin(false); try { history.replaceState(null, '', location.pathname); } catch {} }} />}
       {showLangPicker && <LanguagePicker onClose={() => setShowLangPicker(false)} />}

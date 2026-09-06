@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Eye, Gift, CreditCard, Megaphone, Clock, MessageCircle, Target, FileSpreadsheet, Trash2, Check, X, Plus } from 'lucide-react';
+import { Eye, Gift, CreditCard, Megaphone, Clock, MessageCircle, Target, FileSpreadsheet, Trash2, Check, X, Plus, Activity, Flag, RefreshCw, Bug } from 'lucide-react';
 
 // Các tab admin mới: trực tiếp, gift, thanh toán, QC, lịch đăng, bình luận, dự đoán, báo cáo.
 const inp = 'w-full bg-slate-900/60 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-[#f36f21]/50';
@@ -131,7 +131,9 @@ export function PaymentsTab({ BASE, headers, addToast }) {
 }
 
 // ---- Quảng cáo ----
-const SLOTS = ['home', 'movies', 'sports', 'community', 'banner'];
+// 'preroll' = quảng cáo chạy TRƯỚC khi vào kênh/phim (tối đa 5 lần/giờ mỗi người xem;
+// elite & signature không thấy quảng cáo, ultimate bỏ qua sau 5s, recreational 10s, standard 30s)
+const SLOTS = ['preroll', 'home', 'movies', 'sports', 'community', 'banner'];
 export function AdsTab({ BASE, headers, addToast }) {
   const [ads, setAds] = useState([]);
   const [form, setForm] = useState({ slot: 'home', title: '', image_url: '', link_url: '', video_url: '', starts_at: '', ends_at: '', sort_order: 0 });
@@ -160,7 +162,7 @@ export function AdsTab({ BASE, headers, addToast }) {
       <form onSubmit={save} className="space-y-2 pt-2 border-t border-slate-800/40">
         <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider flex items-center gap-1.5"><Megaphone className="w-3.5 h-3.5" />{editing ? `Sửa QC #${editing}` : 'Thêm QC mới'}</p>
         <div className="grid grid-cols-2 gap-2">
-          <select value={form.slot} onChange={e => setForm({ ...form, slot: e.target.value })} className={inp}>{SLOTS.map(s => <option key={s} value={s}>{s}</option>)}</select>
+          <select value={form.slot} onChange={e => setForm({ ...form, slot: e.target.value })} className={inp}>{SLOTS.map(s => <option key={s} value={s}>{s === 'preroll' ? 'preroll — chạy trước kênh/phim' : s}</option>)}</select>
           <input value={form.sort_order} type="number" onChange={e => setForm({ ...form, sort_order: e.target.value })} placeholder="Thứ tự" className={inp} />
           <input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="Tiêu đề" className={inp + ' col-span-2'} />
           <input value={form.image_url} onChange={e => setForm({ ...form, image_url: e.target.value })} placeholder="URL ảnh banner" className={inp + ' col-span-2'} />
@@ -343,7 +345,111 @@ export function ReportsTab({ BASE, headers, token }) {
   );
 }
 
+
+// ---- (46/20/49) Sức khoẻ kênh + báo lỗi của người xem + log lỗi player ----
+export function HealthTab({ BASE, headers, addToast }) {
+  const [data, setData] = useState({ channels: [], summary: null, job: null });
+  const [reports, setReports] = useState({ grouped: [], reports: [] });
+  const [errors, setErrors] = useState({ grouped: [] });
+  const [busy, setBusy] = useState(false);
+  const [filter, setFilter] = useState('bad'); // bad | all
+
+  const load = async () => {
+    const [h, r, e] = await Promise.all([
+      api(BASE, headers, '/admin/channel-health'),
+      api(BASE, headers, '/admin/channel-reports?status=open'),
+      api(BASE, headers, '/admin/player-errors'),
+    ]);
+    setData({ channels: h.channels || [], summary: h.summary || null, job: h.job || null });
+    setReports({ grouped: r.grouped || [], reports: r.reports || [] });
+    setErrors({ grouped: e.grouped || [] });
+  };
+  useEffect(() => { load(); }, []); // eslint-disable-line
+
+  const runCheck = async (ids) => {
+    setBusy(true);
+    const d = await api(BASE, headers, '/admin/channel-health', { method: 'POST', body: JSON.stringify(ids ? { channel_ids: ids } : { limit: 20 }) });
+    setBusy(false);
+    addToast(d.result ? `Đã kiểm tra: ${d.result}` : 'Không chạy được', d.result ? 'success' : 'error');
+    load();
+  };
+  const closeReports = async (channel_id) => {
+    await api(BASE, headers, '/admin/channel-reports', { method: 'PUT', body: JSON.stringify({ channel_id, status: 'fixed' }) });
+    addToast('Đã đánh dấu đã xử lý', 'success');
+    load();
+  };
+
+  const s = data.summary || {};
+  const dot = (st) => st === 'up' ? 'bg-emerald-400' : st === 'flaky' ? 'bg-amber-400' : st === 'down' ? 'bg-red-500' : 'bg-slate-600';
+  const list = (data.channels || []).filter(c => filter === 'all' || ['down', 'flaky'].includes(c.status));
+
+  return (
+    <div className="p-4 space-y-4">
+      <div className="grid grid-cols-4 gap-2">
+        {[['Tổng', s.channels || 0, 'text-white'], ['Tốt', s.up || 0, 'text-emerald-400'], ['Chập chờn', s.flaky || 0, 'text-amber-400'], ['Chết', s.down || 0, 'text-red-400']].map(([l, v, c]) => (
+          <div key={l} className="rounded-xl bg-black/30 border border-white/[0.06] px-3 py-2">
+            <p className={`text-lg font-black ${c}`}>{v}</p>
+            <p className="text-[10px] text-slate-500">{l}</p>
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <button onClick={() => runCheck(null)} disabled={busy} className={btnP}><RefreshCw className={`w-3.5 h-3.5 ${busy ? 'animate-spin' : ''}`} /> Kiểm tra 20 kênh ngay</button>
+        <button onClick={() => setFilter(f => f === 'bad' ? 'all' : 'bad')} className={btnG}>{filter === 'bad' ? 'Xem tất cả kênh' : 'Chỉ xem kênh có vấn đề'}</button>
+        <span className="text-[10px] text-slate-500">{data.job?.last_result ? `Lượt tự động gần nhất: ${data.job.last_result}` : 'Chạy nền tự động ~10 phút/lượt'}</span>
+      </div>
+
+      {reports.grouped.length > 0 && (
+        <div>
+          <p className="text-[11px] text-slate-400 font-bold flex items-center gap-1.5 mb-2"><Flag className="w-3.5 h-3.5 text-[#ff9a3d]" /> Người xem đang báo lỗi</p>
+          <div className="space-y-1.5">
+            {reports.grouped.map(g => (
+              <div key={g.channel_id} className="flex items-center gap-2 rounded-xl bg-black/30 border border-white/[0.06] px-3 py-2">
+                <span className="px-1.5 py-0.5 rounded-md bg-red-500/20 text-red-300 text-[10px] font-black">{g.n}</span>
+                <span className="text-[12px] font-bold text-white truncate flex-1">{g.channel_name || g.channel_id}</span>
+                <button onClick={() => runCheck([g.channel_id])} className="text-[10px] text-slate-400 hover:text-white">Kiểm tra</button>
+                <button onClick={() => closeReports(g.channel_id)} className="text-[10px] text-emerald-400 hover:text-emerald-300">Đã xử lý</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div>
+        <p className="text-[11px] text-slate-400 font-bold flex items-center gap-1.5 mb-2"><Activity className="w-3.5 h-3.5 text-emerald-400" /> Trạng thái luồng ({list.length})</p>
+        {list.length === 0 && <p className="text-[11px] text-slate-600 italic">Không có kênh nào lỗi 🎉</p>}
+        <div className="space-y-1">
+          {list.slice(0, 200).map(c => (
+            <div key={c.channel_id} className="flex items-center gap-2 rounded-lg bg-black/20 px-3 py-1.5">
+              <span className={`w-2 h-2 rounded-full shrink-0 ${dot(c.status)}`} />
+              <span className="text-[12px] text-white truncate flex-1">{c.name}</span>
+              <span className="text-[10px] text-slate-500 shrink-0">{c.http_code || '—'} · {c.latency_ms || 0}ms{c.fail_count ? ` · fail ${c.fail_count}` : ''}</span>
+              <span className="text-[10px] text-slate-600 shrink-0">{fmtTime(c.checked_at)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {errors.grouped.length > 0 && (
+        <div>
+          <p className="text-[11px] text-slate-400 font-bold flex items-center gap-1.5 mb-2"><Bug className="w-3.5 h-3.5 text-amber-400" /> Lỗi player 3 ngày qua (từ máy người xem)</p>
+          <div className="space-y-1">
+            {errors.grouped.slice(0, 30).map((g, i) => (
+              <div key={i} className="flex items-center gap-2 rounded-lg bg-black/20 px-3 py-1.5">
+                <span className="text-[10px] font-black text-amber-300 shrink-0">{g.n}×</span>
+                <span className="text-[12px] text-white truncate flex-1">{g.channel_name || g.channel_id || '(không rõ kênh)'}</span>
+                <span className="text-[10px] text-slate-500 font-mono shrink-0">{g.code}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export const EXTRA_TABS = [
+  { id: 'health', label: 'Sức khoẻ kênh', icon: Activity },
   { id: 'live', label: 'Trực tiếp', icon: Eye },
   { id: 'gifts', label: 'Gift code', icon: Gift },
   { id: 'payments', label: 'Thanh toán', icon: CreditCard },

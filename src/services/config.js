@@ -27,9 +27,27 @@ function readOverride() {
   }
 }
 
+/** App native (APK/TV): Capacitor phục vụ web bằng https://localhost nên KHÔNG được
+ *  coi là same-origin — phải gọi thẳng domain production, nếu không mọi API 404. */
+export function isNativeApp() {
+  try {
+    if (typeof window === 'undefined') return false;
+    const cap = window.Capacitor;
+    if (cap && (typeof cap.isNativePlatform === 'function' ? cap.isNativePlatform() : cap.isNative)) return true;
+    const proto = window.location.protocol;
+    if (proto === 'capacitor:' || proto === 'file:' || proto === 'ionic:') return true;
+    // Capacitor androidScheme=https -> https://localhost (không có cổng)
+    const h = window.location.hostname;
+    if ((h === 'localhost' || h === '127.0.0.1') && !window.location.port && /(wv|Android).*Version\//.test(navigator.userAgent || '')) return true;
+  } catch {}
+  return false;
+}
+
 function detectBase() {
   const raw = ENV_BASE || readOverride();
   if (raw) return raw.replace(/\/+$/, '');
+
+  if (isNativeApp()) return PRODUCTION_API_BASE;
 
   if (typeof window !== 'undefined' && window.location) {
     const proto = window.location.protocol;

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, RotateCcw, Crown, Eye, EyeOff, Globe, Database, Shield, Monitor, Trash2, Languages, Moon, Sun, MapPin, Info, Cpu, Leaf, Copy, CheckCircle2, ShieldOff, Palette, Tv, Trophy, Smartphone, LogOut, QrCode, Users, KeyRound } from 'lucide-react';
+import { Settings, RotateCcw, Crown, Eye, EyeOff, Globe, Database, Shield, Monitor, Trash2, Languages, Moon, Sun, MapPin, Info, Cpu, Leaf, Copy, CheckCircle2, ShieldOff, Palette, Tv, Trophy, Smartphone, LogOut, QrCode, Users, KeyRound, Lock } from 'lucide-react';
 import ShareButtons from './ShareButtons';
 import { getDeviceInfo } from '../services/device';
 import { Fingerprint, Wifi, Clock, Server } from 'lucide-react';
@@ -90,6 +90,60 @@ export default function SettingsPage({ onClose }) {
   const { token, user } = useAuth();
   const isAdmin = user?.role === 'admin';
   const [showQr, setShowQr] = useState(false);
+
+  // ===== ĐỔI MẬT KHẨU (user đã đăng nhập) =====
+  const [pwOld, setPwOld] = useState('');
+  const [pwNew, setPwNew] = useState('');
+  const [pwNew2, setPwNew2] = useState('');
+  const [pwShow, setPwShow] = useState(false);
+  const [pwBusy, setPwBusy] = useState(false);
+  const [pwMsg, setPwMsg] = useState(null); // { type: 'ok' | 'err', text }
+  const [pwLogoutOthers, setPwLogoutOthers] = useState(true);
+
+  // Đo độ mạnh mật khẩu (0-4) — chỉ để gợi ý, server vẫn là nơi kiểm tra cuối
+  const pwScore = (() => {
+    const p = pwNew || '';
+    if (!p) return 0;
+    let s = 0;
+    if (p.length >= 8) s++;
+    if (p.length >= 12) s++;
+    if (/[a-z]/.test(p) && /[A-Z]/.test(p)) s++;
+    if (/\d/.test(p) && /[^\w\s]/.test(p)) s++;
+    return Math.min(s, 4);
+  })();
+  const pwScoreLabel = [t('settings.pw_weak'), t('settings.pw_weak'), t('settings.pw_fair'), t('settings.pw_good'), t('settings.pw_strong')][pwScore];
+  const pwScoreColor = ['bg-red-500', 'bg-red-500', 'bg-amber-500', 'bg-lime-500', 'bg-emerald-500'][pwScore];
+
+  const submitChangePassword = async (e) => {
+    e && e.preventDefault && e.preventDefault();
+    setPwMsg(null);
+    if (!token) { setPwMsg({ type: 'err', text: t('settings.pw_need_login') }); return; }
+    if (!pwOld || !pwNew) { setPwMsg({ type: 'err', text: t('settings.pw_missing') }); return; }
+    if (pwNew.length < 6) { setPwMsg({ type: 'err', text: t('settings.pw_short') }); return; }
+    if (pwNew !== pwNew2) { setPwMsg({ type: 'err', text: t('settings.pw_mismatch') }); return; }
+    if (pwNew === pwOld) { setPwMsg({ type: 'err', text: t('settings.pw_same') }); return; }
+    setPwBusy(true);
+    try {
+      const r = await fetch(`${API_BASE}/user/change-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ oldPassword: pwOld, newPassword: pwNew, logoutOthers: pwLogoutOthers }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok && d.success) {
+        setPwOld(''); setPwNew(''); setPwNew2('');
+        const n = d.sessionsRevoked || 0;
+        setPwMsg({ type: 'ok', text: n > 0 ? t('settings.pw_ok_revoked', { n }) : t('settings.pw_ok') });
+        loadSessions();
+      } else {
+        setPwMsg({ type: 'err', text: d.error || t('settings.pw_fail') });
+      }
+    } catch {
+      setPwMsg({ type: 'err', text: t('settings.pw_net') });
+    }
+    setPwBusy(false);
+  };
+
   // Phiên đăng nhập
   const loadSessions = async () => {
     if (!token) return;
@@ -175,6 +229,7 @@ export default function SettingsPage({ onClose }) {
     { id: 'sleep', label: t('settings.sleep_timer'), Icon: Cpu },
     ...(isAdmin ? [{ id: 'sources', label: t('settings.data_sources'), Icon: Globe }] : []),
     { id: 'sessions', label: t('settings.sessions'), Icon: Smartphone },
+    { id: 'password', label: t('settings.pw_title'), Icon: Lock },
     { id: 'badges', label: t('settings.ach_title'), Icon: Trophy },
     { id: 'family', label: t('settings.family'), Icon: Users },
     { id: 'pin', label: t('settings.app_pin'), Icon: KeyRound },
@@ -383,6 +438,29 @@ export default function SettingsPage({ onClose }) {
           <div className="flex items-center justify-between">
             <span className="text-xs text-slate-400">{t('settings.parental_enable')}</span>
             <Toggle on={!!settings.parentalEnabled} onClick={() => updateSetting('parentalEnabled', !settings.parentalEnabled)} label={t('settings.parental_enable')} />
+          </div>
+          <div className="flex items-center justify-between py-2">
+            <div className="min-w-0 pr-3">
+              <p className="text-xs font-medium text-slate-200">Trình duyệt giả lập khi lấy luồng (UA)</p>
+              <p className="text-[10px] text-slate-500">Máy chủ tự thử lần lượt Dalvik → VLC → Chrome nếu nguồn chặn, nên hầu như không phải chỉnh. Đây là UA thử ĐẦU TIÊN.</p>
+            </div>
+            <select
+              value={settings.upstreamUA || 'dalvik'}
+              onChange={e => updateSetting('upstreamUA', e.target.value)}
+              className="bg-slate-800 text-xs text-slate-200 px-3 py-2 rounded-lg border border-slate-700 shrink-0"
+            >
+              <option value="dalvik">Dalvik (mặc định)</option>
+              <option value="vlc">VLC</option>
+              <option value="chrome">Chrome Android</option>
+              <option value="auto">Theo từng kênh</option>
+            </select>
+          </div>
+          <div className="flex items-center justify-between py-2">
+            <div>
+              <p className="text-xs font-medium text-slate-200 flex items-center gap-1.5"><Leaf className="w-3.5 h-3.5 text-sky-400" /> Tự hạ chất lượng khi mạng yếu</p>
+              <p className="text-[10px] text-slate-500">Rời Wi-Fi sang 4G hoặc mạng chậm là tự giảm xuống 480p và báo cho bạn biết</p>
+            </div>
+            <Toggle on={settings.autoQualityOnCellular !== false} onClick={() => updateSetting('autoQualityOnCellular', settings.autoQualityOnCellular === false)} label="Auto quality" />
           </div>
           <div className="flex items-center justify-between py-2">
             <div>
@@ -631,6 +709,101 @@ export default function SettingsPage({ onClose }) {
         </div>
         )}
 
+        {/* ===== ĐỔI MẬT KHẨU ===== */}
+        {active === 'password' && (
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 shadow-xl shadow-black/30 space-y-4">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2"><Lock className="w-4 h-4 text-[#ff9a3d]" /> {t('settings.pw_title')}</h3>
+          {!token ? (
+            <p className="text-xs text-slate-500">{t('settings.pw_need_login')}</p>
+          ) : (
+            <form onSubmit={submitChangePassword} className="space-y-3.5 max-w-md">
+              <div className="text-[11px] text-slate-400 leading-relaxed">
+                {t('settings.pw_desc')}
+                {user?.email ? <> <span className="text-slate-300 font-bold">{user.email}</span></> : null}
+              </div>
+
+              <label className="block space-y-1.5">
+                <span className="text-[11px] font-bold text-slate-400">{t('settings.pw_old')}</span>
+                <input
+                  type={pwShow ? 'text' : 'password'}
+                  value={pwOld}
+                  onChange={(e) => setPwOld(e.target.value)}
+                  autoComplete="current-password"
+                  className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-[#f36f21]"
+                />
+              </label>
+
+              <label className="block space-y-1.5">
+                <span className="text-[11px] font-bold text-slate-400">{t('settings.pw_new')}</span>
+                <input
+                  type={pwShow ? 'text' : 'password'}
+                  value={pwNew}
+                  onChange={(e) => setPwNew(e.target.value)}
+                  autoComplete="new-password"
+                  className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-[#f36f21]"
+                />
+              </label>
+
+              {pwNew && (
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                    <div className={`h-full ${pwScoreColor} transition-all`} style={{ width: `${(pwScore / 4) * 100}%` }} />
+                  </div>
+                  <span className="text-[10px] font-bold text-slate-400 w-20 text-right">{pwScoreLabel}</span>
+                </div>
+              )}
+
+              <label className="block space-y-1.5">
+                <span className="text-[11px] font-bold text-slate-400">{t('settings.pw_new2')}</span>
+                <input
+                  type={pwShow ? 'text' : 'password'}
+                  value={pwNew2}
+                  onChange={(e) => setPwNew2(e.target.value)}
+                  autoComplete="new-password"
+                  className={`w-full px-3.5 py-2.5 bg-slate-800 border rounded-xl text-sm text-white focus:outline-none ${
+                    pwNew2 && pwNew2 !== pwNew ? 'border-red-500/70' : 'border-slate-700 focus:border-[#f36f21]'
+                  }`}
+                />
+              </label>
+
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => setPwShow((v) => !v)}
+                  className="flex items-center gap-1.5 text-[11px] text-slate-400 hover:text-white"
+                >
+                  {pwShow ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  {pwShow ? t('settings.pw_hide') : t('settings.pw_show')}
+                </button>
+                <label className="flex items-center gap-2 text-[11px] text-slate-400 cursor-pointer select-none">
+                  <input type="checkbox" checked={pwLogoutOthers} onChange={(e) => setPwLogoutOthers(e.target.checked)} className="accent-[#f36f21]" />
+                  {t('settings.pw_logout_others')}
+                </label>
+              </div>
+
+              <button
+                type="submit"
+                disabled={pwBusy || !pwOld || !pwNew || !pwNew2}
+                className="w-full px-4 py-2.5 grad-brand disabled:opacity-40 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-2 active:scale-[0.99]"
+              >
+                <KeyRound className="w-4 h-4" /> {pwBusy ? t('settings.pw_saving') : t('settings.pw_submit')}
+              </button>
+
+              {pwMsg && (
+                <p className={`text-[11px] flex items-start gap-1.5 ${pwMsg.type === 'ok' ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {pwMsg.type === 'ok' ? <CheckCircle2 className="w-3.5 h-3.5 mt-px shrink-0" /> : <ShieldOff className="w-3.5 h-3.5 mt-px shrink-0" />}
+                  {pwMsg.text}
+                </p>
+              )}
+
+              <p className="text-[10px] text-slate-600 leading-relaxed pt-1 border-t border-white/[0.05]">
+                {t('settings.pw_forgot_hint')}
+              </p>
+            </form>
+          )}
+        </div>
+        )}
+
         {/* ===== BẢO MẬT (2FA) ===== */}
         {active === '2fa' && (
         <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 shadow-xl shadow-black/30 space-y-3">
@@ -681,7 +854,7 @@ export default function SettingsPage({ onClose }) {
           <h3 className="text-sm font-bold text-white flex items-center gap-2"><Info className="w-4 h-4 text-slate-400" /> {t('settings.about')}</h3>
           <div className="flex items-center justify-between text-xs">
             <span className="text-slate-400">{t('settings.version')}</span>
-            <span className="text-slate-200 font-bold">CHRTV PLAY 2.0</span>
+            <span className="text-slate-200 font-bold">CHRTV PL▷Y 1.0.0 beta</span>
           </div>
           {/* ===== Thiết bị đang dùng ===== */}
           <div className="rounded-xl border border-white/[0.06] bg-black/30 divide-y divide-white/[0.05] overflow-hidden">

@@ -22,6 +22,8 @@ const DEFAULT_SETTINGS = {
   spoilerMask: false,
   dataSaver: false,
   dataSaverCap: 480,
+  autoQualityOnCellular: true, // (13) tự hạ chất lượng khi mạng yếu / 4G
+  upstreamUA: 'dalvik',        // UA gửi lên nguồn khi phát qua proxy: dalvik | chrome | auto
   kidBedtimeEnabled: false,
   kidBedtimeStart: '21:00',
   kidBedtimeEnd: '06:00',

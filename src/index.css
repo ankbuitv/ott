@@ -187,6 +187,25 @@ input[type="range"]::-moz-range-thumb {
 /* Safe area for mobile */
 .safe-area-bottom { padding-bottom: env(safe-area-inset-bottom, 0); }
 
+/* ===== TỐI ƯU CHO ĐIỆN THOẠI / APK ===== */
+html, body { overscroll-behavior-y: none; }               /* không kéo trắng mép khi cuộn quá đà */
+* { -webkit-tap-highlight-color: transparent; }            /* bỏ ô xanh khi chạm */
+body { padding-top: env(safe-area-inset-top, 0); }         /* tránh tai thỏ / thanh trạng thái */
+input, select, textarea { font-size: 16px; }               /* iOS không tự zoom khi gõ */
+@media (max-width: 767px) {
+  /* thanh điều hướng dưới: chừa chỗ cho vạch home của Android/iOS */
+  .mobile-tabbar { padding-bottom: calc(env(safe-area-inset-bottom, 0) + 10px); }
+  /* vùng chạm tối thiểu 44px theo chuẩn Material/HIG */
+  .mobile-tabbar button { min-width: 56px; min-height: 46px; justify-content: center; }
+  /* nội dung không bị thanh dưới che */
+  main { padding-bottom: calc(64px + env(safe-area-inset-bottom, 0)) !important; }
+  /* chữ dễ đọc hơn trên màn nhỏ */
+  h1 { font-size: 1.35rem !important; line-height: 1.25 !important; }
+  h2 { font-size: 1.05rem !important; }
+  /* hàng thẻ cuộn ngang: bám snap cho mượt như app */
+  .snap-x { scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; }
+}
+
 /* ===== Skeleton shimmer (movies) ===== */
 .skeleton-shimmer {
   position: relative;
@@ -306,3 +325,35 @@ html.tvmode .tv-focused {
 /* Equalizer bars (radio mode) */
 @keyframes eqBounce { 0%, 100% { transform: scaleY(0.4); } 50% { transform: scaleY(1); } }
 .anim-eq { transform-origin: bottom; animation: eqBounce 0.9s ease-in-out infinite; }
+
+/* ===== POLISH v1.0.0-beta: mượt & sạch hơn ===== */
+@keyframes sheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.mobile-sheet { animation: sheetUp .28s cubic-bezier(.22,.9,.3,1) both; }
+.anim-fade { animation: fadeIn .22s ease both; }
+
+/* Thanh cuộn mảnh, tông tối — thay thanh cuộn xám mặc định */
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: rgba(255,255,255,.10); border-radius: 99px; }
+*::-webkit-scrollbar-thumb:hover { background: rgba(243,111,33,.55); }
+
+/* Thẻ poster/kênh: nhấc nhẹ + viền sáng khi rê chuột (desktop), không ảnh hưởng mobile */
+@media (hover: hover) {
+  .card-lift { transition: transform .25s cubic-bezier(.22,.9,.3,1), box-shadow .25s ease; }
+  .card-lift:hover { transform: translateY(-4px) scale(1.015); box-shadow: 0 18px 40px -18px rgba(0,0,0,.9); }
+}
+
+/* Ảnh vào mượt thay vì nhảy khựng */
+img { -webkit-user-drag: none; }
+
+/* Tiêu đề mục có gạch gradient mảnh phía dưới */
+.section-underline::after {
+  content: ''; display: block; height: 2px; width: 42px; margin-top: 6px; border-radius: 99px;
+  background: linear-gradient(90deg, #f36f21, rgba(34,211,238,.65));
+}
+
+/* Nút chính: bóng cam nhẹ cho có chiều sâu */
+.grad-brand { box-shadow: 0 6px 18px -8px rgba(243,111,33,.75); }
+
+/* Modal/overlay dùng chung hiệu ứng mờ nền cho đồng bộ */
+.backdrop-soft { background: rgba(4,5,8,.72); backdrop-filter: blur(10px); }

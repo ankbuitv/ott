@@ -30,6 +30,8 @@ export function sendBeat({ kind, ref_id, ref_name, seconds = 60, viewed = false,
   post('/api/stats/beat', { sid: SID, kind, ref_id, ref_name, seconds, viewed, name }).catch(() => {});
 }
 export const fetchTopChannels = () => get('/api/stats/top').then(d => d.top || []).catch(() => []);
+// (3) "Đang hot": xếp hạng theo 15 phút gần nhất; rỗng thì gọi lại bảng tổng.
+export const fetchTrendingChannels = () => get('/api/stats/trending').then(d => d.trending || []).catch(() => []);
 export const fetchTopFans = () => get('/api/stats/top-fans').then(d => d.fans || []).catch(() => []);
 
 // ---- Hồ sơ công khai ----

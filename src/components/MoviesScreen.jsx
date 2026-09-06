@@ -10,6 +10,7 @@ import FanGroupBox from './FanGroupBox';
 import AdSlot from './AdSlot';
 import { resolveCountry, currentCountry, setManualCountry } from '../services/geo';
 import MoviePlayerModal from './MoviePlayerModal';
+import { runPreroll } from '../services/prerollGate';
 import { useDevice } from '../contexts/DeviceContext';
 import { useToast } from '../contexts/ToastContext';
 import { useProfile } from '../contexts/ProfileContext';
@@ -320,7 +321,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
                 <span className="hidden md:inline text-stone-400 line-clamp-1 max-w-md">{hero.overview}</span>
               </div>
               <div className="flex items-center gap-3">
-                <button onClick={() => { if (!ensureAuthed()) return; recordMovieWatch(hero); setPlayMovie(hero); }} className="flex items-center gap-2 bg-white text-black px-7 py-3 rounded-xl font-bold text-sm hover:bg-stone-200 transition shadow-xl shadow-white/10">
+                <button onClick={async () => { if (!ensureAuthed()) return; recordMovieWatch(hero); await runPreroll('movie', String(hero?.id || '')); setPlayMovie(hero); }} className="flex items-center gap-2 bg-white text-black px-7 py-3 rounded-xl font-bold text-sm hover:bg-stone-200 transition shadow-xl shadow-white/10">
                   <Play className="w-5 h-5 fill-current" /> {t('movies.btn.play')}
                 </button>
                 <button onClick={() => openDetail(hero)} className="flex items-center gap-2 bg-white/15 backdrop-blur text-white px-6 py-3 rounded-xl font-bold text-sm hover:bg-white/25 transition border border-white/10">
@@ -451,7 +452,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
         </div>
       )}
 
-      {selected && (<MovieDetailModal movie={selected} trailer={trailer} trailerLoading={trailerLoading} genres={genres} onClose={() => setSelected(null)} onPlay={() => { if (!ensureAuthed()) return; recordMovieWatch(selected); setPlayMovie(selected); }} onMovieChange={(m) => { openDetail(m); }} onListChanged={refreshMovieLists} onShare={(m) => setShareMovie(m)} />)}
+      {selected && (<MovieDetailModal movie={selected} trailer={trailer} trailerLoading={trailerLoading} genres={genres} onClose={() => setSelected(null)} onPlay={async () => { if (!ensureAuthed()) return; recordMovieWatch(selected); await runPreroll('movie', String(selected?.id || '')); setPlayMovie(selected); }} onMovieChange={(m) => { openDetail(m); }} onListChanged={refreshMovieLists} onShare={(m) => setShareMovie(m)} />)}
       {shareMovie && <ShareMovieModal movie={shareMovie} onClose={() => setShareMovie(null)} />}
       {upcomingOpen && <UpcomingModal items={rows.upcoming} onClose={() => setUpcomingOpen(false)} onSelect={(m) => { setUpcomingOpen(false); openDetail(m); }} />}
       {playMovie && <MoviePlayerModal movie={playMovie} onClose={() => { setPlayMovie(null); refreshMovieLists(); }} />}

@@ -1,16 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { Flame, Play } from 'lucide-react';
 import { useI18n } from '../contexts/I18nContext';
-import { fetchTopChannels } from '../services/social';
+import { fetchTopChannels, fetchTrendingChannels } from '../services/social';
 
 // BXH kênh xem nhiều nhất (từ heartbeat toàn app)
 export default function TopChannelsStrip({ channels = [], onSelectChannel }) {
   const { t } = useI18n();
   const [top, setTop] = useState([]);
+  const [live, setLive] = useState(false); // true = bảng 15 phút gần nhất
   useEffect(() => {
     let on = true;
-    fetchTopChannels().then(list => { if (on) setTop(list || []); }).catch(() => {});
-    return () => { on = false; };
+    const load = async () => {
+      // Ưu tiên "đang hot 15 phút"; ít người xem quá thì rơi về bảng tổng.
+      const hot = await fetchTrendingChannels();
+      if (!on) return;
+      if (hot && hot.length >= 3) { setTop(hot); setLive(true); return; }
+      const all = await fetchTopChannels();
+      if (on) { setTop(all || []); setLive(false); }
+    };
+    load();
+    const iv = setInterval(load, 120000); // tự làm mới 2 phút/lần
+    return () => { on = false; clearInterval(iv); };
   }, []);
   if (!top.length) return null;
   const byId = new Map((channels || []).map(c => [c.channel_id, c]));
@@ -21,8 +31,11 @@ export default function TopChannelsStrip({ channels = [], onSelectChannel }) {
           <Flame className="w-4 h-4 text-[#ff9a3d]" />
         </span>
         <div>
-          <h2 className="text-[20px] font-extrabold tracking-tight leading-tight">{t('topch.title')}</h2>
-          <p className="text-[11px] text-stone-500">{t('topch.sub')}</p>
+          <h2 className="text-[20px] font-extrabold tracking-tight leading-tight flex items-center gap-2">
+            {live ? 'Đang hot' : t('topch.title')}
+            {live && <span className="px-1.5 py-0.5 rounded-md bg-red-600/20 border border-red-500/30 text-red-300 text-[9px] font-black tracking-wider">15 PHÚT</span>}
+          </h2>
+          <p className="text-[11px] text-stone-500">{live ? 'Kênh nhiều người xem nhất ngay lúc này' : t('topch.sub')}</p>
         </div>
       </div>
       <div className="flex gap-3 overflow-x-auto scrollbar-none pb-2 snap-x">

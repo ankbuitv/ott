@@ -899,9 +899,9 @@ function publicChannel(ch) {
     name: ch.name,
     logo: ch.logo || "",
     group_title: ch.group_title || "",
+    stream_url: ch.stream_url || "",
     catchup_type: ch.catchup_type || "append",
     catchup_days: ch.catchup_days || 7,
-    // Metadata phát lại (KHÔNG phải stream_url): client dùng để hiển thị + gửi UA đúng cho upstream
     user_agent: ch.user_agent || "",
     referer: ch.referer || "",
     manifest_type: ch.manifest_type || "",

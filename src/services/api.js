@@ -1,21 +1,46 @@
 import { API_BASE } from "./config";
 import { authHeaders } from "./session";
+import { parseM3U } from "../utils/m3uParser";
 
 const BASE_WORKER_URL = API_BASE;
 
 export const DEFAULT_FALLBACK_STREAM = "http://bore.pub:30113/hls/index.m3u8";
 export const CHRTV_LOGO_URL = "https://i.ibb.co/HDmcxzMK/Gemini-Generated-Image-v7i9yav7i9yav7i9-removebg-preview.png";
 
+async function fetchLocalM3U() {
+  const candidates = [
+    "/playlists/tv.m3u",
+    "https://raw.githubusercontent.com/ankbuitv/ott/main/playlists/tv.m3u",
+  ];
+  for (const url of candidates) {
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) continue;
+      const text = await res.text();
+      const list = parseM3U(text);
+      if (list && list.length > 0) return list;
+    } catch {}
+  }
+  return null;
+}
+
 export async function fetchChannels() {
   try {
     const res = await fetch(`${BASE_WORKER_URL}/api/playlist`, { headers: { Accept: "application/json", ...authHeaders() } });
     if (res.ok) {
       const json = await res.json();
-      if (json && json.data && json.data.length > 0) return json.data;
+      if (json && json.data && json.data.length > 0) {
+        const hasUrl = json.data.some((c) => c.stream_url);
+        if (hasUrl) return json.data;
+        console.warn("API playlist thiếu stream_url — fallback M3U local");
+      }
     }
   } catch (err) {
     console.warn("Worker Playlist error:", err.message);
   }
+
+  const local = await fetchLocalM3U();
+  if (local && local.length) return local;
 
   return [
     { channel_id: "VTV1.vn", name: "VTV1 HD", logo: "https://vtv.sub.id/images/vtv1.png", group_title: "VTV", stream_url: "https://vtv.sub.id/vtv1/index.m3u8", catchup_type: "append", catchup_days: 7 },
@@ -35,8 +60,6 @@ export async function fetchEPGData() {
     if (res.ok) {
       const json = await res.json();
       if (json && json.data) {
-        // Nếu worker trả dữ liệu nhưng KHÔNG có chương trình nào (mock cũ/EPG lỗi),
-        // thử tải trực tiếp XMLTV từ trình duyệt để vẫn hiển thị EPG.
         if (!json.data.programmes || json.data.programmes.length === 0) {
           const direct = await fetchDirectEPG();
           if (direct) return direct;
@@ -47,13 +70,11 @@ export async function fetchEPGData() {
   } catch (err) {
     console.warn("Worker EPG error:", err.message);
   }
-  // Worker không truy cập được — thử tải thẳng từ nguồn XMLTV công cộng
   const direct = await fetchDirectEPG();
   if (direct) return direct;
   return null;
 }
 
-// Fallback: tải EPG trực tiếp từ epg.io.vn (và các nguồn thay thế) ngay trên trình duyệt
 async function fetchDirectEPG() {
   const sources = [];
   try {
@@ -77,7 +98,6 @@ async function fetchDirectEPG() {
   return null;
 }
 
-// Parse XMLTV (epg.io.vn / lichphatsong.io.vn format) client-side
 function parseXMLTV(xml) {
   const doc = new DOMParser().parseFromString(xml, "text/xml");
   if (doc.querySelector("parsererror")) throw new Error("XML parse error");
@@ -106,7 +126,6 @@ export async function fetchFavorites() {
     const res = await fetch(`${BASE_WORKER_URL}/api/favorites`, { headers: authHeaders() });
     if (res.ok) {
       const json = await res.json();
-      // Server trả về mảng object {channel_id,...} — app dùng mảng id nên phải map lại
       if (json && Array.isArray(json.favorites) && json.favorites.length > 0) {
         const ids = json.favorites.map(f => (typeof f === "string" ? f : f.channel_id)).filter(Boolean);
         localStorage.setItem("chrtv_favorites", JSON.stringify(ids));

@@ -93,6 +93,13 @@ wrangler secret put ADMIN_ALERT_WEBHOOK
 # vtvdigital.vn, vtv.sub.id, undo.it, cvtv.xyz, freem3u.xyz, kbs.co.kr,
 # ankb.qzz.io, bore.pub:30113). Thêm bớt theo upstream thực tế:
 wrangler secret put PROXY_ALLOWED_HOSTS   # ví dụ: "fptplay53.net,seenow.vn,vtv.sub.id"
+# Nguồn playlist RIÊNG TƯ (thay link GitHub public — xem CHONG_RIP_STREAM.md):
+wrangler secret put M3U_SOURCE_URL        # ví dụ: "https://cdn.rieng-cua-ban/tv.m3u"
+# TTL token manifest (giây, 60..1800 — mặc định 300). Ngắn quá thì player hay đứt:
+wrangler secret put STREAM_MANIFEST_TTL   # ví dụ: "300"
+# ⚠️ CÔNG TẮC KHẨN CẤP: =1 sẽ trả lại stream_url gốc cho client (mất bảo vệ luồng).
+# Chỉ bật khi cần cứu sự cố phát, TẮT NGAY sau đó:
+# wrangler secret put PUBLIC_STREAM_URL   # "1" = tắt bảo vệ, "" = bật bảo vệ (mặc định)
 # CORS allowlist (mặc định: origin same-app + play.ankb.qzz.io):
 wrangler secret put CORS_ALLOWED_ORIGINS  # ví dụ: "https://play.ankb.qzz.io"
 ```

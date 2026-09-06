@@ -70,8 +70,18 @@ const CHRTV_CLIENT_UA = "CHRTV-OTT/0.0.1"; // CHỈ dùng làm phiên bản clie
 const SUPPORT_EMAIL = "support@ankb.qzz.io";
 
 // ---- Playback token: HMAC-SHA256, TTL 60s, tự xoay theo từng request phát ----
-const STREAM_TOKEN_TTL = 60;      // giây — token manifest (playlist) do /api/stream/token cấp
-const SEGMENT_TOKEN_TTL = 60;     // giây — token segment nhúng vào playlist rewrite (mới cho mỗi lần phát playlist)
+const STREAM_TOKEN_TTL = 300;     // giây — token manifest (playlist) do /api/stream/token cấp.
+                                  // 60s là quá ngắn: player tự tải lại playlist liên tục nên hết
+                                  // hạn giữa chừng = kênh đứng. Client xoay token ở exp-60s.
+const SEGMENT_TOKEN_TTL = 60;     // giây — token segment LIVE (mới mỗi lần tải playlist)
+const SEGMENT_TOKEN_TTL_VOD = 4 * 3600; // giây — playlist VOD/catch-up (#EXT-X-ENDLIST): không
+                                  // tải lại playlist nên segment token phải sống hết bộ phim
+// TTL manifest có thể chỉnh bằng biến môi trường STREAM_MANIFEST_TTL (60..1800 giây)
+function manifestTtl(env) {
+  const n = parseInt((env && env.STREAM_MANIFEST_TTL) || "", 10);
+  if (!Number.isFinite(n)) return STREAM_TOKEN_TTL;
+  return Math.max(60, Math.min(1800, n));
+}
 const GUEST_TTL = 2 * 3600;       // JWT guest: 2 giờ
 
 // ---- CORS: chỉ echo Origin nằm trong allowlist (không dùng `*` nữa) ----
@@ -134,7 +144,7 @@ export default {
     console.error("[cron] refreshing channels + epg cache");
     ctx.waitUntil((async () => {
       try {
-        const fromSource = await loadChannelsFromSource();
+        const fromSource = await loadChannelsFromSource(env);
         if (hasDB(env) && fromSource && fromSource.length > 0) {
           await writeChannels(env, fromSource);
         }
@@ -183,6 +193,14 @@ export default {
       // WebSocket upgrade
       if (p === "/ws" && request.headers.get("Upgrade") === "websocket") {
         return handleWebSocket(request, env, ctx);
+      }
+      // ⛔ CHẶN RÒ PLAYLIST GỐC: mọi file .m3u/.m3u8 phục vụ như static asset
+      // (VD /playlists/tv.m3u lọt vào dist/) = trao trọn bộ link stream thật cho
+      // bất kỳ ai chỉ bằng 1 lệnh curl. Kênh phải đi qua /api/playlist (metadata)
+      // + /api/stream/token (có JWT + kiểm tra gói).
+      if (/\.(m3u8?|mpd)$/i.test(p) && !p.startsWith("/api/")) {
+        if (wantsHtml(request)) return html404(request, 404);
+        return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: jsonHeaders(request, env) });
       }
       // Static (frontend build) — phục vụ qua ASSETS binding để worker tự gắn security headers
       if (env && env.ASSETS) {
@@ -689,10 +707,23 @@ function emailTemplateReset(token) {
 async function getAuth(request, env) {
   const auth = request.headers.get("Authorization");
   if (!auth || !auth.startsWith("Bearer ")) return null;
-  const payload = verifyJWT(auth.slice(7), env);
+  const raw = auth.slice(7);
+  const payload = verifyJWT(raw, env);
   if (!payload) return null;
   if (payload.userId === 0) return { user: null, guest: true, plan: "standard" };
   if (!hasDB(env)) return null;
+  // PHIÊN PHẢI CÒN SỐNG: trước đây chỉ kiểm chữ ký JWT nên "đăng xuất thiết bị"
+  // (và cả đổi mật khẩu / ban / logout) KHÔNG thật sự thu hồi được quyền truy cập —
+  // token bị lộ vẫn dùng ngon tới 30 ngày. Nay đối chiếu bảng sessions.
+  try {
+    const { results: sess } = await env.DB.prepare("SELECT id, expires_at FROM sessions WHERE token = ?").bind(raw).all();
+    const s = sess && sess[0];
+    if (!s) return null;                       // đã bị thu hồi / đăng xuất
+    if (s.expires_at && s.expires_at < Date.now()) {
+      try { await env.DB.prepare("DELETE FROM sessions WHERE id = ?").bind(s.id).run(); } catch {}
+      return null;
+    }
+  } catch { /* bảng sessions lỗi -> không chặn đăng nhập, chữ ký JWT vẫn hợp lệ */ }
   try {
     try {
       const { results } = await env.DB.prepare("SELECT id, username, email, display_name, avatar_url, role, email_verified, banned, plan FROM users WHERE id = ?").bind(payload.userId).all();
@@ -986,23 +1017,34 @@ async function handleAPI(path, request, env, ctx) {
 // P0-A.3: response công khai CHỈ chứa metadata kênh — KHÔNG BAO GIỜ có `stream_url`
 // (trước đây URL stream kèm token premium — kể cả ADMIN TOKEN — lộ ra cho mọi người).
 // Client muốn phát thì gọi /api/stream/token?channel=<id> (JWT) → nhận proxy_url.
-function publicChannel(ch) {
-  return {
+//
+// ⚠️ `PUBLIC_STREAM_URL=1` = công tắc khẩn cấp trả lại URL gốc cho client (chế độ
+// phát trực tiếp, KHÔNG bảo vệ được link). Chỉ bật khi cần cứu sự cố phát, tắt ngay sau đó.
+function streamUrlIsPublic(env) {
+  return String((env && env.PUBLIC_STREAM_URL) || "") === "1";
+}
+function publicChannel(ch, env) {
+  const out = {
     id: ch.id,
     channel_id: ch.channel_id,
     name: ch.name,
     logo: ch.logo || "",
     group_title: ch.group_title || "",
-    stream_url: ch.stream_url || "",
     catchup_type: ch.catchup_type || "append",
     catchup_days: ch.catchup_days || 7,
-    user_agent: ch.user_agent || "",
-    referer: ch.referer || "",
     manifest_type: ch.manifest_type || "",
     license_type: ch.license_type || "",
     clearKeyId: ch.clear_key_id || ch.clearKeyId || "",
     clearKey: ch.clear_key || ch.clearKey || "",
+    protected: true, // client hiểu: phải xin token phát, không có URL sẵn
   };
+  if (streamUrlIsPublic(env)) {
+    out.stream_url = ch.stream_url || "";
+    out.user_agent = ch.user_agent || "";
+    out.referer = ch.referer || "";
+    out.protected = false;
+  }
+  return out;
 }
 
 async function handlePlaylist(env, request) {
@@ -1013,15 +1055,15 @@ async function handlePlaylist(env, request) {
     if (!refresh) {
       try {
         const { results } = await env.DB.prepare("SELECT * FROM channels WHERE is_active = 1 ORDER BY id ASC").all();
-        if (results && results.length > 0) return json({ success: true, source: "d1", data: results.map(publicChannel), d1_count: results.length }, 200, request, env);
+        if (results && results.length > 0) return json({ success: true, source: "d1", data: results.map((c) => publicChannel(c, env)), d1_count: results.length }, 200, request, env);
       } catch (e) { console.error("handlePlaylist D1 error:", e?.message || e); }
     }
   }
-  const fromSource = await loadChannelsFromSource();
+  const fromSource = await loadChannelsFromSource(env);
   if (hasDB(env) && fromSource && fromSource.length > 0) {
     d1_count = await writeChannels(env, fromSource);
   }
-  return json({ success: true, source: fromSource === DEFAULT_CHANNELS ? "default" : "m3u", data: fromSource.map(publicChannel), d1_count }, 200, request, env);
+  return json({ success: true, source: fromSource === DEFAULT_CHANNELS ? "default" : "m3u", data: fromSource.map((c) => publicChannel(c, env)), d1_count }, 200, request, env);
 }
 
 function parseM3U(text) {
@@ -1706,7 +1748,28 @@ async function handleStreamToken(request, env) {
 
   // 2) Chống tool rip
   const blocked = streamToolBlocked(request);
-  if (blocked) return json({ error: "Client bị chặn", reason: blocked }, 403, request, env);
+  if (blocked) {
+    try {
+      await env.DB.prepare("INSERT INTO analytics (event, user_id, data) VALUES ('stream_tool_blocked', ?, ?)")
+        .bind(auth.user ? auth.user.id : 0, JSON.stringify({ reason: blocked, ua: (request.headers.get("User-Agent") || "").slice(0, 120) })).run();
+    } catch {}
+    return json({ error: "Client bị chặn", reason: blocked }, 403, request, env);
+  }
+
+  // 2b) CHỐNG RIP HÀNG LOẠT: 1 phiên (user+thiết bị) chỉ được xin tối đa 240 token
+  //     phát trong 5 phút. Xem bình thường (xoay token ~5 phút/lần + đổi kênh) không
+  //     bao giờ chạm ngưỡng; script quét cả playlist để tải hàng loạt thì dính ngay.
+  try {
+    const uidKey = auth.user ? "u" + auth.user.id : "g" + (await streamSid(request, env));
+    const rl = await rateLimitCheck(env, "stok:" + uidKey, 240, 300);
+    if (!rl.allowed) {
+      try {
+        await env.DB.prepare("INSERT INTO analytics (event, user_id, data) VALUES ('stream_token_flood', ?, ?)")
+          .bind(auth.user ? auth.user.id : 0, JSON.stringify({ ua: (request.headers.get("User-Agent") || "").slice(0, 120) })).run();
+      } catch {}
+      return json({ error: "STREAM_RATE_LIMITED", message: "Xin token phát quá nhanh — thử lại sau ít phút.", retry_after: rl.retryAfter }, 429, request, env);
+    }
+  } catch { /* DB lỗi — bỏ qua, các lớp khác vẫn chặn */ }
 
   const q = new URL(request.url).searchParams;
   const channelId = q.get("channel") || "";
@@ -1760,14 +1823,14 @@ async function handleStreamToken(request, env) {
     uid,
     sid: await streamSid(request, env),
     iat: now,
-    exp: now + STREAM_TOKEN_TTL,
+    exp: now + manifestTtl(env),
   };
   const t = await sealStreamToken(payload, env);
   return json({
     success: true,
     t,
     iat: now, exp: payload.exp,
-    rotate_at: payload.exp - 20, ttl: STREAM_TOKEN_TTL,
+    rotate_at: payload.exp - 60, ttl: manifestTtl(env),
     proxy_url: `/api/stream/proxy?t=${t}`,
   }, 200, request, env);
 }
@@ -1867,8 +1930,11 @@ async function handleStreamProxy(request, env) {
     // Mỗi URI con => 1 OPAQUE TOKEN RIÊNG (IV ngẫu nhiên, TTL 60s, đúng 1 URL) —
     // rolling theo từng lần phát playlist, URL gốc không lộ đi đâu.
     const proxyBase = new URL(request.url).origin + "/api/stream/proxy";
+    // VOD/catch-up (có #EXT-X-ENDLIST): player KHÔNG tải lại playlist nên segment
+    // token phải sống lâu hơn; live giữ TTL 60s cho chặt.
+    const isVod = /#EXT-X-ENDLIST/i.test(text);
     const body = await rewriteM3U8Sealed(text, target, proxyBase, {
-      o: target.origin, p: dir, cid: payload.cid || "", uid: payload.uid, sid: payload.sid,
+      o: target.origin, p: dir, cid: payload.cid || "", uid: payload.uid, sid: payload.sid, vod: isVod,
     }, env);
     return new Response(body, { status: resp.status, headers });
   }
@@ -1897,7 +1963,7 @@ async function rewriteM3U8Sealed(text, targetUrl, proxyBase, ctx, env) {
       if (!cache.has(abs)) {
         const t = await sealStreamToken({
           k: "seg", u: abs, o: ctx.o, p: ctx.p, cid: ctx.cid,
-          uid: ctx.uid, sid: ctx.sid, iat: nowS, exp: nowS + SEGMENT_TOKEN_TTL,
+          uid: ctx.uid, sid: ctx.sid, iat: nowS, exp: nowS + (ctx.vod ? SEGMENT_TOKEN_TTL_VOD : SEGMENT_TOKEN_TTL),
         }, env);
         cache.set(abs, proxyBase + "?t=" + t);
       }
@@ -2291,9 +2357,12 @@ async function handleUser(path, request, env) {
 
   // Change password
   if (path === "/user/change-password" && request.method === "POST") {
-    const { oldPassword, newPassword } = await request.json().catch(() => ({}));
+    const body = await request.json().catch(() => ({}));
+    const { oldPassword, newPassword } = body;
+    const logoutOthers = body.logoutOthers !== false; // mặc định: đá các thiết bị khác
     if (!oldPassword || !newPassword) return json({ error: "Thiếu thông tin" }, 400, request, env);
     if (String(newPassword).length < 6) return json({ error: "Mật khẩu mới ≥ 6 ký tự" }, 400, request, env);
+    if (String(newPassword) === String(oldPassword)) return json({ error: "Mật khẩu mới phải khác mật khẩu cũ" }, 400, request, env);
     // Đọc hash rồi so bằng verifyPassword (hỗ trợ cả hash theo secret cũ) —
     // trước đây so trực tiếp trong SQL nên đổi secret là không đổi được mật khẩu.
     const { results } = await env.DB.prepare("SELECT password_hash FROM users WHERE id = ?").bind(user.id).all();
@@ -2302,7 +2371,21 @@ async function handleUser(path, request, env) {
       return json({ error: "Sai mật khẩu cũ" }, 400, request, env);
     }
     await env.DB.prepare("UPDATE users SET password_hash = ? WHERE id = ?").bind(hashPassword(String(newPassword), env), user.id).run();
-    return json({ success: true }, 200, request, env);
+
+    // Đổi mật khẩu = thu hồi phiên của các thiết bị khác (giữ lại thiết bị hiện tại)
+    let sessionsRevoked = 0;
+    if (logoutOthers) {
+      const curToken = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+      try {
+        const r = await env.DB.prepare("DELETE FROM sessions WHERE user_id = ? AND token != ?").bind(user.id, curToken).run();
+        sessionsRevoked = r.meta?.changes || r.changes || 0;
+      } catch {}
+    }
+    try {
+      await env.DB.prepare("INSERT INTO analytics (event, user_id, data) VALUES ('password_change', ?, ?)")
+        .bind(user.id, JSON.stringify({ logoutOthers, sessionsRevoked })).run();
+    } catch {}
+    return json({ success: true, sessionsRevoked }, 200, request, env);
   }
 
   // Logout
@@ -3605,15 +3688,15 @@ async function handleChannels(env, request) {
     await ensureSchema(env);
     try {
       const { results } = await env.DB.prepare("SELECT * FROM channels WHERE is_active = 1 ORDER BY id ASC").all();
-      if (results && results.length > 0 && !refresh) return json({ success: true, channels: results.map(publicChannel) }, 200, request, env);
+      if (results && results.length > 0 && !refresh) return json({ success: true, channels: results.map((c) => publicChannel(c, env)) }, 200, request, env);
     } catch (e) { console.error("handleChannels D1 error:", e?.message || e); }
   }
   // Bảng rỗng hoặc yêu cầu refresh → nạp từ nguồn M3U và lưu vào D1
-  const fromSource = await loadChannelsFromSource();
+  const fromSource = await loadChannelsFromSource(env);
   if (hasDB(env) && fromSource && fromSource.length > 0) {
     await writeChannels(env, fromSource);
   }
-  return json({ success: true, channels: fromSource.map(publicChannel) }, 200, request, env);
+  return json({ success: true, channels: fromSource.map((c) => publicChannel(c, env)) }, 200, request, env);
 }
 
 // Ghi danh sách kênh vào D1 (thay toàn bộ, dùng batch). Trả số kênh đã ghi (0 nếu không có DB).
@@ -3674,9 +3757,12 @@ async function writeChannels(env, list) {
 }
 
 // Tải danh sách kênh từ playlist M3U gốc, fallback danh sách mặc định
-async function loadChannelsFromSource() {
+async function loadChannelsFromSource(env) {
+  // Nguồn M3U có thể đổi sang link RIÊNG TƯ bằng secret M3U_SOURCE_URL
+  // (mặc định là file public trên GitHub — ai cũng tải được toàn bộ link gốc).
+  const src = (env && env.M3U_SOURCE_URL) || SOURCE_M3U_URL;
   try {
-    const resp = await fetch(SOURCE_M3U_URL, { headers: { "User-Agent": "CHRTV-OTT/2.0" }, signal: AbortSignal.timeout(8000) });
+    const resp = await fetch(src, { headers: { "User-Agent": "CHRTV-OTT/2.0" }, signal: AbortSignal.timeout(8000) });
     if (resp.ok) {
       const parsed = parseM3U(await resp.text());
       if (parsed.length > 0) return parsed;
@@ -3698,7 +3784,7 @@ async function handleSearch(request, env) {
     } catch (e) { console.error("handleSearch D1 error:", e?.message || e); }
   }
   const needle = q.toLowerCase();
-  const list = (await loadChannelsFromSource())
+  const list = (await loadChannelsFromSource(env))
     .filter(ch => (ch.name || "").toLowerCase().includes(needle))
     .slice(0, 20)
     .map(ch => ({ channel_id: ch.channel_id, name: ch.name, logo: ch.logo, group_title: ch.group_title }));

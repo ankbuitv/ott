@@ -183,8 +183,35 @@ if [ -n "$GTOKEN" ] && [ -n "$CH_VN" ]; then
   T=$(printf '%s' "$ST" | sed -n 's/.*"t":"\([^"]*\)".*/\1/p' | head -1)
   TTL=$(printf '%s' "$ST" | sed -n 's/.*"ttl":\([0-9]*\).*/\1/p' | head -1)
   [ -n "$T" ] && ok "nhận stream token (ttl=${TTL}s)" || bad "không nhận stream token: $ST"
-  check_le "TTL token ≤ 60s" 60 "${TTL:-999}"
+  # TTL manifest = 300s (mặc định): 60s làm player đứt giữa chừng. Token vẫn bind
+  # user + IP/UA (sid) nên copy sang máy/tool khác là chết ngay -> 300s an toàn.
+  check_le "TTL token ≤ 300s" 300 "${TTL:-999}"
   # scope: token của kênh này KHÔNG được dùng cho URL thư mục khác (chọn kênh khác cùng origin nếu có, không thì skip)
+fi
+
+echo ""
+echo "[12] CHỐNG RIP LINK M3U8 (tool chuyên nghiệp)"
+# 12a: file playlist gốc không được phục vụ như static asset
+for f in "/playlists/tv.m3u" "/tv.m3u" "/playlists/tv.m3u8"; do
+  C=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -A "$UA" "$BASE$f")
+  check_eq "static $f bị chặn" 404 "$C"
+done
+# 12b: link proxy KHÔNG dùng lại được ở UA/thiết bị khác (token bind IP+UA)
+if [ -n "$GTOKEN" ] && [ -n "$CH_VN" ]; then
+  PU=$(curl -s --max-time 15 -A "$UA" -H "Authorization: Bearer $GTOKEN" "$BASE/api/stream/token?channel=$CH_VN" \
+       | sed -n 's/.*"proxy_url":"\([^"]*\)".*/\1/p' | head -1)
+  if [ -n "$PU" ]; then
+    C_SAME=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 -A "$UA" -H "Authorization: Bearer $GTOKEN" "$BASE$PU")
+    C_OTHER=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 -A "Mozilla/5.0 (X11; Linux) Other/1.0" "$BASE$PU")
+    C_CURL=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$BASE$PU")
+    C_VLC=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 -A "VLC/3.0.20 LibVLC/3.0.20" "$BASE$PU")
+    if [ "$C_SAME" = "200" ] || [ "$C_SAME" = "502" ]; then ok "proxy phát được ở đúng phiên (= $C_SAME)"; else bad "proxy ở đúng phiên trả $C_SAME"; fi
+    check_eq "copy link sang UA khác bị chặn" 403 "$C_OTHER"
+    check_eq "curl trần bị chặn" 403 "$C_CURL"
+    check_eq "VLC bị chặn" 403 "$C_VLC"
+  else
+    echo "  ⚠️ không lấy được proxy_url — bỏ qua 12b"
+  fi
 fi
 
 echo ""

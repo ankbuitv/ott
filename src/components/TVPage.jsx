@@ -5,6 +5,7 @@ import { Play, Pause, Volume2, VolumeX, Maximize, Search, Heart, Radio, Clock, A
 import { useI18n } from '../contexts/I18nContext';
 import { parseEpgDate, formatTimeHHMM } from '../utils/dateUtils';
 import { maskScores } from '../utils/spoiler';
+import { isHlsUrl, isProxiedStreamUrl, getRotateAtMs, refreshStreamToken, makeStreamRequestFilter, applyStreamClientHeaders } from '../services/streamGuard';
 
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 
@@ -24,10 +25,30 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
     let cancelled = false;
     setError(null);
     setBuffering(true);
-    const isHls = /\.m3u8(\?|$)/i.test(streamUrl);
+    const proxied = isProxiedStreamUrl(streamUrl);
+    const isHls = isHlsUrl(streamUrl) || proxied;
+    let rotateTimer = null;
     const cleanup = () => {
+      if (rotateTimer) { clearTimeout(rotateTimer); rotateTimer = null; }
       try { if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; } } catch {}
       try { if (shakaRef.current) { shakaRef.current.destroy(); shakaRef.current = null; } } catch {}
+    };
+    // Xoay token phát trước khi hết hạn (URL proxy TTL ngắn)
+    const scheduleRotate = () => {
+      if (!proxied || !channel) return;
+      const at = getRotateAtMs(channel.channel_id);
+      if (!at) return;
+      if (rotateTimer) clearTimeout(rotateTimer);
+      rotateTimer = setTimeout(async () => {
+        if (cancelled) return;
+        try {
+          const fresh = await refreshStreamToken(channel, 0);
+          if (cancelled || !fresh) return;
+          if (hlsRef.current) hlsRef.current.loadSource(fresh);
+          else if (shakaRef.current) await shakaRef.current.load(fresh);
+          scheduleRotate();
+        } catch { if (!cancelled) rotateTimer = setTimeout(scheduleRotate, 20000); }
+      }, Math.max(15000, at - Date.now()));
     };
     const loadShaka = async () => {
       try {
@@ -35,6 +56,10 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
         if (shaka.Player.isBrowserSupported()) {
           const player = new shaka.Player(video);
           shakaRef.current = player;
+          try {
+            const filter = makeStreamRequestFilter(channel);
+            if (filter) player.getNetworkingEngine()?.registerRequestFilter(filter);
+          } catch {}
           player.configure({
             streaming: { rebufferingGoal: 2, bufferingGoal: 12, lowLatencyMode: true },
             abr: { enabled: true },
@@ -57,6 +82,7 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
           });
           await player.load(streamUrl);
           if (!cancelled) {
+            scheduleRotate();
             try { await video.play(); setPlaying(true); } catch { setPlaying(false); }
             setBuffering(false);
           }
@@ -77,17 +103,34 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
     const init = async () => {
       try {
         if (isHls && Hls.isSupported()) {
-          const hls = new Hls({ enableWorker: true, lowLatencyMode: true, backBufferLength: 30 });
+          const hls = new Hls({
+            enableWorker: true,
+            lowLatencyMode: true,
+            backBufferLength: 30,
+            xhrSetup: (xhr, url) => {
+              if (!isProxiedStreamUrl(url)) return;
+              const h = applyStreamClientHeaders({}, channel);
+              Object.entries(h).forEach(([k, v]) => { try { xhr.setRequestHeader(k, v); } catch {} });
+            },
+          });
           hlsRef.current = hls;
           hls.attachMedia(video);
           hls.on(Hls.Events.MEDIA_ATTACHED, () => { if (!cancelled) hls.loadSource(streamUrl); });
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
             if (cancelled) return;
             setBuffering(false);
+            scheduleRotate();
             video.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
           });
           hls.on(Hls.Events.ERROR, (evt, data) => {
             if (cancelled) return;
+            const st = data?.response?.code || 0;
+            if (proxied && (st === 401 || st === 403)) {
+              refreshStreamToken(channel, 0)
+                .then((fresh) => { if (!cancelled && fresh) { hls.loadSource(fresh); scheduleRotate(); } })
+                .catch(() => {});
+              return;
+            }
             if (data.fatal) {
               if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
               else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();

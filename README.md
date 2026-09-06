@@ -13,6 +13,7 @@ CHRTV là hệ thống ứng dụng xem truyền hình IPTV chuyên nghiệp, ca
 - **Phim ảnh theo vị trí địa lý**: phát hiện quốc gia người xem qua `/api/geo` (Cloudflare IP geo `request.cf.country`, fallback timezone) → TMDB gọi kèm `region` + `language` riêng (poster đang chiếu, sắp chiếu, TV show bản địa, kho phim trộn theo vùng). Đổi khu vực thủ công bằng bộ chọn cờ 🌐 trong trang Phim.
 - **Bảo mật & cộng đồng**: rate-limit đăng nhập (sai 5 lần/tài khoản hoặc 20 lần/IP → khoá 15 phút), 2FA TOTP (Google Authenticator), audit log admin, quản lý user (ban/promote/reset password), Watch Party xem chung có chat + reaction (D1 polling), Web Push VAPID, notification center, TMDB proxy cache edge (giấu api_key), PiP/Cast/AirPlay, data saver ≤480p, EPG 7 ngày (quá khứ + tương lai), My List + Tiếp tục xem phim, trang diễn viên & đề xuất phim, share deep link `?channel=ID&party=CODE`.
 - **Mật khẩu tách khỏi `JWT_SECRET`**: hash dùng secret riêng `PASSWORD_PEPPER` (chưa set thì rơi về `JWT_SECRET`), khai báo `LEGACY_JWT_SECRETS`/`LEGACY_PASSWORD_PEPPERS` để hash theo secret cũ vẫn đăng nhập được rồi tự nâng cấp. Xoay `JWT_SECRET` chỉ thu hồi phiên, KHÔNG khoá mật khẩu user. Gõ đúng mật khẩu mà báo sai? Xem `DANG_NHAP_TROUBLESHOOT.md`.
+- **Đổi mật khẩu ngay trong app**: Cài đặt → *Đổi mật khẩu* (đo độ mạnh, hiện/ẩn, tuỳ chọn “đăng xuất các thiết bị khác” — thu hồi phiên thật sự vì server đối chiếu bảng `sessions`).
 - **Xác minh email bắt buộc khi đăng ký**: gửi mã 6 số qua Brevo, chưa xác minh không đăng nhập được (UI có nút gửi lại mã + cooldown); khi Worker chưa cấu hình `BREVO_API_KEY` thì rơi về `devCode` hiển thị ngay trên màn hình xác minh.
 
 ### 2. Backend / Infrastructure (Cloudflare Serverless)
@@ -32,7 +33,8 @@ CHRTV là hệ thống ứng dụng xem truyền hình IPTV chuyên nghiệp, ca
 - **Link EPG XML gốc**: `https://epg.io.vn/epgc.xml`
 - **Link Stream Backup (Fallback)**: `http://bore.pub:30113/hls/index.m3u8`
 - **Logo CHRTV chính thức**: `https://i.ibb.co/HDmcxzMK/Gemini-Generated-Image-v7i9yav7i9yav7i9-removebg-preview.png`
-- **Bảo vệ luồng + gói cước (tạm free)**: proxy m3u8 riêng `/api/stream/token` + `/api/stream/proxy` — token AES-128-GCM TTL 10 phút, client tự xoay ở phút 9 để người xem liền mạch; token bind (origin+path thư mục, IP+UA), chặn cứng curl/ffplay/VLC và header proxy-tool (Charles/Fiddler); client phải định danh `CHRTV-OTT/0.0.1` (UA hoặc header `X-CHRTV-Client` — browser không được set UA). JS chặn F12/Ctrl+Shift+I/C/U + chuột phải, mở DevTools là trang tự dừng. Gói cước 3 bậc Standard (kênh VN) / Recreational (VN+Phim) / VIP (tất cả) — đang 100% miễn phí, kích hoạt qua `/user/plan/activate`; hỗ trợ qua email support@ankb.qzz.io (không dùng SĐT).
+- **Bảo vệ luồng (chống rip m3u8)**: `/api/playlist` CHỈ trả metadata (không còn `stream_url`), mọi file `.m3u/.m3u8/.mpd` static bị chặn 404, client phát qua `/api/stream/token` → `/api/stream/proxy` (token AES-GCM bind user + IP/UA, manifest TTL 300s tự xoay, segment token riêng cho từng URI, VOD 4h). Copy link sang tool/máy khác = 403. Chi tiết: `CHONG_RIP_STREAM.md`.
+- **Gói cước (tạm free)**: 5 bậc Standard → Signature, kích hoạt qua `/user/plan/activate`; hỗ trợ qua email support@ankb.qzz.io (không dùng SĐT).
 
 ---
 

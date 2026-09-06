@@ -39,7 +39,7 @@ export default function Sidebar({ activeTab, setActiveTab, onShowSettings, onSho
               onClick={() => setActiveTab(item.id)}
               className={`nav-btn w-14 h-14 rounded-2xl flex flex-col items-center justify-center gap-0.5 transition-all ${
                 isActive
-                  ? 'bg-[#f36f21]/10 text-[#f36f21]'
+                  ? 'grad-brand text-white shadow-lg shadow-cyan-500/25'
                   : 'text-stone-500 hover:text-white hover:bg-white/5'
               }`}
               title={item.label}

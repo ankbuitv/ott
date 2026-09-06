@@ -22,7 +22,7 @@ export default function LiveStrip({ channels = [], epgData = null, onSelect }) {
   if (liveNow.length === 0) return null;
 
   return (
-    <div className="mx-3 md:mx-5 mt-3 rounded-xl bg-gradient-to-r from-[#7a2f0e]/40 via-[#131316] to-[#131316] border border-[#f36f21]/20 overflow-hidden">
+    <div className="mx-3 md:mx-5 mt-3 rounded-xl bg-gradient-to-r from-[#083344]/70 via-[#131316] to-[#131316] border border-cyan-400/20 overflow-hidden anim-fade-up">
       <div className="flex items-center gap-2 px-3 pt-2">
         <span className="live-dot"></span>
         <span className="text-[10px] font-black tracking-widest text-[#ff9a3d]">{t('app.live_now')}</span>

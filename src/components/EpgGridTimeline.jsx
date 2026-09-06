@@ -244,7 +244,7 @@ export default function EpgGridTimeline({
               )}
             </button>
             {showReminders && (
-              <div className="absolute right-0 top-full mt-2 w-80 max-w-[85vw] bg-[#141419] border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50">
+              <div className="absolute right-0 top-full mt-2 w-80 max-w-[85vw] bg-[#141419] border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50 anim-pop-fast">
                 <div className="px-4 py-2.5 border-b border-white/5 flex items-center justify-between">
                   <span className="text-xs font-bold flex items-center gap-1.5"><BellRing className="w-3.5 h-3.5 text-amber-400" /> Hẹn nhắc của tôi</span>
                   <button onClick={() => setShowReminders(false)} className="p-1 hover:bg-white/10 rounded-lg"><X className="w-3.5 h-3.5 text-slate-400" /></button>

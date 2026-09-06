@@ -23,7 +23,7 @@ export default function ProfileGate() {
 
   if (!currentProfile) {
     return (
-      <div className="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center p-6 overflow-y-auto">
+      <div className="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center p-6 overflow-y-auto anim-zoom-fade">
         <div className="absolute top-6 right-6 flex items-center gap-3">
           <span className="text-xs text-stone-500">{user.email}</span>
           <button onClick={logout} className="text-xs text-stone-400 hover:text-white underline">Dang xuat</button>

@@ -70,8 +70,8 @@ function ChannelRating({ channelId, onRequireLogin }) {
 export default function ChannelInfoModal({ channel, epgNow, epgNext, isFavorite, onPlay, onToggleFavorite, onClose, onRequireLogin }) {
   if (!channel) return null;
   return (
-    <div className="fixed inset-0 z-[160] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-[#13151c] border border-slate-800/60 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[160] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 modal-backdrop" onClick={onClose}>
+      <div className="bg-[#13151c] border border-slate-800/60 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden modal-panel" onClick={e => e.stopPropagation()}>
         <div className="relative p-5 text-center">
           <button onClick={onClose} className="absolute top-3 right-3 p-1 hover:bg-slate-800 rounded-lg">
             <X className="w-4 h-4 text-slate-400" />

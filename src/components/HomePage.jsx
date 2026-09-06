@@ -60,7 +60,7 @@ const ChannelGridCard = React.memo(function ChannelGridCard({ ch, epg, onSelect,
         {/* Tiến độ chương trình đang phát */}
         {epg?.now && progress > 0 && (
           <span className="absolute bottom-0 inset-x-0 z-20 h-1 bg-white/10">
-            <span className="block h-full bg-gradient-to-r from-[#ff9a3d] to-[#f36f21]" style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}></span>
+            <span className="block h-full bg-gradient-to-r from-[#22d3ee] via-[#818cf8] to-[#f36f21]" style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}></span>
           </span>
         )}
       </div>
@@ -197,7 +197,7 @@ export default function HomePage({
 
           <div className="absolute inset-y-0 left-0 z-10 flex flex-col justify-center px-6 md:px-12" style={{ width: 'min(580px, 80%)' }}>
             <div className="flex items-center gap-2 mb-3">
-              <span className="flex items-center gap-1.5 text-[11px] font-black tracking-widest text-white bg-[#f36f21] px-2.5 py-1 rounded-full shadow-lg shadow-[#f36f21]/40">
+              <span className="flex items-center gap-1.5 text-[11px] font-black tracking-widest text-white grad-brand px-2.5 py-1 rounded-full shadow-lg shadow-[#f36f21]/40">
                 <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
                 {t('app.live_now')}
               </span>
@@ -269,7 +269,7 @@ export default function HomePage({
                 onClick={() => setSelectedCategory(cat)}
                 className={`shrink-0 px-4 py-2 rounded-full text-[13px] font-bold transition-all active:scale-95 ${
                   active
-                    ? 'bg-gradient-to-r from-[#ff8a2a] to-[#f36f21] text-white shadow-lg shadow-[#f36f21]/30'
+                    ? 'grad-brand text-white shadow-lg shadow-[#f36f21]/30'
                     : 'bg-white/[0.06] text-stone-300 hover:bg-white/[0.12] hover:text-white'
                 }`}
               >

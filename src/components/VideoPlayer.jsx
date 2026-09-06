@@ -911,7 +911,7 @@ export default function VideoPlayer({
       {/* Buffering */}
       {isBuffering && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 z-20">
-          <div className="w-12 h-12 border-[3px] border-[#f36f21] border-t-transparent rounded-full animate-spin"></div>
+          <div className="w-12 h-12 border-[3px] border-cyan-400 border-t-transparent rounded-full animate-spin"></div>
           <span className="mt-2 text-xs text-slate-400 font-medium">Đang tải...</span>
         </div>
       )}
@@ -933,7 +933,7 @@ export default function VideoPlayer({
 
       {/* Channel Quick-Switch OSD */}
       {quickSwitch && (
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 bg-black/80 backdrop-blur-sm rounded-2xl px-6 py-4 flex items-center gap-4 shadow-2xl border border-slate-700/40">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 bg-black/80 backdrop-blur-sm rounded-2xl px-6 py-4 flex items-center gap-4 shadow-2xl anim-pop-fast border border-slate-700/40">
           {quickSwitch.logo && <img src={quickSwitch.logo} alt="" className="w-14 h-14 object-contain rounded-xl" onError={e => e.target.style.display='none'} />}
           <div>
             <div className="text-sm font-bold text-white">{quickSwitch.name}</div>
@@ -1022,7 +1022,7 @@ export default function VideoPlayer({
 
         {/* Info Panel */}
         {showInfo && (
-          <div className="absolute top-12 left-3 z-20 w-64 bg-black/85 backdrop-blur-md rounded-xl border border-slate-700/40 p-3 pointer-events-auto shadow-2xl">
+          <div className="absolute top-12 left-3 z-20 w-64 bg-black/85 backdrop-blur-md rounded-xl border border-slate-700/40 p-3 pointer-events-auto shadow-2xl anim-pop-fast">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1.5 text-[10px] font-semibold text-blue-400 uppercase tracking-wider">
                 <Monitor className="w-3 h-3" /> {t('player.stats')}
@@ -1054,7 +1054,7 @@ export default function VideoPlayer({
 
         {/* Quality Menu */}
         {showQualityMenu && (
-          <div className="absolute top-12 right-3 z-20 w-56 bg-black/85 backdrop-blur-md rounded-xl border border-slate-700/40 p-2 pointer-events-auto shadow-2xl">
+          <div className="absolute top-12 right-3 z-20 w-56 bg-black/85 backdrop-blur-md rounded-xl border border-slate-700/40 p-2 pointer-events-auto shadow-2xl anim-pop-fast">
             <div className="flex items-center justify-between mb-1.5">
               <div className="flex items-center gap-1.5 text-[10px] font-semibold text-blue-400 uppercase tracking-wider"><Settings className="w-3 h-3" /> {t('player.quality')}</div>
               <button onClick={() => setShowQualityMenu(false)} className="p-0.5 rounded hover:bg-slate-700/50"><X className="w-3 h-3 text-slate-400" /></button>
@@ -1087,7 +1087,7 @@ export default function VideoPlayer({
 
         {/* UA Menu (chọn User-Agent upstream — fix kênh cần Dalvik) */}
         {showUAMenu && (
-          <div className="absolute top-12 right-3 z-20 w-72 bg-black/85 backdrop-blur-md rounded-xl border border-slate-700/40 p-2 pointer-events-auto shadow-2xl">
+          <div className="absolute top-12 right-3 z-20 w-72 bg-black/85 backdrop-blur-md rounded-xl border border-slate-700/40 p-2 pointer-events-auto shadow-2xl anim-pop-fast">
             <div className="flex items-center justify-between mb-1.5">
               <div className="flex items-center gap-1.5 text-[10px] font-semibold text-emerald-400 uppercase tracking-wider"><Smartphone className="w-3 h-3" /> User-Agent luồng</div>
               <button onClick={() => setShowUAMenu(false)} className="p-0.5 rounded hover:bg-slate-700/50"><X className="w-3 h-3 text-slate-400" /></button>
@@ -1126,7 +1126,7 @@ export default function VideoPlayer({
 
         {/* Audio Menu */}
         {showAudioMenu && (
-          <div className="absolute top-12 right-3 z-20 w-48 bg-black/85 backdrop-blur-md rounded-xl border border-slate-700/40 p-2 pointer-events-auto shadow-2xl">
+          <div className="absolute top-12 right-3 z-20 w-48 bg-black/85 backdrop-blur-md rounded-xl border border-slate-700/40 p-2 pointer-events-auto shadow-2xl anim-pop-fast">
             <div className="flex items-center justify-between mb-1.5">
               <div className="flex items-center gap-1.5 text-[10px] font-semibold text-blue-400 uppercase tracking-wider"><AudioLines className="w-3 h-3" /> {t('player.language')}</div>
               <button onClick={() => setShowAudioMenu(false)} className="p-0.5 rounded hover:bg-slate-700/50"><X className="w-3 h-3 text-slate-400" /></button>
@@ -1144,7 +1144,7 @@ export default function VideoPlayer({
 
         {/* Subtitle Language Menu */}
         {showSubtitleMenu && (
-          <div className="absolute top-12 right-3 z-20 w-48 bg-black/85 backdrop-blur-md rounded-xl border border-slate-700/40 p-2 pointer-events-auto shadow-2xl">
+          <div className="absolute top-12 right-3 z-20 w-48 bg-black/85 backdrop-blur-md rounded-xl border border-slate-700/40 p-2 pointer-events-auto shadow-2xl anim-pop-fast">
             <div className="flex items-center justify-between mb-1.5">
               <div className="flex items-center gap-1.5 text-[10px] font-semibold text-blue-400 uppercase tracking-wider"><Captions className="w-3 h-3" /> {t('player.subtitles')}</div>
               <button onClick={() => setShowSubtitleMenu(false)} className="p-0.5 rounded hover:bg-slate-700/50"><X className="w-3 h-3 text-slate-400" /></button>
@@ -1165,7 +1165,7 @@ export default function VideoPlayer({
 
         {/* EPG strip: kênh khác đang chiếu gì */}
         {showEpgStrip && (
-          <div className="absolute top-12 left-3 z-20 w-80 max-h-[70%] bg-black/90 backdrop-blur-md rounded-xl border border-slate-700/40 flex flex-col pointer-events-auto shadow-2xl">
+          <div className="absolute top-12 left-3 z-20 w-80 max-h-[70%] bg-black/90 backdrop-blur-md rounded-xl border border-slate-700/40 flex flex-col pointer-events-auto shadow-2xl anim-pop-fast">
             <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700/40">
               <div className="flex items-center gap-1.5 text-[10px] font-semibold text-blue-400 uppercase tracking-wider"><Tv className="w-3 h-3" /> Đang chiếu lúc này</div>
               <button onClick={() => setShowEpgStrip(false)} className="p-0.5 rounded hover:bg-slate-700/50"><X className="w-3 h-3 text-slate-400" /></button>
@@ -1189,7 +1189,7 @@ export default function VideoPlayer({
 
         {/* Watch Party panel */}
         {showParty && (
-          <div className="absolute top-12 right-3 bottom-24 z-20 w-80 bg-black/90 backdrop-blur-md rounded-xl border border-purple-700/40 flex flex-col pointer-events-auto shadow-2xl">
+          <div className="absolute top-12 right-3 bottom-24 z-20 w-80 bg-black/90 backdrop-blur-md rounded-xl border border-purple-700/40 flex flex-col pointer-events-auto shadow-2xl anim-pop-fast">
             <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700/40">
               <div className="flex items-center gap-1.5 text-[10px] font-semibold text-purple-400 uppercase tracking-wider"><PartyPopper className="w-3 h-3" /> Xem chung {partyRoom && `· Phòng ${partyRoom.replace('party:', '')}`}</div>
               <button onClick={() => setShowParty(false)} className="p-0.5 rounded hover:bg-slate-700/50"><X className="w-3 h-3 text-slate-400" /></button>
@@ -1263,7 +1263,7 @@ export default function VideoPlayer({
 
         {/* Volume Slider (overlay) */}
         {showVolumeSlider && (
-          <div className="absolute top-12 left-1/2 -translate-x-1/2 z-20 bg-black/80 backdrop-blur-md rounded-xl border border-slate-700/40 px-4 py-2.5 flex items-center gap-3 pointer-events-auto shadow-2xl">
+          <div className="absolute top-12 left-1/2 -translate-x-1/2 z-20 bg-black/80 backdrop-blur-md rounded-xl border border-slate-700/40 px-4 py-2.5 flex items-center gap-3 pointer-events-auto shadow-2xl anim-pop-fast">
             <VolumeIcon className="w-4 h-4 text-slate-300 shrink-0" />
             <input
               type="range" min={0} max={100} value={isMuted ? 0 : volume}
@@ -1276,7 +1276,7 @@ export default function VideoPlayer({
 
         {/* Channel List Panel */}
         {showChannelList && (
-          <div className="absolute top-12 right-3 bottom-16 z-20 w-72 bg-black/90 backdrop-blur-md rounded-xl border border-slate-700/40 flex flex-col pointer-events-auto shadow-2xl">
+          <div className="absolute top-12 right-3 bottom-16 z-20 w-72 bg-black/90 backdrop-blur-md rounded-xl border border-slate-700/40 flex flex-col pointer-events-auto shadow-2xl anim-pop-fast">
             <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700/40">
               <div className="flex items-center gap-1.5 text-[10px] font-semibold text-blue-400 uppercase tracking-wider"><List className="w-3 h-3" /> DS kênh</div>
               <button onClick={() => setShowChannelList(false)} className="p-0.5 rounded hover:bg-slate-700/50"><X className="w-3 h-3 text-slate-400" /></button>
@@ -1317,7 +1317,7 @@ export default function VideoPlayer({
                 </p>
                 {epgNow && (
                   <div className="w-full bg-slate-800/80 h-1 rounded-full mt-1 overflow-hidden">
-                    <div className="bg-[#f36f21] h-full rounded-full transition-all duration-500" style={{ width: `${nowProgress}%` }} />
+                    <div className="bg-gradient-to-r from-[#22d3ee] to-[#f36f21] h-full rounded-full transition-all duration-500" style={{ width: `${nowProgress}%` }} />
                   </div>
                 )}
               </div>
@@ -1344,7 +1344,7 @@ export default function VideoPlayer({
           {/* Controls */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
-              <button onClick={togglePlay} className="p-2 rounded-full bg-[#f36f21] text-white hover:bg-[#f36f21] shadow-lg shadow-[#f36f21]/25">
+              <button onClick={togglePlay} className="p-2 rounded-full grad-brand text-white hover:brightness-110 shadow-lg shadow-[#f36f21]/25">
                 {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 fill-current" />}
               </button>
               <button onClick={toggleMute} className="p-2 rounded-full bg-black/50 text-slate-200 hover:bg-black/70">

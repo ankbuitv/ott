@@ -121,7 +121,7 @@ export default function AuthScreen() {
   // Single-form returns
   if (view === 'verify') {
     return (
-      <div className="fixed inset-0 z-[200] bg-black flex items-center justify-center p-4">
+      <div className="fixed inset-0 z-[200] bg-black flex items-center justify-center p-4 anim-zoom-fade">
         {/* Backdrop image */}
         <div className="absolute inset-0 bg-cover bg-center opacity-30" style={{ backgroundImage: 'url(https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=1920)' }}></div>
         <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-black/30"></div>
@@ -160,7 +160,7 @@ export default function AuthScreen() {
   }
 
   return (
-    <div className="fixed inset-0 z-[200] bg-black flex items-center justify-center p-4 overflow-hidden">
+    <div className="fixed inset-0 z-[200] bg-black flex items-center justify-center p-4 overflow-hidden anim-zoom-fade">
       {/* Cinematic backdrop */}
       <div className="absolute inset-0">
         <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: 'url(https://images.unsplash.com/photo-1574375927938-d5a98e8ffe85?w=1920)' }}></div>

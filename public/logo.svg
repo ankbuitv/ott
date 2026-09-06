@@ -1,12 +1,26 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#ff8a2a"/>
-      <stop offset="0.55" stop-color="#f36f21"/>
-      <stop offset="1" stop-color="#c81d4e"/>
+    <linearGradient id="face" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="0.42" stop-color="#38bdf8"/>
+      <stop offset="0.7" stop-color="#818cf8"/>
+      <stop offset="1" stop-color="#f36f21"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.6"/>
+      <stop offset="0.45" stop-color="#ffffff" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="tri" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#cffafe"/>
     </linearGradient>
   </defs>
-  <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#g)"/>
-  <path d="M26 20v24l20-12z" fill="#fff"/>
-  <rect x="2" y="2" width="60" height="60" rx="14" fill="none" stroke="#ffffff" stroke-opacity="0.25" stroke-width="2"/>
+  <rect x="7" y="10" width="52" height="52" rx="16" fill="#08222e"/>
+  <rect x="6" y="8" width="52" height="52" rx="16" fill="#0e3a4d"/>
+  <rect x="5" y="6" width="52" height="52" rx="16" fill="#155e75"/>
+  <rect x="4" y="4" width="52" height="52" rx="16" fill="url(#face)"/>
+  <rect x="4" y="4" width="52" height="52" rx="16" fill="url(#glass)"/>
+  <path d="M24 19.5v25l20.5-12.5z" fill="url(#tri)" opacity="0.96"/>
+  <text x="32.5" y="43" text-anchor="middle" font-size="21" font-weight="900" font-family="Inter,system-ui,sans-serif" fill="#0b1c2c">A</text>
 </svg>

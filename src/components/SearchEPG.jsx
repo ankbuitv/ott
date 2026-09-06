@@ -31,7 +31,7 @@ export default function SearchEPG({ epgData, channels, onPlayCatchup, onSelectCh
   }
 
   return (
-    <div className="bg-[#13151c] border border-slate-800/40 rounded-xl p-3 space-y-2">
+    <div className="bg-[#13151c] border border-slate-800/40 rounded-xl p-3 space-y-2 anim-pop-fast">
       <div className="flex items-center gap-2">
         <Search className="w-4 h-4 text-slate-500 shrink-0" />
         <input autoFocus type="text" value={query} onChange={e => setQuery(e.target.value)} placeholder="Nhập tên chương trình..." className="flex-1 bg-transparent text-sm text-white placeholder:text-slate-600 focus:outline-none" />

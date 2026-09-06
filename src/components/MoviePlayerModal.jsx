@@ -104,7 +104,7 @@ export default function MoviePlayerModal({ movie, onClose }) {
   if (!movie) return null;
 
   return (
-    <div className="fixed inset-0 z-[300] bg-black flex flex-col">
+    <div className="fixed inset-0 z-[300] bg-black flex flex-col anim-zoom-fade">
       {/* Header */}
       <div className="flex items-center justify-between px-4 md:px-6 py-3 bg-black/95 border-b border-white/10 shrink-0">
         <div className="flex items-center gap-3 min-w-0">

@@ -140,7 +140,7 @@ function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, s
 
           {/* Dropdown results */}
           {showDropdown && (
-            <div className="absolute top-full mt-2 left-0 w-[26rem] bg-[#14151a]/95 glass border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50">
+            <div className="absolute top-full mt-2 left-0 w-[26rem] bg-[#14151a]/95 glass border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50 anim-pop-fast">
               {/* Kênh */}
               {channelMatches.length > 0 && (
                 <div className="p-2">
@@ -212,7 +212,7 @@ function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, s
             <span className="hidden lg:inline text-[11px] font-bold text-stone-300 uppercase">{lang}</span>
           </button>
           {langOpen && (
-            <div className="absolute right-0 top-full mt-2 w-56 max-w-[80vw] bg-[#141419] border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50">
+            <div className="absolute right-0 top-full mt-2 w-56 max-w-[80vw] bg-[#141419] border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50 anim-pop-fast">
               <div className="px-4 py-2.5 border-b border-white/5 text-xs font-bold">{t('settings.choose_lang')}</div>
               <div className="max-h-80 overflow-y-auto p-1.5">
                 {(languages || []).map((l) => (
@@ -263,7 +263,7 @@ function TopNav({ channels, searchQuery, setSearchQuery, user, currentProfile, s
           </button>
 
           {notifOpen && (
-            <div className="absolute right-0 top-full mt-2 w-80 max-w-[92vw] bg-[#141419] border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50">
+            <div className="absolute right-0 top-full mt-2 w-80 max-w-[92vw] bg-[#141419] border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-50 anim-pop-fast">
               <div className="px-4 py-2.5 border-b border-white/5 flex items-center justify-between">
                 <span className="text-xs font-bold">{t('nav.notifications')}</span>
                 <button onClick={markAllRead} className="text-[10px] text-stone-400 hover:text-white flex items-center gap-1"><Check className="w-3 h-3" /> {t('nav.read_all')}</button>

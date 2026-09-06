@@ -1,29 +1,75 @@
 import React from 'react';
 import { getAvatar } from '../contexts/ProfileContext';
 
-// Logo CHRTV PLAY — nút play gradient cam/đỏ trên nền kính mờ + chữ trắng/cam
+// ===== Logo mark 3D: nút play gradient cyan→cam, chữ A bên trong =====
+function LogoMark3D({ className = '' }) {
+  return (
+    <svg viewBox="0 0 64 64" className={className} aria-hidden="true">
+      <defs>
+        <linearGradient id="chr-face" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#22d3ee" />
+          <stop offset="0.42" stopColor="#38bdf8" />
+          <stop offset="0.7" stopColor="#818cf8" />
+          <stop offset="1" stopColor="#f36f21" />
+        </linearGradient>
+        <linearGradient id="chr-glass" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#ffffff" stopOpacity="0.6" />
+          <stop offset="0.45" stopColor="#ffffff" stopOpacity="0.08" />
+          <stop offset="1" stopColor="#ffffff" stopOpacity="0" />
+        </linearGradient>
+        <linearGradient id="chr-tri" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#ffffff" />
+          <stop offset="1" stopColor="#cffafe" />
+        </linearGradient>
+      </defs>
+      {/* Khối 3D phía dưới */}
+      <rect x="7" y="10" width="52" height="52" rx="16" fill="#08222e" />
+      <rect x="6" y="8" width="52" height="52" rx="16" fill="#0e3a4d" />
+      <rect x="5" y="6" width="52" height="52" rx="16" fill="#155e75" />
+      {/* Mặt nút gradient */}
+      <rect x="4" y="4" width="52" height="52" rx="16" fill="url(#chr-face)" />
+      <rect x="4" y="4" width="52" height="52" rx="16" fill="url(#chr-glass)" />
+      {/* Nút play */}
+      <path d="M24 19.5v25l20.5-12.5z" fill="url(#chr-tri)" opacity="0.96" />
+      {/* Chữ A */}
+      <text
+        x="32.5"
+        y="43"
+        textAnchor="middle"
+        fontSize="21"
+        fontWeight="900"
+        fontFamily="Inter, system-ui, sans-serif"
+        fill="#0b1c2c"
+        letterSpacing="0"
+      >
+        A
+      </text>
+    </svg>
+  );
+}
+
+// Logo CHRTV PLAY — icon 3D + chữ gradient
 export default function Logo({ size = 'md', showSubtext = true, className = '' }) {
   const sizes = {
-    sm: { main: 'text-sm', play: 'text-[10px]', sub: 'text-[7px]', icon: 'w-6 h-6', ic: 'w-3 h-3', badge: 'text-[8px] px-1 py-px' },
-    md: { main: 'text-lg', play: 'text-xs', sub: 'text-[8px]', icon: 'w-8 h-8', ic: 'w-4 h-4', badge: 'text-[9px] px-1.5 py-px' },
-    lg: { main: 'text-2xl', play: 'text-sm', sub: 'text-[10px]', icon: 'w-10 h-10', ic: 'w-5 h-5', badge: 'text-[10px] px-2 py-0.5' },
-    xl: { main: 'text-4xl', play: 'text-xl', sub: 'text-xs', icon: 'w-14 h-14', ic: 'w-7 h-7', badge: 'text-xs px-2.5 py-0.5' },
-  }[size] || { main: 'text-lg', play: 'text-xs', sub: 'text-[8px]', icon: 'w-8 h-8', ic: 'w-4 h-4', badge: 'text-[9px] px-1.5 py-px' };
+    sm: { main: 'text-sm', play: 'text-[10px]', sub: 'text-[7px]', icon: 'w-7 h-7' },
+    md: { main: 'text-lg', play: 'text-xs', sub: 'text-[8px]', icon: 'w-9 h-9' },
+    lg: { main: 'text-2xl', play: 'text-sm', sub: 'text-[10px]', icon: 'w-11 h-11' },
+    xl: { main: 'text-4xl', play: 'text-xl', sub: 'text-xs', icon: 'w-16 h-16' },
+  }[size] || { main: 'text-lg', play: 'text-xs', sub: 'text-[8px]', icon: 'w-9 h-9' };
 
   return (
     <div className={`flex items-center gap-2 ${className}`}>
-      <div className={`${sizes.icon} rounded-xl bg-gradient-to-br from-[#ff8a2a] via-[#f36f21] to-[#c81d4e] flex items-center justify-center shadow-lg shadow-[#f36f21]/30 relative overflow-hidden shrink-0 ring-1 ring-white/20`}>
-        <svg className={`${sizes.ic} text-white relative z-10 ml-px`} fill="currentColor" viewBox="0 0 24 24">
-          <path d="M8 5v14l11-7z" />
-        </svg>
-        <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/20 to-transparent"></div>
-        <div className="absolute -bottom-1 -right-1 w-1/2 h-1/2 bg-white/10 rounded-full blur-[2px]"></div>
+      <div
+        className={`${sizes.icon} shrink-0 transition-transform duration-200 hover:scale-110 hover:-rotate-3`}
+        style={{ filter: 'drop-shadow(0 4px 10px rgba(34,211,238,.35)) drop-shadow(0 6px 14px rgba(243,111,33,.35))' }}
+      >
+        <LogoMark3D className="w-full h-full" />
       </div>
 
       <div className="flex flex-col leading-none">
-        <span className="flex items-center gap-1.5">
+        <span className="flex items-baseline gap-1.5">
           <span className={`${sizes.main} font-black tracking-tight text-white`}>CHRTV</span>
-          <span className={`${sizes.badge} font-black tracking-widest text-white bg-gradient-to-r from-[#ff8a2a] to-[#c81d4e] rounded-md shadow shadow-[#f36f21]/40`}>PLAY</span>
+          <span className={`${sizes.play} font-black tracking-[0.22em] text-grad`}>PLAY</span>
         </span>
         {showSubtext && (
           <span className={`${sizes.sub} font-bold tracking-[0.18em] text-stone-400 mt-1`}>

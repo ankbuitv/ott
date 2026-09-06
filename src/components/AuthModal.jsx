@@ -112,8 +112,8 @@ export default function AuthModal({ open, onClose, initialView = 'login' }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[200] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-[#1a1c24] border border-slate-800/60 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[200] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 modal-backdrop" onClick={onClose}>
+      <div className="bg-[#1a1c24] border border-slate-800/60 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden modal-panel" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="px-5 pt-5 pb-3 text-center relative">
           <button onClick={onClose} className="absolute top-3 right-3 p-1.5 rounded-full hover:bg-slate-800 transition-colors">

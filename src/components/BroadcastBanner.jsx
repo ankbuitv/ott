@@ -20,7 +20,7 @@ export default function BroadcastBanner() {
   return (
     <div className="space-y-1">
       {visible.map(b => (
-        <div key={b.id} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium ${
+        <div key={b.id} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium anim-slide-down ${
           b.type === 'warning' ? 'bg-amber-600/20 text-amber-300 border border-amber-600/30' :
           b.type === 'event' ? 'bg-blue-600/20 text-blue-300 border border-blue-600/30' :
           'bg-slate-800/60 text-slate-300 border border-slate-700/30'

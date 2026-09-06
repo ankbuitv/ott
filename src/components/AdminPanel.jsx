@@ -202,8 +202,8 @@ export default function AdminPanel({ onClose }) {
   };
 
   if (user?.role !== 'admin') return (
-    <div className="fixed inset-0 z-[150] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-[#1a1c24] border border-slate-800/60 rounded-2xl p-6 text-center max-w-sm" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[150] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 modal-backdrop" onClick={onClose}>
+      <div className="bg-[#1a1c24] border border-slate-800/60 rounded-2xl p-6 text-center max-w-sm modal-panel" onClick={e => e.stopPropagation()}>
         <div className="w-10 h-10 text-[#f36f21] mx-auto mb-2 flex items-center justify-center"><Users className="w-8 h-8" /></div>
         <h3 className="text-base font-bold text-white mb-1">Không có quyền truy cập</h3>
         <p className="text-xs text-slate-500 mb-3">Bạn cần tài khoản Admin</p>
@@ -213,8 +213,8 @@ export default function AdminPanel({ onClose }) {
   );
 
   return (
-    <div className="fixed inset-0 z-[150] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-[#1a1c24] border border-slate-800/60 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[150] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 modal-backdrop" onClick={onClose}>
+      <div className="bg-[#1a1c24] border border-slate-800/60 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col modal-panel" onClick={e => e.stopPropagation()}>
         <div className="px-5 py-3 border-b border-slate-800/40 flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm font-bold text-white"><Settings className="w-4 h-4 text-blue-400" /> Admin Panel</div>
           <button onClick={onClose} className="text-xs text-slate-500 hover:text-white">Đóng</button>

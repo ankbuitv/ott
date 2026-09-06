@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Trophy, CalendarDays, ListOrdered, Clapperboard, Play, Radio, X, ChevronRight } from 'lucide-react';
 import { useI18n } from '../contexts/I18nContext';
 import { LEAGUES, fetchLeague, fetchSportsVideos, parseVideoUrl } from '../services/sports';
+import RacingSection from './RacingSection';
+import MatchDetailModal from './MatchDetailModal';
 
 const SPORT_RE = /sport|thể thao|the thao|espn|bein|k\+|onsport|fpt.*sport|bóng đá|bong da|star sport|golf|tennis/i;
 
@@ -36,12 +38,12 @@ function TeamBadge({ src, name, size = 'w-8 h-8' }) {
   return <img src={src} alt="" onError={() => setErr(true)} className={`${size} object-contain shrink-0`} loading="lazy" />;
 }
 
-function MatchCard({ ev, showScore }) {
+function MatchCard({ ev, showScore, onClick }) {
   const { t } = useI18n();
   const live = isLive(ev);
   const pp = isPostponed(ev);
   return (
-    <div className={`rounded-2xl border p-3 transition-all ${live ? 'bg-[#f36f21]/10 border-[#f36f21]/50 shadow-lg shadow-[#f36f21]/10' : 'bg-white/[0.03] border-white/[0.07]'}`}>
+    <div onClick={onClick} className={`rounded-2xl border p-3 transition-all cursor-pointer hover:border-[#f36f21]/50 hover:-translate-y-0.5 ${live ? 'bg-[#f36f21]/10 border-[#f36f21]/50 shadow-lg shadow-[#f36f21]/10' : 'bg-white/[0.03] border-white/[0.07]'}`}>
       <div className="flex items-center justify-between mb-2.5">
         <span className="text-[10px] font-bold text-stone-500">
           {ev.intRound ? `${t('sports.round', { n: ev.intRound })} · ` : ''}{fmtDT(ev.strTimestamp, ev.dateEvent, ev.strTime)}
@@ -85,6 +87,8 @@ export default function SportsScreen({ channels = [], onSelectChannel }) {
   const [loading, setLoading] = useState(true);
   const [videos, setVideos] = useState([]);
   const [playing, setPlaying] = useState(null);
+  const [sportTab, setSportTab] = useState('football'); // football | racing
+  const [selMatch, setSelMatch] = useState(null);
 
   const league = LEAGUES.find(l => l.id === leagueId) || LEAGUES[0];
 
@@ -119,8 +123,23 @@ export default function SportsScreen({ channels = [], onSelectChannel }) {
             <p className="text-[11px] text-stone-500 mt-1">{t('sports.sub')}</p>
           </div>
         </div>
+        {/* Tab môn thể thao: Bóng đá | Đua xe */}
+        <div className="relative flex gap-1.5 mt-4">
+          {[{ id: 'football', label: `⚽ ${t('sports.football')}` }, { id: 'racing', label: `🏎️ ${t('sports.racing')}` }].map(tb => (
+            <button
+              key={tb.id}
+              onClick={() => setSportTab(tb.id)}
+              className={`px-4 py-2 rounded-full text-[12px] font-black transition-all active:scale-95 ${
+                sportTab === tb.id ? 'grad-brand text-white shadow-lg shadow-[#f36f21]/30' : 'bg-white/[0.06] text-stone-300 hover:bg-white/[0.12]'
+              }`}
+            >
+              {tb.label}
+            </button>
+          ))}
+        </div>
         {/* League chips */}
-        <div className="relative flex gap-1.5 overflow-x-auto scrollbar-none mt-4 pb-1">
+        {sportTab === 'football' && (
+        <div className="relative flex gap-1.5 overflow-x-auto scrollbar-none mt-3 pb-1">
           {LEAGUES.map(l => (
             <button
               key={l.id}
@@ -135,8 +154,14 @@ export default function SportsScreen({ channels = [], onSelectChannel }) {
             </button>
           ))}
         </div>
+        )}
       </div>
 
+      {sportTab === 'racing' ? (
+        <div className="max-w-[1400px] mx-auto px-5 md:px-8 pb-4">
+          <RacingSection />
+        </div>
+      ) : (
       <div className="max-w-[1400px] mx-auto px-5 md:px-8 space-y-9">
         {/* 1. Kênh thể thao */}
         {sportChannels.length > 0 && (
@@ -192,7 +217,7 @@ export default function SportsScreen({ channels = [], onSelectChannel }) {
             <p className="text-[12px] text-stone-600 italic bg-white/[0.02] border border-white/[0.05] rounded-2xl px-4 py-6 text-center">{t('sports.no_data')}</p>
           ) : (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {data.next.slice(0, 9).map(ev => <MatchCard key={ev.idEvent} ev={ev} showScore={false} />)}
+              {data.next.slice(0, 9).map(ev => <MatchCard key={ev.idEvent} ev={ev} showScore={false} onClick={() => setSelMatch(ev)} />)}
             </div>
           )}
         </section>
@@ -213,7 +238,7 @@ export default function SportsScreen({ channels = [], onSelectChannel }) {
             <p className="text-[12px] text-stone-600 italic bg-white/[0.02] border border-white/[0.05] rounded-2xl px-4 py-6 text-center">{t('sports.no_data')}</p>
           ) : (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {data.past.slice(0, 9).map(ev => <MatchCard key={ev.idEvent} ev={ev} showScore={true} />)}
+              {data.past.slice(0, 9).map(ev => <MatchCard key={ev.idEvent} ev={ev} showScore={true} onClick={() => setSelMatch(ev)} />)}
             </div>
           )}
         </section>
@@ -314,10 +339,15 @@ export default function SportsScreen({ channels = [], onSelectChannel }) {
           )}
         </section>
       </div>
+      )}
 
       {/* Modal phát video */}
       {playing && (
         <VideoModal video={playing} onClose={() => setPlaying(null)} />
+      )}
+      {/* Chi tiết trận: diễn biến + highlight + dự đoán + nhắc + radio */}
+      {selMatch && (
+        <MatchDetailModal ev={selMatch} leagueName={sportTab === 'football' ? league.name : ''} onClose={() => setSelMatch(null)} />
       )}
     </div>
   );

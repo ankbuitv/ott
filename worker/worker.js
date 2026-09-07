@@ -144,14 +144,23 @@ const SECURITY_HEADERS = {
   "Content-Security-Policy": CSP_DIRECTIVES.join("; "),
 };
 
-// ---- frame-src cho player phim (ngàng nhúng từ ĐỐI TÁC CÓ HỢP ĐỒNG) ----
-// Khai domain qua secret (không phải sửa code, không phải mở toang CSP):
+// ---- frame-src cho player phim + NGUỒN FREE MẶC ĐỊNH (mở phim là xem được ngay) ----
+// Nguồn free mặc định (kiểu vidsrc/2embed — nhận tmdb id, không cần API key).
+// Kiểm chứng lần cuối theo danh sách free-streaming-apis (08/2026, tất cả ✅):
+//   vidsrc.to · 2embed.cc · vidlink.pro · moviesapi.to · embed.su · vidcore.org
+// Nguồn admin tự thêm (Admin Panel → Nguồn phim) luôn đứng TRƯỚC nguồn mặc định.
+// Muốn tắt hẳn nguồn mặc định (chỉ dùng nguồn tự khai): đặt biến môi trường
+//   MOVIE_BUILTIN_SOURCES = "0"
+// Muốn thêm domain riêng (nguồn có hợp đồng) mà không sửa code:
 //   wrangler secret put MOVIE_FRAME_SRC   ->   https://player.partner.vn
 //   nhiều domain cách nhau bởi dấu cách/phẩy: https://a.partner.vn https://b.partner.vn
 //
 // DANH SÁCH NÀY LÀ CÁI CỔNG THẬT: /api/movie/sources chỉ trả nguồn mà domain có
-// trong đây, và /admin/movie_sources từ chối lưu nguồn ngoài danh sách. Muốn thêm
-// nguồn là phải động vào secret -> có dấu vết, không nhét lặng qua DB được.
+// trong đây (custom + mặc định), và /admin/movie_sources từ chối lưu nguồn ngoài
+// danh sách.
+// Template dùng chung 1 chuỗi cho cả phim lẻ lẫn TV: với phim lẻ, đoạn
+// /{season}/{episode} được nuốt gọn (xem expandMovieUrl) để URL thành
+// .../movie/123 thay vì .../movie/123/1/1 — nhiều nguồn free không hiểu đuôi /1/1.
 //
 // ⚠️ CSP này hiện CHƯA áp lên tài liệu HTML của app: wrangler.toml để
 //   `assets = { directory = "./dist" }` mà không bật `run_worker_first`, nên request
@@ -162,11 +171,56 @@ const SECURITY_HEADERS = {
 //   Muốn bật cho đúng: thêm run_worker_first = true vào assets, rồi test lại toàn bộ;
 //   lúc đó nếu dùng nguồn kind='hls' ở domain khác phải thêm https://domain đó vào
 //   media-src, không thì <video> bị CSP chặn.
-function allowedEmbedOrigins(env) {
+const DEFAULT_MOVIE_FRAME_SRC = [
+  "https://vidsrc.to",
+  "https://www.2embed.cc",
+  "https://vidlink.pro",
+  "https://moviesapi.to",
+  "https://www.embed.su",
+  "https://vidcore.org",
+];
+// Thứ tự = thứ tự nút chọn server trong app. VidSrc đứng đầu theo yêu cầu.
+const BUILTIN_MOVIE_SOURCES = [
+  { name: "VidSrc", kind: "embed", url_template: "https://vidsrc.to/embed/{type}/{tmdb}/{season}/{episode}" },
+  { name: "2Embed", kind: "embed", url_template: "https://www.2embed.cc/embed/{type}/{tmdb}/{season}/{episode}" },
+  { name: "VidLink", kind: "embed", url_template: "https://vidlink.pro/{type}/{tmdb}/{season}/{episode}" },
+  { name: "MoviesAPI", kind: "embed", url_template: "https://moviesapi.to/{type}/{tmdb}/{season}/{episode}" },
+  { name: "EmbedSU", kind: "embed", url_template: "https://www.embed.su/embed/{type}/{tmdb}/{season}/{episode}" },
+  { name: "VidCore", kind: "embed", url_template: "https://vidcore.org/embed/{type}/{tmdb}/{season}/{episode}" },
+];
+function movieBuiltinsEnabled(env) {
+  const v = String(env?.MOVIE_BUILTIN_SOURCES ?? "1").trim().toLowerCase();
+  return !(v === "0" || v === "false" || v === "off" || v === "no");
+}
+// Domain admin tự khai qua secret (không tính nguồn mặc định) — dùng để hiển thị
+// phân biệt trong Admin Panel.
+function customEmbedOrigins(env) {
   return String(env?.MOVIE_FRAME_SRC || "")
     .split(/[\s,]+/)
     .map((s) => s.trim().replace(/\/+$/, "").toLowerCase())
     .filter((s) => /^https:\/\/[a-z0-9.-]+(:\d{1,5})?$/.test(s));
+}
+function allowedEmbedOrigins(env) {
+  const out = [...customEmbedOrigins(env)];
+  if (movieBuiltinsEnabled(env)) {
+    for (const o of DEFAULT_MOVIE_FRAME_SRC) if (!out.includes(o)) out.push(o);
+  }
+  return out;
+}
+// Thay placeholder {tmdb} {type} {season} {episode} vào template.
+// Phim lẻ (type=movie): nuốt gọn đoạn /{season}/{episode} trong template để URL
+// không dính đuôi /1/1 (nhiều nguồn free trả lỗi với đuôi này).
+function expandMovieUrl(tpl, tmdb, type, season, episode) {
+  let u = String(tpl || "")
+    .replace(/\{tmdb\}/g, tmdb)
+    .replace(/\{type\}/g, type);
+  if (type === "movie") {
+    u = u.replace(/\/\{season\}/g, "").replace(/\/\{episode\}/g, "");
+    u = u.replace(/\{season\}/g, "1").replace(/\{episode\}/g, "1"); // còn sót (kiểu query ?s={season}) thì vô hại
+  } else {
+    u = u.replace(/\{season\}/g, season).replace(/\{episode\}/g, episode);
+  }
+  return u;
 }
 
 function cspFor(env) {
@@ -3545,6 +3599,9 @@ async function handleAdmin(path, request, env, ctx) {
       sources: results || [],
       frame_allowlist: allowedEmbedOrigins(env),
       frame_allowlist_set: allowedEmbedOrigins(env).length > 0,
+      custom_allowlist: customEmbedOrigins(env),
+      builtin_enabled: movieBuiltinsEnabled(env),
+      builtin_sources: movieBuiltinsEnabled(env) ? BUILTIN_MOVIE_SOURCES : [],
     }, 200, request, env);
   }
   if (path === "/admin/movie_sources" && (request.method === "POST" || request.method === "PUT")) {
@@ -5211,19 +5268,20 @@ async function handleAds(request, env) {
   } catch { return json({ success: true, ads: [] }, 200, request, env); }
 }
 
-// ========== NGUỒN PHÁT PHIM (movie_sources) ==========
+// ========== NGUỒN PHÁT PHIM (movie_sources + nguồn free mặc định) ==========
 // GET /api/movie/sources?tmdb=<id>&type=movie|tv&season=1&episode=1
-// Trả danh sách nguồn ĐÃ ĐẠT 2 ĐIỀU KIỆN:
-//   1) đang BẬT trong Admin Panel → Nguồn phim
-//   2) domain của nó nằm trong allowlist CSP MOVIE_FRAME_SRC
-// Điều kiện 2 là thứ chặn việc nhét nguồn tuỳ ý qua bảng DB: nguồn ở domain lạ
-// sẽ bị lọc ở server, chứ không phải chờ CSP chặn ở trình duyệt (user chỉ thấy
-// khung đen khó hiểu). Chưa khai MOVIE_FRAME_SRC => luôn rỗng => UI hiện
-// "Chưa có nguồn phát hợp lệ" (đúng hành vi cũ, không phải lỗi).
+// Trả danh sách nguồn theo thứ tự:
+//   1) nguồn admin thêm và đang BẬT (Admin Panel → Nguồn phim)
+//   2) nguồn free mặc định (BUILTIN_MOVIE_SOURCES) — mở phim là xem được ngay,
+//      trừ khi tắt bằng biến môi trường MOVIE_BUILTIN_SOURCES=0
+// Mọi URL đều phải https:// và domain nằm trong allowlist (custom qua secret
+// MOVIE_FRAME_SRC + domain của nguồn mặc định). Nguồn ở domain lạ bị lọc ngay
+// ở server, chứ không phải chờ CSP chặn ở trình duyệt (user chỉ thấy khung đen).
 async function handleMovieSources(request, env) {
   const empty = (reason) => json({ success: true, sources: [], reason }, 200, request, env);
   if (!hasDB(env)) return empty("no-db");
   const allow = allowedEmbedOrigins(env);
+  // Chỉ xảy ra khi admin tắt nguồn mặc định mà chưa khai secret nào.
   if (allow.length === 0) return empty("no_frame_allowlist");
   await ensureSchema(env);
   const q = new URL(request.url).searchParams;
@@ -5240,15 +5298,19 @@ async function handleMovieSources(request, env) {
       "SELECT id, name, kind, url_template FROM movie_sources WHERE is_active = 1 ORDER BY sort_order ASC, id ASC LIMIT 20"
     ).all();
     rows = results || [];
-  } catch { return empty("no_table"); }
+  } catch { rows = []; } // bảng lỗi cũng không sao — nguồn mặc định vẫn chạy
+
+  // Nguồn admin (id thật) trước, nguồn mặc định (id 1000+) sau.
+  const combined = [
+    ...rows,
+    ...(movieBuiltinsEnabled(env)
+      ? BUILTIN_MOVIE_SOURCES.map((b, i) => ({ id: 1000 + i, ...b }))
+      : []),
+  ];
 
   const out = [];
-  for (const r of rows) {
-    const url = String(r.url_template || "")
-      .replace(/\{tmdb\}/g, tmdb)
-      .replace(/\{type\}/g, type)
-      .replace(/\{season\}/g, season)
-      .replace(/\{episode\}/g, episode);
+  for (const r of combined) {
+    const url = expandMovieUrl(r.url_template, tmdb, type, season, episode);
     let origin = "";
     try {
       const u = new URL(url);

@@ -449,17 +449,21 @@ export function HealthTab({ BASE, headers, addToast }) {
 }
 
 // ---- Nguồn phát phim ----
-// Danh sách này KHÁC với embed cũ: server chỉ trả nguồn cho client nếu domain của nó
-// nằm trong secret MOVIE_FRAME_SRC (allowlist CSP). Nên thêm nguồn ở đây mà chưa khai
-// domain thì app vẫn hiện "Chưa có nguồn phát hợp lệ" — tab này báo rõ trạng thái đó.
+// App có sẵn nguồn free mặc định (VidSrc, 2Embed, VidLink, MoviesAPI, EmbedSU,
+// VidCore) nên mở phim là xem được ngay. Nguồn admin thêm ở đây đứng TRƯỚC nguồn
+// mặc định. Server chỉ trả nguồn có domain nằm trong allowlist (secret
+// MOVIE_FRAME_SRC + domain của nguồn mặc định).
 export function MovieSourcesTab({ BASE, headers, addToast }) {
   const [rows, setRows] = useState([]);
   const [allow, setAllow] = useState([]);
   const [allowSet, setAllowSet] = useState(false);
+  const [customAllow, setCustomAllow] = useState([]);
+  const [builtinEnabled, setBuiltinEnabled] = useState(true);
+  const [builtins, setBuiltins] = useState([]);
   const [form, setForm] = useState({ name: '', kind: 'embed', url_template: '', license_note: '', sort_order: 0 });
   const [editing, setEditing] = useState(null);
   const [testing, setTesting] = useState(null);
-  const load = () => api(BASE, headers, '/admin/movie_sources').then(d => { setRows(d.sources || []); setAllow(d.frame_allowlist || []); setAllowSet(!!d.frame_allowlist_set); }).catch(() => {});
+  const load = () => api(BASE, headers, '/admin/movie_sources').then(d => { setRows(d.sources || []); setAllow(d.frame_allowlist || []); setAllowSet(!!d.frame_allowlist_set); setCustomAllow(d.custom_allowlist || []); setBuiltinEnabled(d.builtin_enabled !== false); setBuiltins(d.builtin_sources || []); }).catch(() => {});
   useEffect(() => { load(); }, []); // eslint-disable-line
   const save = async (e) => {
     e.preventDefault();
@@ -477,7 +481,8 @@ export function MovieSourcesTab({ BASE, headers, addToast }) {
   return (
     <div className="p-4 space-y-3">
       <div className={`rounded-xl border px-3 py-2 text-[11px] leading-relaxed ${allowSet ? 'border-emerald-600/40 bg-emerald-600/10 text-emerald-200' : 'border-amber-600/40 bg-amber-600/10 text-amber-200'}`}>
-        <b>Allowlist CSP (MOVIE_FRAME_SRC):</b> {allowSet ? allow.join(' · ') : 'CHƯA SET — mọi nguồn đều bị chặn, app sẽ vẫn báo "Chưa có nguồn phát hợp lệ".'}
+        <b>Nguồn free mặc định:</b> {builtinEnabled ? `BẬT — ${builtins.length || 6} server (${(builtins.map(b => b.name) || []).join(', ') || 'VidSrc, 2Embed, VidLink, MoviesAPI, EmbedSU, VidCore'})` : 'TẮT (MOVIE_BUILTIN_SOURCES=0)'}
+        <div className="mt-1"><b>Domain tự khai (MOVIE_FRAME_SRC):</b> {customAllow.length ? customAllow.join(' · ') : <span className="text-slate-400">chưa khai thêm — không sao, nguồn mặc định vẫn chạy.</span>}</div>
         <div className="text-slate-400 mt-1 font-mono text-[10px]">wrangler secret put MOVIE_FRAME_SRC   # nội dung: https://domain-cua-nguồn</div>
       </div>
       {rows.map(s => (

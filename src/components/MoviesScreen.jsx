@@ -10,6 +10,8 @@ import FanGroupBox from './FanGroupBox';
 import AdSlot from './AdSlot';
 import { resolveCountry, currentCountry, setManualCountry } from '../services/geo';
 import MoviePlayerModal from './MoviePlayerModal';
+import { hasPlayableSources } from '../services/embeds';
+import { releaseState } from '../utils/release';
 import { runPreroll } from '../services/prerollGate';
 import { useDevice } from '../contexts/DeviceContext';
 import { useToast } from '../contexts/ToastContext';
@@ -98,6 +100,9 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
 
   const [selected, setSelected] = useState(null);
   const [playMovie, setPlayMovie] = useState(null);
+  // phim đang mở có nguồn phát thật chưa (null = chưa kiểm tra xong) -> đổi nhãn
+  // nút CTA + quyết định có chạy pre-roll hay không
+  const [hasSource, setHasSource] = useState(null);
   const [trailer, setTrailer] = useState(null);
   const [trailerLoading, setTrailerLoading] = useState(false);
   const [movieHistory, setMovieHistory] = useState(() => getMovieHistory());
@@ -238,6 +243,8 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
     setSelected(movie);
     setTrailer(null);
     setTrailerLoading(true);
+    setHasSource(null);
+    hasPlayableSources(movie).then(setHasSource).catch(() => setHasSource(false));
     if (!movie.overview) {
       try {
         const full = type === 'tv' ? await getTvDetails(movie.id) : await getMovieDetails(movie.id);
@@ -254,6 +261,35 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
     } catch {}
     setTrailerLoading(false);
   }, []);
+
+  /**
+   * Bấm "Xem phim" (hero hoặc modal thông tin). Ba nhánh, theo đúng thực tế:
+   *   1. Chưa khởi chiếu  -> không mở player, chỉ toast ngày chiếu (modal đã có trailer).
+   *   2. Có rồi, chưa có nguồn -> mở player nhưng nó tự chiếu TRAILER; KHÔNG chạy
+   *      pre-roll và KHÔNG tính giờ xem (đừng bắt người ta xem quảng cáo 30s cho
+   *      thứ không xem được).
+   *   3. Có nguồn -> pre-roll theo gói rồi phát.
+   */
+  const playMovieClick = useCallback(async (m) => {
+    if (!m) return;
+    const rs = releaseState(m);
+    if (!rs.released) {
+      addToast(t('movies.toast.upcoming', { date: rs.dateLabel || '—' }), 'info');
+      openDetail(m);
+      return;
+    }
+    if (!ensureAuthed()) return;
+    let ok = hasSource;
+    if (ok === null || ok === undefined) { ok = await hasPlayableSources(m).catch(() => false); setHasSource(ok); }
+    if (!ok) {
+      addToast(t('movies.toast.no_source'), 'info');
+      setPlayMovie(m);
+      return;
+    }
+    recordMovieWatch(m);
+    await runPreroll('movie', String(m?.id || ''));
+    setPlayMovie(m);
+  }, [addToast, t, ensureAuthed, openDetail, hasSource]);
 
   const isKid = !!currentProfile?.is_child;
   const kidSafe = useMemo(() => {
@@ -321,8 +357,8 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
                 <span className="hidden md:inline text-stone-400 line-clamp-1 max-w-md">{hero.overview}</span>
               </div>
               <div className="flex items-center gap-3">
-                <button onClick={async () => { if (!ensureAuthed()) return; recordMovieWatch(hero); await runPreroll('movie', String(hero?.id || '')); setPlayMovie(hero); }} className="flex items-center gap-2 bg-white text-black px-7 py-3 rounded-xl font-bold text-sm hover:bg-stone-200 transition shadow-xl shadow-white/10">
-                  <Play className="w-5 h-5 fill-current" /> {t('movies.btn.play')}
+                <button onClick={() => playMovieClick(hero)} className="flex items-center gap-2 bg-white text-black px-7 py-3 rounded-xl font-bold text-sm hover:bg-stone-200 transition shadow-xl shadow-white/10">
+                  {releaseState(hero).released ? <Play className="w-5 h-5 fill-current" /> : <Clapperboard className="w-5 h-5" />} {releaseState(hero).released ? t('movies.btn.play') : t('movies.btn.trailer')}
                 </button>
                 <button onClick={() => openDetail(hero)} className="flex items-center gap-2 bg-white/15 backdrop-blur text-white px-6 py-3 rounded-xl font-bold text-sm hover:bg-white/25 transition border border-white/10">
                   <Info className="w-5 h-5" /> {t('movies.btn.info')}
@@ -452,7 +488,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
         </div>
       )}
 
-      {selected && (<MovieDetailModal movie={selected} trailer={trailer} trailerLoading={trailerLoading} genres={genres} onClose={() => setSelected(null)} onPlay={async () => { if (!ensureAuthed()) return; recordMovieWatch(selected); await runPreroll('movie', String(selected?.id || '')); setPlayMovie(selected); }} onMovieChange={(m) => { openDetail(m); }} onListChanged={refreshMovieLists} onShare={(m) => setShareMovie(m)} />)}
+      {selected && (<MovieDetailModal movie={selected} trailer={trailer} trailerLoading={trailerLoading} genres={genres} hasSource={hasSource} onClose={() => setSelected(null)} onPlay={() => playMovieClick(selected)} onMovieChange={(m) => { openDetail(m); }} onListChanged={refreshMovieLists} onShare={(m) => setShareMovie(m)} />)}
       {shareMovie && <ShareMovieModal movie={shareMovie} onClose={() => setShareMovie(null)} />}
       {upcomingOpen && <UpcomingModal items={rows.upcoming} onClose={() => setUpcomingOpen(false)} onSelect={(m) => { setUpcomingOpen(false); openDetail(m); }} />}
       {playMovie && <MoviePlayerModal movie={playMovie} onClose={() => { setPlayMovie(null); refreshMovieLists(); }} />}
@@ -487,6 +523,7 @@ function MovieRow({ title, items, onClick, loading, showProgress }) {
 
 function MovieCard({ movie, onClick, showProgress }) {
   const { t } = useI18n();
+  const rs = releaseState(movie);
   const rating = movie.vote_average || 0;
   const [hoverKey, setHoverKey] = React.useState(null);
   const hoverTimer = React.useRef(null);
@@ -502,17 +539,31 @@ function MovieCard({ movie, onClick, showProgress }) {
       {hoverKey && (<span className="absolute inset-0 pointer-events-none"><iframe src={`https://www.youtube.com/embed/${hoverKey}?autoplay=1&mute=1&controls=0&modestbranding=1&rel=0&playsinline=1`} className="w-full h-full" allow="autoplay; encrypted-media" title="preview" /></span>)}
       {showProgress && (movie.watchSec || 0) > 0 && (<span className="absolute bottom-0 inset-x-0 px-2 py-1 bg-gradient-to-t from-black to-transparent text-left"><span className="text-[9px] font-bold text-emerald-300">⏪ {t('mv.watched_for', { d: fmtWatchSec(movie.watchSec) })}{movie.episode ? ` · T${movie.episode}` : ''}</span><span className="block h-1 mt-0.5 rounded-full bg-white/20 overflow-hidden"><span className="block h-full rounded-full bg-emerald-400" style={{ width: `${Math.min(100, Math.round((movie.watchSec / 5400) * 100))}%` }} /></span></span>)}
       {rating > 0 && (<span className="absolute top-2 right-2 flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-black/70 backdrop-blur text-[10px] font-bold text-amber-400"><Star className="w-2.5 h-2.5 fill-current" /> {rating.toFixed(1)}</span>)}
-      <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded-md bg-[#f36f21]/90 text-[9px] font-bold uppercase tracking-wide">{movie.media_type === 'tv' ? 'TV' : 'Phim'}</span>
+      {/* Chưa khởi chiếu -> ghi thẳng ngày chiếu lên card, user khỏi phải bấm thử */}
+      <span className="absolute top-2 left-2 flex flex-col items-start gap-1">
+        <span className="px-1.5 py-0.5 rounded-md bg-[#f36f21]/90 text-[9px] font-bold uppercase tracking-wide">{movie.media_type === 'tv' ? 'TV' : 'Phim'}</span>
+        {!rs.released && (
+          <span className="px-1.5 py-0.5 rounded-md bg-black/80 border border-sky-400/40 text-[9px] font-bold text-sky-300">
+            {rs.dateLabel ? `${t('movies.badge.soon')} · ${rs.dateLabel}` : t('movies.badge.soon')}
+          </span>
+        )}
+      </span>
       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/70 to-transparent p-2.5 pt-8 opacity-0 group-hover:opacity-100 transition-opacity">
         <p className="text-[11px] font-bold leading-tight line-clamp-2">{movie.title || movie.name}</p>
-        <div className="flex items-center gap-2 mt-1.5"><span className="flex items-center gap-1 px-2 py-1 rounded-md bg-[#f36f21] text-[9px] font-bold"><Play className="w-2.5 h-2.5 fill-current" /> {t('movies.btn.play')}</span><span className="text-[9px] text-stone-400">{(movie.release_date || movie.first_air_date || '').substring(0, 4)}</span></div>
+        <div className="flex items-center gap-2 mt-1.5"><span className="flex items-center gap-1 px-2 py-1 rounded-md bg-[#f36f21] text-[9px] font-bold">{rs.released ? <Play className="w-2.5 h-2.5 fill-current" /> : <Clapperboard className="w-2.5 h-2.5" />} {rs.released ? t('movies.btn.play') : t('movies.btn.trailer')}</span><span className="text-[9px] text-stone-400">{(movie.release_date || movie.first_air_date || '').substring(0, 4)}</span></div>
       </div>
     </button>
   );
 }
 
-function MovieDetailModal({ movie, trailer, trailerLoading, genres = [], onClose, onPlay, onMovieChange, onListChanged, onShare }) {
+function MovieDetailModal({ movie, trailer, trailerLoading, genres = [], hasSource, onClose, onPlay, onMovieChange, onListChanged, onShare }) {
   const { t } = useI18n();
+  const rs = releaseState(movie);
+  // Nhãn CTA nói đúng cái user sẽ nhận được, không phải lời hứa "Xem phim" chung chung
+  const ctaLabel = !rs.released || hasSource === false ? t('movies.btn.trailer') : t('movies.btn.play');
+  const statusChip = !rs.released
+    ? (rs.dateLabel ? t('movies.status.premiere', { date: rs.dateLabel }) : t('movies.badge.soon'))
+    : hasSource === false ? t('movies.status.no_source') : '';
   const [inList, setInList] = useState(() => isWatched(movie));
   const [cast, setCast] = useState([]);
   const [recs, setRecs] = useState([]);
@@ -554,10 +605,15 @@ function MovieDetailModal({ movie, trailer, trailerLoading, genres = [], onClose
             </div>
           </div>
           <div className="flex gap-2 mt-5">
-            <button onClick={onPlay} className="flex-1 px-6 py-3.5 grad-brand text-white font-black rounded-2xl flex items-center justify-center gap-2 transition active:scale-[0.98] shadow-lg shadow-[#f36f21]/30 text-[15px]"><Play className="w-5 h-5 fill-current" />{t('movies.btn.play')}</button>
+            <button onClick={onPlay} className="flex-1 px-6 py-3.5 grad-brand text-white font-black rounded-2xl flex items-center justify-center gap-2 transition active:scale-[0.98] shadow-lg shadow-[#f36f21]/30 text-[15px]">{(!rs.released || hasSource === false) ? <Clapperboard className="w-5 h-5" /> : <Play className="w-5 h-5 fill-current" />}{ctaLabel}</button>
             <button onClick={toggleList} title={inList ? t('mv.remove_list') : t('mv.add_list')} className={`px-4 py-3.5 font-bold rounded-2xl flex items-center gap-2 border transition active:scale-95 ${inList ? 'bg-[#f36f21]/15 text-[#ff9a3d] border-[#f36f21]/40' : 'bg-white/[0.06] text-stone-200 border-white/10 hover:bg-white/[0.12]'}`}>{inList ? <Check className="w-5 h-5" /> : <Plus className="w-5 h-5" />}<span className="hidden sm:inline text-[13px]">{inList ? t('mv.following') : 'My List'}</span></button>
             <button onClick={() => onShare && onShare(movie)} title={t('share.share')} className="px-4 py-3.5 font-bold rounded-2xl flex items-center border bg-white/[0.06] text-stone-200 border-white/10 hover:bg-white/[0.12] transition active:scale-95"><Share2 className="w-5 h-5" /></button>
           </div>
+          {statusChip && (
+            <p className={`mt-2.5 flex items-center gap-1.5 text-[11px] font-bold ${!rs.released ? 'text-sky-300' : 'text-amber-300/90'}`}>
+              <Info className="w-3.5 h-3.5 shrink-0" />{statusChip}
+            </p>
+          )}
           {movie.overview && (<p className="text-[13px] md:text-sm text-stone-300 leading-relaxed mt-4">{movie.overview}</p>)}
         </div>
         <div className="px-5 md:px-8 pb-7">

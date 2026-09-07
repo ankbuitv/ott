@@ -113,6 +113,23 @@ function corsHeadersFor(request, env) {
 }
 
 // ---- SECURITY HEADERS (P2) — áp cho mọi response kể cả static assets ----
+// Tách mảng directive ra để cspFor(env) gắn thêm frame-src theo allowlist domain.
+const CSP_DIRECTIVES = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+  "frame-ancestors 'self'",
+  "script-src 'self' 'unsafe-inline'", // React inline event handlers + SW
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com data:",
+  "img-src 'self' https: data: blob: media:",
+  "media-src 'self' blob: data: media:",
+  "connect-src 'self' blob: data: https://epg.io.vn https://lichphatsong.io.vn https://epg.pm https://www.thesportsdb.com https://r2.thesportsdb.com https://site.api.espn.com https://a.espncdn.com",
+  "worker-src 'self' blob:",
+  "manifest-src 'self'",
+  "form-action 'self'",
+];
+
 const SECURITY_HEADERS = {
   "Strict-Transport-Security": "max-age=31536000; includeSubDomains; preload",
   "X-Content-Type-Options": "nosniff",
@@ -122,22 +139,40 @@ const SECURITY_HEADERS = {
   "X-XSS-Protection": "0",
   // CSP: chặt trước, nới từng mục khi test. Web app chỉ nói chuyện same-origin
   // (stream qua /api/stream/proxy, TMDB qua /api/tmdb) + font + logo từ CDN + EPG fallback.
-  "Content-Security-Policy": [
-    "default-src 'self'",
-    "base-uri 'self'",
-    "object-src 'none'",
-    "frame-ancestors 'self'",
-    "script-src 'self' 'unsafe-inline'", // React inline event handlers + SW
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src 'self' https://fonts.gstatic.com data:",
-    "img-src 'self' https: data: blob: media:",
-    "media-src 'self' blob: data: media:",
-    "connect-src 'self' blob: data: https://epg.io.vn https://lichphatsong.io.vn https://epg.pm https://www.thesportsdb.com https://r2.thesportsdb.com https://site.api.espn.com https://a.espncdn.com",
-    "worker-src 'self' blob:",
-    "manifest-src 'self'",
-    "form-action 'self'",
-  ].join("; "),
+  // frame-src được gắn riêng theo env (xem cspFor) nên ở đây KHÔNG có frame-src —
+  // mọi chỗ nhúng SECURITY_HEADERS trực tiếp vẫn mặc định chặn iframe bên thứ 3.
+  "Content-Security-Policy": CSP_DIRECTIVES.join("; "),
 };
+
+// ---- frame-src cho player phim (ngàng nhúng từ ĐỐI TÁC CÓ HỢP ĐỒNG) ----
+// Khai domain qua secret (không phải sửa code, không phải mở toang CSP):
+//   wrangler secret put MOVIE_FRAME_SRC   ->   https://player.partner.vn
+//   nhiều domain cách nhau bởi dấu cách/phẩy: https://a.partner.vn https://b.partner.vn
+//
+// DANH SÁCH NÀY LÀ CÁI CỔNG THẬT: /api/movie/sources chỉ trả nguồn mà domain có
+// trong đây, và /admin/movie_sources từ chối lưu nguồn ngoài danh sách. Muốn thêm
+// nguồn là phải động vào secret -> có dấu vết, không nhét lặng qua DB được.
+//
+// ⚠️ CSP này hiện CHƯA áp lên tài liệu HTML của app: wrangler.toml để
+//   `assets = { directory = "./dist" }` mà không bật `run_worker_first`, nên request
+//   khớp asset (kể cả `/` -> index.html) do tầng Assets trả thẳng, Worker không chạy.
+//   (Kiểm chứng: `curl -sI <prod>/` trả CF-Cache-Status: HIT + ETag, không có CSP.)
+//   Nghĩa là "Headers bảo mật HSTS/CSP/XFO" ở SECURITY_FIX_RUNBOOK §P2 tới giờ chỉ
+//   đúng với API + trang do Worker sinh (/status, 404) — KHÔNG đúng với trang người xem.
+//   Muốn bật cho đúng: thêm run_worker_first = true vào assets, rồi test lại toàn bộ;
+//   lúc đó nếu dùng nguồn kind='hls' ở domain khác phải thêm https://domain đó vào
+//   media-src, không thì <video> bị CSP chặn.
+function allowedEmbedOrigins(env) {
+  return String(env?.MOVIE_FRAME_SRC || "")
+    .split(/[\s,]+/)
+    .map((s) => s.trim().replace(/\/+$/, "").toLowerCase())
+    .filter((s) => /^https:\/\/[a-z0-9.-]+(:\d{1,5})?$/.test(s));
+}
+
+function cspFor(env) {
+  const origins = allowedEmbedOrigins(env);
+  return [...CSP_DIRECTIVES, `frame-src 'self'${origins.length ? " " + origins.join(" ") : ""}`].join("; ");
+}
 
 // Gộp headers CORS + security + content-type cho 1 response JSON
 function jsonHeaders(request, env, extra) {
@@ -222,6 +257,9 @@ export default {
         const res = await env.ASSETS.fetch(request);
         const headers = new Headers(res.headers);
         Object.entries(SECURITY_HEADERS).forEach(([k, v]) => { if (!headers.has(k)) headers.set(k, v); });
+        // Document của app cần frame-src theo allowlist đối tác (nếu admin đã khai
+        // MOVIE_FRAME_SRC) — nếu không thì iframe player phim bị CSP chặn dù có nguồn.
+        headers.set("Content-Security-Policy", cspFor(env));
         return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
       }
       if (wantsHtml(request)) return html404(request, 404);
@@ -894,6 +932,12 @@ const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS payments (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, username TEXT DEFAULT '', plan TEXT NOT NULL, amount INTEGER DEFAULT 0, order_code TEXT UNIQUE NOT NULL, status TEXT DEFAULT 'pending', payload TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, paid_at DATETIME DEFAULT NULL)`,
   `CREATE TABLE IF NOT EXISTS payment_config (id INTEGER PRIMARY KEY CHECK (id = 1), bank_id TEXT DEFAULT '', account_no TEXT DEFAULT '', account_name TEXT DEFAULT '', template TEXT DEFAULT 'compact2', sepay_token TEXT DEFAULT '', note TEXT DEFAULT '')`,
   `CREATE TABLE IF NOT EXISTS ads (id INTEGER PRIMARY KEY AUTOINCREMENT, slot TEXT DEFAULT 'banner', title TEXT DEFAULT '', image_url TEXT DEFAULT '', link_url TEXT DEFAULT '', video_url TEXT DEFAULT '', starts_at TEXT DEFAULT '', ends_at TEXT DEFAULT '', is_active INTEGER DEFAULT 1, sort_order INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  // Nguồn phát cho mục Phim/TV show — do admin điền, CHỈ dùng được nguồn mà domain
+  // của nó có trong MOVIE_FRAME_SRC (allowlist CSP). url_template là URL nhúng, các
+  // chỗ trống được server thay: {tmdb} {type}=movie|tv {season} {episode}.
+  // `kind`: embed = nhúng iframe player đối tác; hls = link .m3u8 trực tiếp (app tự phát, không iframe).
+  // `license_note` bắt buộc về mặt quy trình: ghi nguồn nào cấp bản quyền cho mình.
+  `CREATE TABLE IF NOT EXISTS movie_sources (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, kind TEXT DEFAULT 'embed', url_template TEXT NOT NULL, license_note TEXT DEFAULT '', is_active INTEGER DEFAULT 1, sort_order INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS scheduled_posts (id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, title TEXT DEFAULT '', body TEXT DEFAULT '', link_type TEXT DEFAULT 'none', link_value TEXT DEFAULT '', image_url TEXT DEFAULT '', publish_at TEXT NOT NULL, is_done INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS predictions (user_id INTEGER NOT NULL, event_key TEXT NOT NULL, league TEXT DEFAULT '', home TEXT DEFAULT '', away TEXT DEFAULT '', ph INTEGER DEFAULT 0, pa INTEGER DEFAULT 0, points INTEGER DEFAULT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(user_id, event_key))`,
   `CREATE INDEX IF NOT EXISTS idx_predictions_key ON predictions(event_key)`,
@@ -1112,6 +1156,7 @@ async function handleAPI(path, request, env, ctx) {
   if (path === "/api/gifts/mine") return await handleGiftMine(request, env);
   if (path === "/api/payments/config" || path === "/api/payments/order" || path === "/api/payments/claim" || path === "/api/payments/sepay-webhook") return await handlePayments(path, request, env);
   if (path === "/api/ads") return await handleAds(request, env);
+  if (path === "/api/movie/sources") return await handleMovieSources(request, env);
   if (path === "/api/ads/preroll") return await handleAdPreroll(request, env);
   if (path === "/api/ads/impression" && request.method === "POST") return await handleAdImpression(request, env);
   if (path === "/api/preview/state") {
@@ -3489,6 +3534,60 @@ async function handleAdmin(path, request, env, ctx) {
     return json({ success: true }, 200, request, env);
   }
 
+  // ========== NGUỒN PHÁT PHIM ==========
+  // Lưu/toggle nguồn ở đây KHÔNG tự đủ để player chạy: domain của nó phải có trong
+  // secret MOVIE_FRAME_SRC (allowlist CSP). POST/PUT trả về error rõ nếu thiếu,
+  // kèm đúng chuỗi cần đặt — để không có cảnh "đã thêm mà sao vẫn khung đen".
+  if (path === "/admin/movie_sources" && request.method === "GET") {
+    const { results } = await env.DB.prepare("SELECT * FROM movie_sources ORDER BY sort_order ASC, id ASC LIMIT 100").all();
+    return json({
+      success: true,
+      sources: results || [],
+      frame_allowlist: allowedEmbedOrigins(env),
+      frame_allowlist_set: allowedEmbedOrigins(env).length > 0,
+    }, 200, request, env);
+  }
+  if (path === "/admin/movie_sources" && (request.method === "POST" || request.method === "PUT")) {
+    const b = await request.json().catch(() => ({}));
+    const name = String(b.name || "").trim().slice(0, 40);
+    const kind = b.kind === "hls" ? "hls" : "embed";
+    const tpl = String(b.url_template || "").trim().slice(0, 500);
+    const note = String(b.license_note || "").trim().slice(0, 200);
+    if (!name) return json({ error: "Thiếu tên nguồn" }, 400, request, env);
+    if (!note) return json({ error: "Bắt buộc ghi licence_note: nguồn này lấy bản quyền từ đâu. Không có thì không lưu." }, 400, request, env);
+    const chk = movieSourceCheck(tpl, allowedEmbedOrigins(env));
+    if (!chk.ok) return json({ error: chk.error }, 400, request, env);
+    const active = b.is_active === 0 ? 0 : 1;
+    const order = parseInt(b.sort_order, 10) || 0;
+    if (request.method === "POST") {
+      const r = await env.DB.prepare("INSERT INTO movie_sources (name, kind, url_template, license_note, is_active, sort_order) VALUES (?, ?, ?, ?, ?, ?)")
+        .bind(name, kind, tpl, note, active, order).run();
+      await logAudit(env, adminUser?.id || 0, "movie_source.add", { id: r?.meta?.last_row_id, name, origin: chk.origin });
+    } else {
+      if (!b.id) return json({ error: "Thiếu id" }, 400, request, env);
+      await env.DB.prepare("UPDATE movie_sources SET name = ?, kind = ?, url_template = ?, license_note = ?, is_active = ?, sort_order = ? WHERE id = ?")
+        .bind(name, kind, tpl, note, active, order, parseInt(b.id, 10) || 0).run();
+      await logAudit(env, adminUser?.id || 0, "movie_source.update", { id: b.id, name, origin: chk.origin });
+    }
+    return json({ success: true }, 200, request, env);
+  }
+  if (path === "/admin/movie_sources" && request.method === "DELETE") {
+    const b = await request.json().catch(() => ({}));
+    if (!b.id) return json({ error: "Thiếu id" }, 400, request, env);
+    await env.DB.prepare("DELETE FROM movie_sources WHERE id = ?").bind(parseInt(b.id, 10) || 0).run();
+    await logAudit(env, adminUser?.id || 0, "movie_source.delete", { id: b.id });
+    return json({ success: true }, 200, request, env);
+  }
+  // Test nhanh 1 template ngay trong admin (không cần có phim thật): {tmdb}=550
+  if (path === "/admin/movie_sources/test" && request.method === "POST") {
+    const b = await request.json().catch(() => ({}));
+    const chk = movieSourceCheck(String(b.url_template || ""), allowedEmbedOrigins(env));
+    const preview = chk.ok
+      ? String(b.url_template).replace(/\{tmdb\}/g, "550").replace(/\{type\}/g, "movie").replace(/\{season\}/g, "1").replace(/\{episode\}/g, "1")
+      : "";
+    return json({ success: chk.ok, error: chk.error || "", url: preview, frame_allowlist: allowedEmbedOrigins(env) }, chk.ok ? 200 : 400, request, env);
+  }
+
   // ========== LỊCH ĐĂNG ==========
   if (path === "/admin/scheduled" && request.method === "GET") {
     const { results } = await env.DB.prepare("SELECT * FROM scheduled_posts ORDER BY publish_at DESC LIMIT 100").all();
@@ -5112,6 +5211,76 @@ async function handleAds(request, env) {
   } catch { return json({ success: true, ads: [] }, 200, request, env); }
 }
 
+// ========== NGUỒN PHÁT PHIM (movie_sources) ==========
+// GET /api/movie/sources?tmdb=<id>&type=movie|tv&season=1&episode=1
+// Trả danh sách nguồn ĐÃ ĐẠT 2 ĐIỀU KIỆN:
+//   1) đang BẬT trong Admin Panel → Nguồn phim
+//   2) domain của nó nằm trong allowlist CSP MOVIE_FRAME_SRC
+// Điều kiện 2 là thứ chặn việc nhét nguồn tuỳ ý qua bảng DB: nguồn ở domain lạ
+// sẽ bị lọc ở server, chứ không phải chờ CSP chặn ở trình duyệt (user chỉ thấy
+// khung đen khó hiểu). Chưa khai MOVIE_FRAME_SRC => luôn rỗng => UI hiện
+// "Chưa có nguồn phát hợp lệ" (đúng hành vi cũ, không phải lỗi).
+async function handleMovieSources(request, env) {
+  const empty = (reason) => json({ success: true, sources: [], reason }, 200, request, env);
+  if (!hasDB(env)) return empty("no-db");
+  const allow = allowedEmbedOrigins(env);
+  if (allow.length === 0) return empty("no_frame_allowlist");
+  await ensureSchema(env);
+  const q = new URL(request.url).searchParams;
+  const tmdb = String(q.get("tmdb") || "");
+  if (!/^\d{1,10}$/.test(tmdb)) return json({ success: false, error: "Thiếu tmdb id hợp lệ" }, 400, request, env);
+  const type = q.get("type") === "tv" ? "tv" : "movie";
+  const num = (v, d) => (/^\d{1,4}$/.test(String(v || "")) ? String(v) : String(d));
+  const season = num(q.get("season"), 1);
+  const episode = num(q.get("episode"), 1);
+
+  let rows = [];
+  try {
+    const { results } = await env.DB.prepare(
+      "SELECT id, name, kind, url_template FROM movie_sources WHERE is_active = 1 ORDER BY sort_order ASC, id ASC LIMIT 20"
+    ).all();
+    rows = results || [];
+  } catch { return empty("no_table"); }
+
+  const out = [];
+  for (const r of rows) {
+    const url = String(r.url_template || "")
+      .replace(/\{tmdb\}/g, tmdb)
+      .replace(/\{type\}/g, type)
+      .replace(/\{season\}/g, season)
+      .replace(/\{episode\}/g, episode);
+    let origin = "";
+    try {
+      const u = new URL(url);
+      if (u.protocol !== "https:") continue; // không cho http:// (mix content + token lộ)
+      origin = u.origin.toLowerCase();
+    } catch { continue; }
+    if (!allow.includes(origin)) continue;
+    out.push({ id: r.id, name: String(r.name || "Nguồn").slice(0, 40), kind: r.kind === "hls" ? "hls" : "embed", url });
+  }
+  return json({ success: true, sources: out }, 200, request, env);
+}
+
+// Kiểm tra 1 url_template có nằm trong allowlist không (dùng khi admin lưu nguồn).
+function movieSourceCheck(urlTemplate, allow) {
+  const u = String(urlTemplate || "").trim();
+  if (!u) return { ok: false, error: "Thiếu url_template" };
+  if (/\{[^}]*\}/.test(u) && !/\{(?:tmdb|type|season|episode)\}/.test(u)) {
+    return { ok: false, error: "Placeholder không hợp lệ (chỉ: {tmdb} {type} {season} {episode})" };
+  }
+  const probe = u.replace(/\{tmdb\}/g, "1").replace(/\{type\}/g, "movie").replace(/\{season\}/g, "1").replace(/\{episode\}/g, "1");
+  let origin = "";
+  try {
+    const parsed = new URL(probe);
+    if (parsed.protocol !== "https:") return { ok: false, error: "url_template phải là https://" };
+    origin = parsed.origin.toLowerCase();
+  } catch { return { ok: false, error: "url_template không parse được thành URL" }; }
+  if (!allow.includes(origin)) {
+    return { ok: false, error: `Domain ${origin} chưa có trong MOVIE_FRAME_SRC — chạy: wrangler secret put MOVIE_FRAME_SRC (nội dung: "${allow.join(" ") || origin}" — thêm domain này vào)`, origin };
+  }
+  return { ok: true, origin };
+}
+
 // ========== DỰ ĐOÁN TỈ SỐ ==========
 async function handlePredictions(request, env) {
   if (!hasDB(env)) return dbUnavailable();
@@ -5304,6 +5473,4 @@ function handleWebSocket(request, env, ctx) {
   });
 
   return new Response(null, { status: 101, webSocket: client });
-}
-ew Response(null, { status: 101, webSocket: client });
 }

@@ -266,14 +266,68 @@ whitelist; domain lạ → phát trực tiếp như cũ, không qua token).
 | Headers bảo mật | Không | HSTS, CSP, XFO, X-Content-Type-Options, Referrer-Policy, Permissions-Policy |
 | CORS | `Access-Control-Allow-Origin: *` | Allowlist origin |
 | Guard F12/devtools | "Kill" app khi mở F12 (gây khó debug, dễ bị bypass) | Đã gỡ |
-| Embed phim (vidsrc group) | ~50 nguồn không bản quyền | Tắt (trả danh sách rỗng + thông báo) |
+| Embed phim (vidsrc group) | ~50 nguồn không bản quyền hard-code trong app | Tắt; từ 07/09 chuyển thành danh sách do admin quản lý + chặn theo allowlist (Phụ lục B.1) |
 | Secret trong code | Hardcode | `wrangler secret` (env) |
+
+## Phụ lục B.1 — Cơ chế nguồn phát phim (từ 2026-09-07)
+
+Thay vì hard-code danh sách domain embed trong app (không kiểm soát được, muốn
+thêm/bớt phải build + deploy lại), nguồn phim giờ đi qua server:
+
+| Thành phần | Việc |
+|---|---|
+| bảng D1 `movie_sources` | `name`, `kind` (`embed` = iframe player đối tác / `hls` = link .m3u8 app tự phát), `url_template`, `license_note`, `is_active`, `sort_order` |
+| `GET /api/movie/sources?tmdb=&type=&season=&episode=` | thay placeholder `{tmdb} {type} {season} {episode}`, **chỉ trả nguồn có domain nằm trong `MOVIE_FRAME_SRC`**, chỉ chấp nhận `https://` |
+| `/admin/movie_sources` (GET/POST/PUT/DELETE) | CRUD trong **Admin Panel → Nguồn phim**; từ chối lưu nếu thiếu `license_note` hoặc domain chưa được duyệt; mỗi lần sửa ghi `audit_log` (`movie_source.add/update/delete`) |
+| secret `MOVIE_FRAME_SRC` | allowlist domain, cách nhau bởi dấu cách/phẩy: `wrangler secret put MOVIE_FRAME_SRC` |
+
+Hành vi khi chưa cấu hình gì: `/api/movie/sources` trả `sources: []` +
+`reason: "no_frame_allowlist"`, modal hiện “Chưa có nguồn phát hợp lệ” kèm nút
+*Thử lại* — tức là mặc định vẫn an toàn như trước, thêm nguồn là một quyết
+định có chủ ý (phải sửa secret), không phải thứ trôi vào code qua một PR.
+
+Quy trình thêm một nguồn:
+
+```bash
+wrangler secret put MOVIE_FRAME_SRC      # thêm https://player.<doi-tac>  (chặn bằng CSP + lọc ở API)
+# Admin Panel → Nguồn phim → điền name / kind / url_template / license_note (bắt buộc)
+curl -s "$PROD/api/movie/sources?tmdb=123&type=movie"   # phải thấy url đã thay placeholder
+```
+
+Chỉ thêm nguồn **có hợp đồng/quyền phân phối** — `license_note` bắt buộc điền
+chính vì vậy, và nó hiển thị ngay trong tab admin để lần sau còn biết ai duyệt.
+
+### Việc còn treo: CSP chưa áp lên tài liệu HTML
+
+`wrangler.toml` dùng `assets = { directory = "./dist" }` mà **không** bật
+`run_worker_first` → mọi request khớp asset (kể cả `/`) do tầng Assets trả
+thẳng, Worker không chạy, nên `SECURITY_HEADERS` (§P2) tới giờ **không** áp lên
+trang người xem — chỉ áp lên API + trang Worker tự sinh (`/status`, 404).
+Kiểm chứng: `curl -sI https://<domain>/` → `CF-Cache-Status: HIT` + `ETag`,
+không có `Content-Security-Policy`.
+
+Muốn §P2 đúng như tuyên bố:
+
+1. `assets = { directory = "./dist", run_worker_first = true }`
+2. build + deploy bản nháp, test: `curl -sI /` phải thấy CSP/HSTS/XFO;
+   app phải chạy bình thường (script/style/font), stream qua `/api/stream/proxy`
+   vẫn OK (vẫn same-origin nên `default-src 'self'` không sao).
+3. Nếu dùng nguồn `kind='hls'` ở domain khác, thêm `media-src 'self' blob: data:
+   media: https://domain-do` vào CSP (`cspFor()` trong worker) — không thì
+   `<video>` bị chặn.
+4. Trả giá: mỗi request static chạy Worker thêm ~1 ms và dùng request CPU;
+   cache asset vẫn còn ở CDN.
+
+Làm riêng một lần, đừng gộp chung với thay đổi khác.
+
 
 ## Phụ lục C — Ghi chú pháp lý / vận hành
 
 - **Bản quyền upstream**: các nguồn stream hiện tại cần có giấy phép/phân
   phối hợp lệ. Nếu chưa rõ quyền sử dụng, ưu tiên chuyển sang nguồn có hợp
-  đồng; embed API không bản quyền đã tắt trong code.
+  đồng; embed API không bản quyền đã tắt trong code và được thay bằng cơ chế
+  allowlist ở Phụ lục B.1 — muốn thêm nguồn là phải sửa secret `MOVIE_FRAME_SRC`
+  và ghi `license_note`, không âm thầm trôi vào app được.
 - **Đổi domain** (tuỳ chọn, prompt ghi là optional): nếu đổi sang domain
   mới — cập nhật `PRODUCTION_API_BASE` trong `src/services/config.js`,
   `CORS_ALLOWED_ORIGINS`, CF Access, và thông báo user (App native cần bản

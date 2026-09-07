@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Search, Star, Play, X, Info, Calendar, Clock, Tv, Film, SlidersHorizontal, TrendingUp, Heart, History, Plus, Check, Crown, Mic, Share2, CalendarClock, Users, Layers, MessageCircle, Sparkles, Clapperboard, ChevronLeft, ChevronRight, Ticket } from 'lucide-react';
+import { Search, Star, Play, X, Info, Calendar, Clock, Tv, Film, SlidersHorizontal, TrendingUp, Heart, History, Plus, Check, Crown, Mic, Share2, CalendarClock, Users, Layers, MessageCircle, Sparkles, Clapperboard, ChevronLeft, ChevronRight, Ticket, Radio, BadgeCheck } from 'lucide-react';
 import { MovieAPI, imgPath, bgPath, COUNTRY_INFO, countryInfoOf, REGION_LIST, setTMDBRegion, getUpcoming, getMovieGenres, getCredits, getPerson, getPersonCredits, getRecommendations, getCollection, getMovieDetails, getTvDetails, discoverMovies } from '../services/tmdb';
 import { getMovieHistory, recordMovieWatch, recordMovieProgress, fmtWatchSec, isWatched, toggleWatchlistLocal, fetchWatchlist } from '../services/movieList';
 import { listenOnce, voiceSupported } from '../services/voice';
@@ -15,6 +15,8 @@ import { getHomePrefs } from '../services/prefs';
 import MoviePlayerModal from './MoviePlayerModal';
 import { hasPlayableSources } from '../services/embeds';
 import { releaseState } from '../utils/release';
+import { API_BASE } from '../services/config';
+import { authHeaders } from '../services/session';
 import { runPreroll } from '../services/prerollGate';
 import { useDevice } from '../contexts/DeviceContext';
 import { useToast } from '../contexts/ToastContext';
@@ -54,7 +56,7 @@ function HScroll({ children, className = '' }) {
   );
 }
 
-export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onRequireLogin } = {}) {
+export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onRequireLogin, onGoTab = null, onOpenChannel = null } = {}) {
   const device = useDevice();
   const { addToast } = useToast();
   const { currentProfile } = useProfile();
@@ -259,6 +261,49 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
     return () => clearTimeout(t);
   }, [search, catalog]);
 
+  // (#64) Xu hướng tìm kiếm + (#62) kết quả kênh/creator/shorts trộn chung
+  const [trending, setTrending] = useState([]);
+  const [combined, setCombined] = useState({ ch: [], cr: [], sh: [] });
+  const loggedQ = useRef('');
+  const combinedTick = useRef(0);
+  useEffect(() => {
+    fetch(`${API_BASE}/api/stats/trending-search?limit=12`, { headers: { Accept: 'application/json' } })
+      .then(r => r.json()).then(d => setTrending(d.trending || [])).catch(() => {});
+  }, []);
+  useEffect(() => {
+    const q = search.trim();
+    if (q.length < 2 || q === loggedQ.current) return;
+    loggedQ.current = q;
+    fetch(`${API_BASE}/api/stats/search`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ q }) }).catch(() => {});
+  }, [search]);
+
+  // (#62) Kết quả kênh/creator/shorts theo cùng cụm tìm — phục vụ khi có kết quả phim
+  useEffect(() => {
+    const q = search.trim();
+    if (q.length < 2) { setCombined({ ch: [], cr: [], sh: [] }); return; }
+    const ql = q.toLowerCase();
+    const timer = setTimeout(() => {
+      const tick = ++combinedTick.current;
+      (async () => {
+        let ch = [], cr = [], sh = [];
+        try {
+          const r = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(q)}`, { headers: { Accept: 'application/json' } }).then(x => x.json());
+          ch = (r.results || []).slice(0, 8);
+        } catch {}
+        try {
+          const r = await fetch(`${API_BASE}/api/shorts/creators`, { headers: { Accept: 'application/json' } }).then(x => x.json());
+          cr = (r.creators || []).filter(c => ((c.handle || '') + ' ' + (c.display_name || '') + ' ' + (c.bio || '')).toLowerCase().includes(ql)).slice(0, 6);
+        } catch {}
+        try {
+          const r = await fetch(`${API_BASE}/api/shorts?limit=60`, { headers: { Accept: 'application/json' } }).then(x => x.json());
+          sh = (r.shorts || []).filter(s => ((s.title || '') + ' ' + (s.caption || '')).toLowerCase().includes(ql)).slice(0, 4);
+        } catch {}
+        if (tick === combinedTick.current) setCombined({ ch, cr, sh });
+      })();
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
   const voiceSearch = async () => {
     if (!voiceSupported()) { addToast(t('voice.unsupported'), 'error'); return; }
     setListening(true);
@@ -449,6 +494,20 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
         </section>
       )}
 
+      {/* (#64) Xu hướng tìm kiếm — bấm chip để tìm luôn */}
+      {!search.trim() && trending.length > 0 && (
+        <section className="px-6 md:px-8 mt-4">
+          <div className="max-w-7xl mx-auto flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+            <span className="shrink-0 text-[10px] font-black uppercase tracking-widest text-stone-500 flex items-center gap-1">🔥 {t('p48.trending')}</span>
+            {trending.map((x) => (
+              <button key={x.query} onClick={() => setSearch(x.query)} className="shrink-0 px-3 py-1.5 rounded-full bg-white/[0.05] border border-white/10 text-[11px] font-bold text-stone-300 hover:border-[#ff9a3d]/50 hover:text-white active:scale-95 transition">
+                {x.query} <span className="text-[9px] text-stone-600">({x.cnt})</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* TOP 10 với mũi tên */}
       {!search.trim() && topMonth.length > 0 && (
         <section className="relative z-20 px-6 md:px-8 mt-5 mb-2">
@@ -542,6 +601,51 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
       {search.trim() ? (
         <div className="px-6 md:px-8 py-6 max-w-7xl mx-auto">
           <h3 className="text-sm font-semibold text-stone-400 mb-4">{t('movies.results')}: "{search}" ({searchResults.length})</h3>
+          {(combined.ch.length > 0 || combined.cr.length > 0 || combined.sh.length > 0) && (
+            <div className="mb-5 space-y-3 rounded-2xl border border-white/[0.07] bg-white/[0.02] p-3">
+              {combined.ch.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-stone-500 mb-1.5">📺 {t('nav.live')} · {t('p48.tv_kw')}</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {combined.ch.map(c => (
+                      <button key={c.channel_id} onClick={() => { onOpenChannel && onOpenChannel(c); if (onGoTab) onGoTab('tv'); }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/[0.06] border border-white/10 text-[11px] font-bold text-stone-200 hover:border-[#f36f21]/60 hover:text-white active:scale-95">
+                        {c.logo ? <img src={c.logo} alt="" className="w-4 h-4 rounded object-contain" onError={e => e.target.style.display = 'none'} /> : <Radio className="w-3.5 h-3.5 text-[#ff9a3d]" />}
+                        {c.name} <span className="text-[9px] text-stone-600">{c.group_title}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {combined.cr.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-stone-500 mb-1.5">⭐ Creator trên Shorts</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {combined.cr.map(c => (
+                      <button key={c.id} onClick={() => { addToast(`Mở tab Shorts → tìm @${c.handle} nhé`, 'info'); if (onGoTab) onGoTab('shorts'); }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/[0.06] border border-white/10 text-[11px] font-bold text-stone-200 hover:border-[#ff9a3d]/60 active:scale-95">
+                        {c.avatar_url ? <img src={c.avatar_url} alt="" className="w-4 h-4 rounded-full object-cover" onError={e => e.target.style.display = 'none'} /> : <BadgeCheck className="w-3.5 h-3.5 text-sky-300" />}
+                        @{c.handle || c.display_name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {combined.sh.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-stone-500 mb-1.5">🎬 Shorts trùng từ khoá</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {combined.sh.map(sh => (
+                      <button key={sh.id} onClick={() => { if (onGoTab) onGoTab('shorts'); addToast(`Short #${sh.id}: ${String(sh.title || '').slice(0, 40)}`, 'info'); }}
+                        className="px-3 py-1.5 rounded-full bg-white/[0.06] border border-white/10 text-[11px] font-bold text-stone-300 hover:border-[#ff9a3d]/60 active:scale-95">
+                        ▶ {(sh.title || sh.caption || '').slice(0, 40)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           {searchResults.length === 0 ? (
             <div className="text-center py-16"><Film className="w-12 h-12 text-stone-700 mx-auto mb-3" /><p className="text-stone-500 text-sm">{t('mv.no_result')}</p></div>
           ) : (<div className={`grid gap-2.5 ${gridCls}`}>{searchResults.map(m => <MovieCard key={`${m.media_type}-${m.id}`} movie={m} onClick={() => openDetail(m)} />)}</div>)}
@@ -776,13 +880,39 @@ function MovieDetailModal({ movie, trailer, trailerLoading, genres = [], hasSour
 
 function PersonModal({ person, onClose, onMovieChange }) {
   const { t } = useI18n();
+  const { addToast } = useToast();
+  const { isAuthenticated } = useAuth();
   const [credits, setCredits] = useState([]);
+  // (#65) Follow diễn viên — đồng bộ qua /api/actors/follow
+  const [followed, setFollowed] = useState(false);
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
     getPersonCredits(person.id).then((r) => {
       const list = (r.cast || []).filter((m) => m.poster_path).sort((a, b) => (b.popularity || 0) - (a.popularity || 0)).slice(0, 18);
       setCredits(list);
     }).catch(() => {});
   }, [person.id]);
+  useEffect(() => {
+    if (!isAuthenticated) { setFollowed(false); return; }
+    let on = true;
+    fetch(`${API_BASE}/api/actors/follow`, { headers: { Accept: 'application/json', ...authHeaders() } })
+      .then(r => r.json()).then((d) => { if (on) setFollowed((d.follows || []).some(x => Number(x.person_id) === Number(person.id))); })
+      .catch(() => {});
+    return () => { on = false; };
+  }, [isAuthenticated, person.id]);
+  const toggleActorFollow = async () => {
+    if (!isAuthenticated) { addToast(t('p48.actor_need_login'), 'info'); return; }
+    setBusy(true);
+    try {
+      const r = await fetch(`${API_BASE}/api/actors/follow`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ person_id: person.id, name: person.name, follow: !followed }) });
+      const d = await r.json();
+      if (d.success || d.following !== undefined) {
+        setFollowed(d.following === true);
+        addToast(d.following ? t('p48.actor_followed', { name: person.name }) : t('p48.actor_unfollowed'), 'success');
+      } else addToast(d.error || 'Lỗi', 'error');
+    } catch { addToast(t('mv.net_err'), 'error'); }
+    setBusy(false);
+  };
   const dept = person.known_for_department === 'Acting' ? t('mv.actor') : (person.known_for_department || t('mv.artist'));
   return (
     <div className="fixed inset-0 z-[220] bg-black/90 backdrop-blur-sm overflow-y-auto anim-zoom-fade" onClick={onClose}>
@@ -799,6 +929,12 @@ function PersonModal({ person, onClose, onMovieChange }) {
               <span className="inline-block px-2.5 py-1 rounded-full bg-[#f36f21]/15 border border-[#f36f21]/40 text-[#ffb37a] text-[10px] font-black tracking-widest mb-2">{dept.toUpperCase()}</span>
               <h2 className="text-2xl md:text-3xl font-black tracking-tight text-white leading-tight">{person.name}</h2>
               {(person.birthday || person.place_of_birth) && (<p className="text-[12px] text-stone-400 mt-1.5 flex items-center gap-1.5 flex-wrap">{person.birthday && <span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5" />{t('mv.born', { d: person.birthday })}</span>}{person.place_of_birth && <span className="truncate">📍 {person.place_of_birth}</span>}</p>)}
+              {/* (#65) follow diễn viên: nút bên phải header, đồng bộ server */}
+              <button onClick={toggleActorFollow} disabled={busy}
+                className={`mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-black border transition-all active:scale-95 disabled:opacity-60 ${followed ? 'bg-[#f36f21]/15 text-[#ff9a3d] border-[#f36f21]/45' : 'bg-white/[0.06] text-stone-200 border-white/12 hover:bg-white/[0.14]'}`}>
+                {followed ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                {followed ? t('mv.following') : t('p48.follow_actor')}
+              </button>
             </div>
           </div>
           {person.biography ? (<p className="text-[13px] text-stone-300 leading-relaxed mt-4 max-h-[130px] overflow-y-auto pr-1">{person.biography}</p>) : (<p className="text-[12px] text-stone-500 mt-4 italic">{t('mv.no_bio')}</p>)}

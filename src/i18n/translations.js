@@ -898,6 +898,7 @@ const T = {
   'p48.stars_sent': { vi: 'Đã gửi sao ⭐', en: 'Star sent ⭐' },
   'p48.need_xp': { vi: 'Cần đủ XP để tặng sao (50 XP/sao)', en: 'Need XP to send stars (50 XP each)' },
   'p48.challenge': { vi: 'Thử thách', en: 'Challenge' },
+  'p48.challenge_week': { vi: 'Thử thách tuần', en: 'Weekly challenge' },
   'p48.leaderboard': { vi: 'BXH sao tuần', en: 'Weekly star board' },
   'p48.invite_me': { vi: 'Mời bạn nhận thưởng', en: 'Invite a friend' },
   'p48.invite_hint': { vi: 'Cả 2 nhận +200 XP & +3 ngày gói khi bạn dùng mã', en: 'Both get +200 XP & +3 plan days' },
@@ -921,6 +922,7 @@ const T = {
   'p48.quiz_q1': { vi: 'Bạn xem gì nhiều nhất?', en: 'What do you watch most?' },
   'p48.quiz_q2': { vi: 'Chọn 1 nhóm kênh yêu thích', en: 'Pick your favorite channel group' },
   'p48.quiz_q3': { vi: 'Điều gì quan trọng nhất?', en: 'What matters most?' },
+  'p48.trending': { vi: '🔥 Xu hướng', en: '🔥 Trending' },
   'p48.quiz_done': { vi: 'Xong — trang chủ đã cá nhân hoá!', en: 'Done — home is personalized!' },
   'p48.af_cinema': { vi: 'Vé rạp', en: 'Cinema tickets' },
   'p48.af_book': { vi: 'Sách hay', en: 'Books' },
@@ -930,6 +932,11 @@ const T = {
   'p48.chat_match': { vi: 'Chat trận', en: 'Match chat' },
   'p48.goals_tl': { vi: 'Diễn biến', en: 'Timeline' },
   'p48.scores_wall': { vi: 'Tường tỉ số', en: 'Score wall' },
+  'p48.tv_kw': { vi: 'kênh truyền hình', en: 'TV channels' },
+  'p48.follow_actor': { vi: 'Theo dõi diễn viên', en: 'Follow actor' },
+  'p48.actor_followed': { vi: 'Đã theo dõi {name} 🎭', en: 'Now following {name} 🎭' },
+  'p48.actor_unfollowed': { vi: 'Đã bỏ theo dõi diễn viên', en: 'Actor unfollowed' },
+  'p48.actor_need_login': { vi: 'Đăng nhập để theo dõi diễn viên', en: 'Sign in to follow actors' },
 };
 
 // Gộp 10 ngôn ngữ mở rộng (ja/ko/th/id/ms/hi/de/es/pt/ru) vào bảng chính

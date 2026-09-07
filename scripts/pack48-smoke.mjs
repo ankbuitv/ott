@@ -212,6 +212,50 @@ console.log('\nE2. Minute comments + voice note');
   check('GET comments trả tstamp + voice', g.status === 200 && hasMin && hasVoice, JSON.stringify(g.j));
 }
 
+// ============ H. Trending search (#64) + wishlist (#29) + actor follow (#65) ============
+console.log('\nH. Trending / wishlist / actors');
+{
+  await call('POST', '/api/stats/search', { body: { q: 'Doraemon' } });
+  await call('POST', '/api/stats/search', { body: { q: 'Doraemon' } });
+  await call('POST', '/api/stats/search', { body: { q: 'UEFA' } });
+  const tr = await call('GET', '/api/stats/trending-search?limit=10', {});
+  check('trending-search xếp theo lượt', tr.status === 200 && (tr.j?.trending || []).some(x => x.query === 'Doraemon' && Number(x.cnt) >= 2), JSON.stringify(tr.j));
+  const wl = await call('POST', '/api/movie/wishlist', { token: tokUser, body: { tmdb_id: 550, media_type: 'movie', want: true } });
+  check('POST wishlist thêm phim', wl.status === 200 && wl.j?.wishing === true, JSON.stringify(wl.j));
+  const wg = await call('GET', '/api/movie/wishlist', { token: tokUser });
+  check('GET wishlist trả phim', wg.status === 200 && (wg.j?.items || []).some(x => Number(x.tmdb_id) === 550), JSON.stringify(wg.j));
+  const af = await call('POST', '/api/actors/follow', { token: tokUser, body: { person_id: 18918, name: 'Dwayne Johnson', follow: true } });
+  check('POST actor follow', af.status === 200 && af.j?.following === true, JSON.stringify(af.j));
+  const ag = await call('GET', '/api/actors/follow', { token: tokUser });
+  check('GET actor follows', ag.status === 200 && (ag.j?.follows || []).some(x => Number(x.person_id) === 18918), JSON.stringify(ag.j));
+}
+
+// ============ I. Poll phòng (#33) + team notify (#32) ============
+console.log('\nI. Party polls + team notify');
+{
+  const mk = await call('POST', '/api/party/poll', { token: tokUser, body: { room: 'party:SMOKE1', question: 'Ai vô địch?', options: ['A', 'B', 'C'] } });
+  check('POST party/poll tạo poll', mk.status === 200 && Number(mk.j?.id) > 0, JSON.stringify(mk.j));
+  const pid = mk.j?.id;
+  if (pid) {
+    const vt = await call('POST', '/api/party/vote', { token: tokUser, body: { room: 'party:SMOKE1', poll_id: pid, option: 0 } });
+    check('POST party/vote (user1)', vt.status === 200 && vt.j?.success !== false, JSON.stringify(vt.j));
+    const v2 = await call('POST', '/api/party/vote', { token: tokAdmin, body: { room: 'party:SMOKE1', poll_id: pid, option: 1 } });
+    check('POST party/vote (user2 khác user1)', v2.status === 200 && v2.j?.success !== false, JSON.stringify(v2.j));
+    const dup = await call('POST', '/api/party/vote', { token: tokUser, body: { room: 'party:SMOKE1', poll_id: pid, option: 2 } });
+    check('vote 2 lần bị chặn (ALREADY)', dup.status === 409 || dup.j?.code === 'ALREADY', JSON.stringify(dup.j));
+    const pl = await call('GET', '/api/party/polls?room=party:SMOKE1', {});
+    const poll = (pl.j?.polls || []).find(x => Number(x.id) === pid);
+    check('GET polls có kết quả đếm', pl.status === 200 && poll && poll.total === 2 && poll.votes[0]?.count === 1 && poll.votes[1]?.count === 1, JSON.stringify(pl.j));
+  }
+  // team notify: người admin follow đội, user khác báo goal -> admin nhận notification vi
+  const tfa = await call('POST', '/api/sports/follow', { token: tokAdmin, body: { team: 'Arsenal' } });
+  check('setup follow đội Arsenal', tfa.status === 200, JSON.stringify(tfa.j));
+  const nt = await call('POST', '/api/team/notify', { token: tokUser, body: { team: 'Arsenal', kind: 'goal', score: '2-1' } });
+  check('POST team/notify fan-out', nt.status === 200 && Number(nt.j?.fans) >= 1, JSON.stringify(nt.j));
+  const nf = await call('GET', '/api/notifications', { token: tokAdmin });
+  check('fan nhận notification goal', nf.status === 200 && (nf.j?.notifications || []).some(x => String(x.body || '').includes('2-1')), JSON.stringify(nf.j));
+}
+
 // ============ F. Team follow (#32) + country top (#5) + wrapped (#84) + affiliate (#85) ============
 console.log('\nF. Sports / country / wrapped / affiliates');
 {

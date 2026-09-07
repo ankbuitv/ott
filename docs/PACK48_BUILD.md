@@ -2,7 +2,7 @@
 
 > Branch: `arena/01a07b6d-ott` — PR duy nhất lên `main`.
 > Preview local: API worker `http://127.0.0.1:8787` (D1 local) · Web `http://127.0.0.1:3000` (Vite proxy).
-> Kiểm chứng: `node scripts/pack48-smoke.mjs` (44 pass/0 fail) · `node --check worker/worker.js` · `npx vite build` (exit 0).
+> Kiểm chứng: `node scripts/pack48-smoke.mjs` (**57 pass / 0 fail**) · `node --check worker/worker.js` · `npx vite build` (exit 0) · sanity API real D1 local trên từng route mới (`/api/movie/wishlist`, `/api/actors/follow`, `/api/party/poll*`, `/api/stats/trending-search`, `/api/sports/follow` + `/api/team/notify` fan-out vi/en).
 
 ## A. Mã chia sẻ & liên kết
 
@@ -31,13 +31,13 @@
 | #26 Cinema mode | ✅ TV “Rạp hát” (TVPage) + phim fullscreen | — |
 | #27 Trạng thái Đã xem/Đang xem/Muốn xem + % series | ✅ WatchStatusBar (local per-device) | MoviesPack + detail |
 | #28 Lọc nâng cao năm/điểm + sắp xếp | ✅ AdvancedFilters trên catalog | MoviesScreen |
-| #29 Báo khi wishlist có nguồn tốt hơn | ⚠️ Chưa có job theo dõi chất lượng nguồn | — |
+| #29 Báo khi wishlist có nguồn tốt hơn | ✅ Wishlist server + khi mở `/api/movie/sources` mà phim đang wishlist có nguồn chất lượng cao (HD/FHD/UHD…) → notification + push “Phim bạn quan tâm đã có bản ngon hơn” (≤1 lần/3 ngày/phim) | worker `movie_wishlists` + `maybeWishlistQualityNotify` |
 | #30 Nhắc “sắp chiếu” | ✅ UpcomingModal nút chuông + local reminder | có sẵn + xác nhận |
 | #79 Nhãn độ tuổi TMDB + lọc trẻ em | ✅ AgeBadge 18+/P theo adult/genre; chế độ Kids có sẵn | MoviesPack + MoviesScreen |
-| #62 Tìm kiếm tổng hợp | ⚠️ `/api/search` (kênh) + tìm phim TMDB có sẵn; UI gộp nhiều loại chưa hoàn chỉnh | — |
+| #62 Tìm kiếm tổng hợp | ✅ 1 ô tìm kiếm gộp: kênh TV (`/api/search`), creator + shorts trùng từ khoá, phim TMDB (local + remote) — mở kênh nhảy thẳng tab Truyền hình, creator/short nhảy tab Shorts | MoviesScreen (panel “Kết quả gộp”) + App.jsx wiring |
 | #63 Tìm kiếm bằng giọng nói | ✅ có sẵn (voiceSearch + mic) | MoviesScreen |
-| #64 Trending searches | ⚠️ Chưa lưu/top cụm tìm kiếm | — |
-| #65 Trang diễn viên + follow | ✅ xem actor/cast có sẵn; follow creator Shorts; follow diễn viên chưa có | — |
+| #64 Trending searches | ✅ `/api/stats/search` ghi cụm tìm (≥2 ký tự) + `/api/stats/trending-search` top; chips 🔥 Xu hướng khi ô tìm trống — bấm là tìm luôn | worker `trending_searches` + MoviesScreen |
+| #65 Trang diễn viên + follow | ✅ follow diễn viên (`/api/actors/follow`, GET/POST, theo dõi/bỏ) + nút follow trong modal diễn viên (danh sách cast + trang diễn viên) | worker `actor_follows` + `PersonModal` (MoviesScreen) |
 | #66 “Quay số” chọn phim theo tâm trạng | ✅ RouletteModal (6 mood) | MoviesScreen |
 
 ## C. Thể thao
@@ -45,8 +45,8 @@
 | Mục | Trạng thái | Nơi |
 | --- | --- | --- |
 | #4 Giờ kickoff theo timezone + “nhắc tôi” | ✅ giờ local + nút remind (local notification) | SportsScreen/MatchDetailModal |
-| #32 Follow đội → push | ✅ follow đội qua `/api/sports/follow` (worker) + theo dõi UI nền tảng có sẵn; push server khi có trận chưa kích hoạt | — |
-| #33 Chat trận + poll thời gian thực | ⚠️ Hạ tầng `/api/party` dùng được cho phòng `match-*`; UI tab chat trận chưa gắn | — |
+| #32 Follow đội → push | ✅ follow đội server (`/api/sports/follow` GET/POST) + nút follow từng đội trong chi tiết trận; khi trận live/ghi bàn → fan-out notification + web-push vi/en cho fan còn lại qua `/api/team/notify` (client tự báo khi mở trận live) | worker `team_follows` + MatchDetailModal |
+| #33 Chat trận + poll thời gian thực | ✅ Tab “💬 Chat trận” trong chi tiết trận: chat/reaction theo phòng `match-<idEvent>` (tái dùng hạ tầng party) + poll tạo/vote/đếm %, tự làm mới 2.5s | MatchDetailModal `MatchChat` + worker `party_polls` |
 | #34 Diễn biến bàn thắng | ✅ Timeline (goal/yellow/red/sub/corner) có sẵn | MatchDetailModal |
 | #75 Tường tỉ số nhiều trận | ✅ Live scoreboard cards | SportsScreen |
 
@@ -63,9 +63,9 @@
 | Mục | Trạng thái | Nơi |
 | --- | --- | --- |
 | #37 Tặng sao bằng XP | ✅ nút ⭐ trên short (50 XP/sao, chặn thiếu XP) | ShortsScreen + worker |
-| #38 BXH creator tuần + huy hiệu | ✅ API `/api/shorts/creator/weekly`; UI BXH đơn giản chưa gắn | worker |
+| #38 BXH creator tuần + huy hiệu | ✅ API `/api/shorts/creator/weekly` + modal BXH (🏆 3 huy chương đầu, ⭐/fan) mở từ nút “BXH sao tuần” | worker + ShortsScreen `WeeklyBoardModal` |
 | #39 Ghim bình luận + Q&A | ✅ admin ghim (`/admin/comments`), hiển thị GHIM trong CommentsBox | worker + UI |
-| #40 Challenge hashtag tuần | ✅ admin tạo + `/api/challenges` gom short theo hashtag; trang tổng hợp UI chưa đầy đủ | worker/Admin |
+| #40 Challenge hashtag tuần | ✅ chips 🔥 thử thách đang chạy + modal tổng hợp từng challenge (bấm short là phát ngay, kể cả short ngoài feed) | worker `/api/challenges` + ShortsScreen `ChallengesModal` |
 
 ## F. Player/Dữ liệu
 
@@ -92,11 +92,15 @@
 | #84 Wrapped năm | ✅ `/api/wrapped` + nút “✨ Wrapped” (auth) | MoviesScreen/WrappedModal |
 
 ## Còn thiếu rõ ràng (đã liệt kê ⚠️)
-UI chat trận + poll (#33), theo dõi diễn viên (#65), trending search (#64), job báo nguồn tốt hơn (#29), trang tổng hợp hashtag (#40), tìm kiếm tổng hợp 1 ô (#62), player settings theo profile (#16).
+UI soạn playlist cá nhân hoá từ Watchlist (#11 — cơ chế mã `playlist` đã có), player settings theo profile (#16 — Settings hiện lưu theo thiết bị).
 
 ## Hướng dẫn kiểm thử nhanh (preview local)
 1. Mở `http://127.0.0.1:3000` → tab **Phim**: nút “🎟️ Nhập mã” (nhập mã từ bạn bè / tự tạo qua Share trong chi tiết), “📺 Đồng bộ TV” (tạo mã 6 số ở máy A, nhập ở máy B), “🎲 Quay số”, “✨ Wrapped”, “Lọc”.
-2. Chi tiết phim TV: nút chuông **Theo dõi series**, thanh **Muốn xem/Đang xem/Đã xem**, chips **vé rạp/sách**, badge tuổi.
-3. Mở phim có nguồn HLS → nút **Bình luận** (ghim phút `@MM:SS` + ghi chú thoại).
-4. Tab **Truyền hình**: chọn kênh → “Xem chung” tạo phòng; nút −1/−2/−3 giờ (nếu kênh catchup); kênh bảo trì hiện biển + kênh thay thế.
-5. Admin (đăng nhập admin): panel mới Realtime/Cảnh báo/Vùng chặn/Bảo trì/Challenge/Affiliate + lịch đăng có preview.
+2. Tab **Phim**: ô tìm kiếm trống hiện 🔥 **Xu hướng** — bấm chip là tìm luôn; gõ từ khoá bất kỳ → kết quả **gộp** kênh TV (bấm mở kênh + nhảy tab Truyền hình), creator/shorts, phim.
+3. Chi tiết phim TV: nút chuông **Theo dõi series**, thanh **Muốn xem/Đang xem/Đã xem**, chips **vé rạp/sách**, badge tuổi. Mở diễn viên (hàng Cast) → nút **Theo dõi diễn viên** (đồng bộ server).
+4. Thêm phim vào **wishlist** (theo dõi) → mở lại nguồn phim đó khi đã có bản HD: nhận notification “bản ngon hơn” (≤1 lần/3 ngày).
+5. Mở phim có nguồn HLS → nút **Bình luận** (ghim phút `@MM:SS` + ghi chú thoại).
+6. Tab **Truyền hình**: chọn kênh → “Xem chung” tạo phòng; nút −1/−2/−3 giờ (nếu kênh catchup); kênh bảo trì hiện biển + kênh thay thế.
+7. Tab **Thể thao** → chi tiết trận: nút follow từng đội (đội theo dõi khi live/ghi bàn sẽ fan-out push), tab **💬 Chat trận** (vào phòng, nhắn/react/tạo poll — tự làm mới 2.5s).
+8. Tab **Shorts**: chips 🔥 thử thách hashtag + nút **BXH sao tuần**; bấm short trong challenge là phát ngay.
+9. Admin (đăng nhập admin): panel mới Realtime/Cảnh báo/Vùng chặn/Bảo trì/Challenge/Affiliate + lịch đăng có preview.

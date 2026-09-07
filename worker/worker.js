@@ -262,6 +262,8 @@ export default {
             env.DB.prepare("DELETE FROM analytics WHERE created_at < datetime('now', '-90 days')"),
             env.DB.prepare("DELETE FROM tmdb_cache WHERE expires_at < ?").bind(Math.floor(Date.now() / 1000)),
             env.DB.prepare("UPDATE users SET verify_code = '', reset_token = '' WHERE verify_expires < ? AND reset_expires < ? AND (verify_code != '' OR reset_token != '')").bind(Math.floor(Date.now() / 1000) - 86400, Math.floor(Date.now() / 1000) - 86400),
+            env.DB.prepare("DELETE FROM trending_searches WHERE last_at < datetime('now', '-30 days')"),
+            env.DB.prepare("DELETE FROM party_polls WHERE ends_at > 0 AND ends_at < ?").bind(Math.floor(Date.now() / 1000) - 6 * 3600),
           ]);
         } catch (e) {
           console.error("[cron] cleanup error:", e?.message || e);
@@ -1032,6 +1034,10 @@ const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS user_watch (user_id INTEGER NOT NULL, kind TEXT NOT NULL, ref_id TEXT NOT NULL, ref_name TEXT DEFAULT '', sec INTEGER DEFAULT 0, updated_at INTEGER DEFAULT 0, PRIMARY KEY (user_id, kind, ref_id))`,
   `CREATE TABLE IF NOT EXISTS admin_alert_rules (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, metric TEXT DEFAULT '', op TEXT DEFAULT 'gt', threshold REAL DEFAULT 0, enabled INTEGER DEFAULT 1, cooldown_s INTEGER DEFAULT 3600, last_fired_at INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS admin_alert_feed (id INTEGER PRIMARY KEY AUTOINCREMENT, rule_id INTEGER DEFAULT 0, level TEXT DEFAULT 'warn', message TEXT NOT NULL, data TEXT DEFAULT '', ack INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS trending_searches (query TEXT PRIMARY KEY, cnt INTEGER DEFAULT 1, last_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS party_polls (id INTEGER PRIMARY KEY AUTOINCREMENT, room TEXT NOT NULL, question TEXT NOT NULL, options TEXT DEFAULT '[]', votes TEXT DEFAULT '[]', voters TEXT DEFAULT '[]', created_by INTEGER DEFAULT 0, ends_at INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS movie_wishlists (user_id INTEGER NOT NULL, tmdb_id INTEGER NOT NULL, media_type TEXT DEFAULT 'movie', notified_at INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (user_id, tmdb_id))`,
+  `CREATE TABLE IF NOT EXISTS actor_follows (user_id INTEGER NOT NULL, person_id INTEGER NOT NULL, name TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (user_id, person_id))`,
   `CREATE INDEX IF NOT EXISTS idx_admin_alert_feed ON admin_alert_feed(ack, id)`,
   `CREATE TABLE IF NOT EXISTS affiliates (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, kind TEXT DEFAULT 'cinema', url_template TEXT DEFAULT '', label TEXT DEFAULT '', enabled INTEGER DEFAULT 1, sort_order INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS user_quiz (user_id INTEGER PRIMARY KEY, answers_json TEXT DEFAULT '{}', done INTEGER DEFAULT 0, updated_at INTEGER DEFAULT 0)`,
@@ -1196,6 +1202,7 @@ async function handleAPI(path, request, env, ctx) {
   if (path === "/api/rating") return await handleRating(request, env);
   if (path === "/api/notifications") return await handleNotifications(request, env);
   if (path.startsWith("/api/push/")) return await handlePush(path, request, env);
+  if (path === "/api/party/polls" || path === "/api/party/poll" || path === "/api/party/vote") return await handlePartyPollExtra(path, request, env);
   if (path.startsWith("/api/party/")) return await handleParty(path, request, env);
   if (path === "/api/tmdb") return await handleTMDBProxy(request, env);
   if (path === "/api/reminders") return await handleReminders(request, env);
@@ -1265,6 +1272,10 @@ async function handleAPI(path, request, env, ctx) {
   if (path === "/api/movie/share" || path === "/api/codes" || path === "/api/codes/claim" || path === "/api/codes/my" || path.startsWith("/api/codes/")) return await handleShareCodesApi(path, request, env);
   if (path.startsWith("/api/movie/progress") || path === "/api/resume") return await handleMovieProgressApi(path, request, env);
   if (path.startsWith("/api/movie/series-follow")) return await handleSeriesFollowApi(path, request, env);
+  if (path === "/api/movie/wishlist") return await handleMovieWishlistApi(request, env);
+  if (path === "/api/stats/search" || path === "/api/stats/trending-search") return await handleSearchTrending(path, request, env);
+  if (path === "/api/actors/follow") return await handleActorFollowApi(request, env);
+  if (path === "/api/team/notify") return await handleTeamNotify(request, env);
   if (path === "/api/shorts/star") return await handleShortStar(request, env);
   if (path === "/api/shorts/leaderboard" || path === "/api/shorts/creator/weekly") return await handleCreatorWeekly(request, env);
   if (path === "/api/challenges") return await handleChallengesPublic(request, env);
@@ -5510,6 +5521,11 @@ async function handleMovieSources(request, env) {
     const label = String(r.label || "").trim().slice(0, 20) || "";
     out.push({ id: r.id, name: String(r.name || "Nguồn").slice(0, 40), kind: r.kind === "hls" ? "hls" : "embed", url, label });
   }
+  // (#29) user đang "muốn xem" phim này mà giờ có nguồn HD+ -> 1 thông báo/3 ngày
+  try {
+    const a = await getAuth(request, env);
+    if (a && a.user) await maybeWishlistQualityNotify(env, a.user.id, Number(tmdb), type, out);
+  } catch {}
   return json({ success: true, sources: out }, 200, request, env);
 }
 
@@ -6500,6 +6516,218 @@ async function handleAdminPack48(path, request, env, adminCtx) {
 // ============================================================================
 // Job nền: dọn mã share hết hạn + đánh giá cảnh báo + lịch đăng (chạy trong runDueJobs)
 // ============================================================================
+// ============================================================================
+// PACK48B — trending search (#64), wishlist nguồn tốt hơn (#29), actor follow
+//           (#65), poll phòng xem chung (#33), team notify vi/en (#32)
+// ============================================================================
+
+// ---------- (#64) Trending searches ----------
+async function handleSearchTrending(path, request, env) {
+  if (!hasDB(env)) return path === "/api/stats/trending-search"
+    ? json({ success: true, trending: [] }, 200, request, env)
+    : json({ success: true }, 200, request, env);
+  await ensureSchema(env);
+  if (path === "/api/stats/search" && request.method === "POST") {
+    const b = await request.json().catch(() => ({}));
+    const q = String(b.q || "").trim().slice(0, 60);
+    if (q.length >= 2) {
+      try {
+        const r = await env.DB.prepare("UPDATE trending_searches SET cnt = cnt + 1, last_at = CURRENT_TIMESTAMP WHERE query = ?").bind(q).run();
+        if (!(r.meta && (r.meta.changes || 0))) {
+          await env.DB.prepare("INSERT OR IGNORE INTO trending_searches (query, cnt) VALUES (?, 1)").bind(q).run();
+        }
+      } catch {}
+    }
+    return json({ success: true }, 200, request, env);
+  }
+  if (path === "/api/stats/trending-search" && request.method === "GET") {
+    const limit = Math.min(20, parseInt(new URL(request.url).searchParams.get("limit") || "10", 10) || 10);
+    try {
+      const r = await env.DB.prepare(
+        "SELECT query, cnt FROM trending_searches WHERE last_at >= datetime('now', '-21 days') ORDER BY cnt DESC, last_at DESC LIMIT ?"
+      ).bind(limit).all();
+      return json({ success: true, trending: r.results || [] }, 200, request, env);
+    } catch { return json({ success: true, trending: [] }, 200, request, env); }
+  }
+  return json({ error: "Not found" }, 404, request, env);
+}
+
+// ---------- (#27/#29) Wishlist phim server + báo khi có nguồn tốt hơn ----------
+async function handleMovieWishlistApi(request, env) {
+  if (!hasDB(env)) return json({ success: true, items: [] }, 200, request, env);
+  await ensureSchema(env);
+  const auth = await getAuth(request, env);
+  if (!auth || !auth.user) return json({ error: "LOGIN_REQUIRED" }, 401, request, env);
+  if (request.method === "GET") {
+    const r = await env.DB.prepare("SELECT tmdb_id, media_type FROM movie_wishlists WHERE user_id = ? ORDER BY created_at DESC LIMIT 200").bind(auth.user.id).all().catch(() => ({ results: [] }));
+    return json({ success: true, items: r.results || [] }, 200, request, env);
+  }
+  if (request.method === "POST") {
+    const b = await request.json().catch(() => ({}));
+    const tmdb_id = parseInt(b.tmdb_id, 10) || 0;
+    if (!tmdb_id) return json({ error: "Thiếu tmdb_id" }, 400, request, env);
+    const media_type = b.media_type === "tv" ? "tv" : "movie";
+    if (b.want === false) await env.DB.prepare("DELETE FROM movie_wishlists WHERE user_id = ? AND tmdb_id = ?").bind(auth.user.id, tmdb_id).run();
+    else await env.DB.prepare("INSERT OR IGNORE INTO movie_wishlists (user_id, tmdb_id, media_type) VALUES (?, ?, ?)").bind(auth.user.id, tmdb_id, media_type).run();
+    return json({ success: true, wishing: b.want !== false }, 200, request, env);
+  }
+  return json({ error: "Not found" }, 404, request, env);
+}
+
+// Gọi ở cuối GET /api/movie/sources: nếu user đang "muốn xem" phim này và giờ có
+// nguồn chất lượng (HD/1080/4K) → 1 thông báo trong app + 1 web push (1 lần/3 ngày).
+const QUALITY_RE = /4k|2160|fhd|1080|full\s?hd|\bhd\b|blu-?ray/i;
+async function maybeWishlistQualityNotify(env, userId, tmdbId, rows) {
+  if (!userId || !tmdbId || !rows || !rows.length) return;
+  try {
+    const good = rows.some((r) => QUALITY_RE.test(String(r.label || "") + " " + String(r.name || "")));
+    if (!good) return;
+    const wl = await env.DB.prepare("SELECT notified_at FROM movie_wishlists WHERE user_id = ? AND tmdb_id = ?").bind(userId, tmdbId).first().catch(() => null);
+    if (!wl) return;
+    const now = Math.floor(Date.now() / 1000);
+    if (wl.notified_at && now - wl.notified_at < 3 * 86400) return;
+    const label = (rows.find((r) => QUALITY_RE.test(String(r.label || "") + " " + String(r.name || ""))) || rows[0] || {}).label || "HD";
+    await env.DB.prepare("INSERT INTO notifications (title, body, type, url, target, created_by) VALUES (?, ?, 'quality', ?, ?, 0)")
+      .bind("🍿 Phim bạn quan tâm đã có bản ngon hơn", `Nguồn ${label} hiện phát được — bấm để xem ngay nhé!`, `/movies?tmdb=${tmdbId}`, String(userId)).run();
+    await env.DB.prepare("UPDATE movie_wishlists SET notified_at = ? WHERE user_id = ? AND tmdb_id = ?").bind(now, userId, tmdbId).run();
+    // web push riêng cho user này (không payload — SW tự lấy nội dung mới)
+    try {
+      const keys = await getVapidKeys(env);
+      if (keys) {
+        const subs = await env.DB.prepare("SELECT endpoint FROM push_subscriptions WHERE user_id = ?").bind(userId).all().catch(() => ({ results: [] }));
+        await Promise.allSettled((subs.results || []).map(async (s) => {
+          const st = await sendWebPush({ endpoint: s.endpoint, _vapidPublic: keys.publicB64url }, keys.privateJwk);
+          if (st === 404 || st === 410) await env.DB.prepare("DELETE FROM push_subscriptions WHERE endpoint = ?").bind(s.endpoint).run();
+        }));
+      }
+    } catch {}
+  } catch {}
+}
+
+// ---------- (#65) Follow diễn viên ----------
+async function handleActorFollowApi(request, env) {
+  if (!hasDB(env)) return json({ success: true, follows: [] }, 200, request, env);
+  await ensureSchema(env);
+  const auth = await getAuth(request, env);
+  if (!auth || !auth.user) return json({ error: "LOGIN_REQUIRED" }, 401, request, env);
+  if (request.method === "GET") {
+    const r = await env.DB.prepare("SELECT person_id, name FROM actor_follows WHERE user_id = ? ORDER BY created_at DESC LIMIT 200").bind(auth.user.id).all().catch(() => ({ results: [] }));
+    return json({ success: true, follows: r.results || [] }, 200, request, env);
+  }
+  if (request.method === "POST") {
+    const b = await request.json().catch(() => ({}));
+    const person_id = parseInt(b.person_id, 10) || 0;
+    if (!person_id) return json({ error: "Thiếu person_id" }, 400, request, env);
+    const name = String(b.name || "").slice(0, 120);
+    if (b.follow === false) await env.DB.prepare("DELETE FROM actor_follows WHERE user_id = ? AND person_id = ?").bind(auth.user.id, person_id).run();
+    else await env.DB.prepare("INSERT OR IGNORE INTO actor_follows (user_id, person_id, name) VALUES (?, ?, ?)").bind(auth.user.id, person_id, name).run();
+    return json({ success: true, following: b.follow !== false }, 200, request, env);
+  }
+  return json({ error: "Not found" }, 404, request, env);
+}
+
+// ---------- (#33) Poll phòng xem chung (realtime, cùng hạ tầng party) ----------
+async function handlePartyPollExtra(path, request, env) {
+  if (!hasDB(env)) return json({ success: true, polls: [] }, 200, request, env);
+  await ensureSchema(env);
+  const auth = await getAuth(request, env);
+  const room = String(new URL(request.url).searchParams.get("room") || "").trim().slice(0, 40);
+  const now = Math.floor(Date.now() / 1000);
+
+  if (path === "/api/party/polls" && request.method === "GET") {
+    if (!room) return json({ success: true, polls: [] }, 200, request, env);
+    const r = await env.DB.prepare("SELECT * FROM party_polls WHERE room = ? AND (ends_at = 0 OR ends_at > ?) ORDER BY id DESC LIMIT 10").bind(room, now - 6 * 3600).all().catch(() => ({ results: [] }));
+    const uid = auth && auth.user ? auth.user.id : 0;
+    const out = (r.results || []).map((p) => {
+      let options = [], votes = [], voters = [];
+      try { options = JSON.parse(p.options || "[]"); votes = JSON.parse(p.votes || "[]"); voters = JSON.parse(p.voters || "[]"); } catch {}
+      const total = votes.reduce((a, b) => a + (Number(b) || 0), 0);
+      return {
+        id: p.id, room: p.room, question: p.question, options,
+        votes: votes.map((v, i) => ({ option: options[i] || `#${i + 1}`, count: Number(v) || 0, pct: total ? Math.round(((Number(v) || 0) / total) * 100) : 0 })),
+        total, mine: voters.includes(String(uid)) ? -1 : -1, ended: !!p.ends_at && p.ends_at <= now, ends_at: p.ends_at,
+      };
+    });
+    return json({ success: true, polls: out }, 200, request, env);
+  }
+  if (!auth || !auth.user) return json({ error: "LOGIN_REQUIRED" }, 401, request, env);
+  const body = await request.json().catch(() => ({}));
+  if (path === "/api/party/poll" && request.method === "POST") {
+    const q = String(body.question || "").trim().slice(0, 140);
+    const opts = (Array.isArray(body.options) ? body.options : []).map((o) => String(o).trim().slice(0, 60)).filter(Boolean).slice(0, 6);
+    const roomB = String(body.room || "").trim().slice(0, 40);
+    if (!q || opts.length < 2 || !roomB) return json({ error: "Thiếu câu hỏi/≥2 lựa chọn/phòng" }, 400, request, env);
+    const ttl = Math.max(60, Math.min(86400, parseInt(body.ttl_sec, 10) || 3600));
+    const r = await env.DB.prepare("INSERT INTO party_polls (room, question, options, votes, voters, created_by, ends_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .bind(roomB, q, JSON.stringify(opts), JSON.stringify(opts.map(() => 0)), JSON.stringify([]), auth.user.id, now + ttl).run();
+    try { await env.DB.prepare("INSERT INTO party_messages (room, kind, from_name, text) VALUES (?, 'poll', ?, ?)").bind(roomB, String(auth.user.display_name || auth.user.username || "Bạn"), "📊 " + q).run(); } catch {}
+    return json({ success: true, id: r.meta && r.meta.last_row_id }, 200, request, env);
+  }
+  if (path === "/api/party/vote" && request.method === "POST") {
+    const poll_id = parseInt(body.poll_id, 10) || 0;
+    const roomB = String(body.room || "").trim().slice(0, 40);
+    const option = parseInt(body.option, 10);
+    if (!poll_id || !roomB || !Number.isInteger(option)) return json({ error: "Thiếu poll/room/option" }, 400, request, env);
+    const p = await env.DB.prepare("SELECT * FROM party_polls WHERE id = ? AND room = ?").bind(poll_id, roomB).first().catch(() => null);
+    if (!p) return json({ error: "Poll không tồn tại trong phòng này", code: "NOT_FOUND" }, 404, request, env);
+    if (p.ends_at && p.ends_at <= now) return json({ error: "Poll đã đóng", code: "EXPIRED" }, 410, request, env);
+    let options = [], votes = [], voters = [];
+    try { options = JSON.parse(p.options || "[]"); votes = JSON.parse(p.votes || "[]"); voters = JSON.parse(p.voters || "[]"); } catch {}
+    if (option < 0 || option >= options.length) return json({ error: "Lựa chọn không hợp lệ" }, 400, request, env);
+    if (voters.includes(String(auth.user.id))) return json({ error: "Bạn đã bình chọn rồi", code: "ALREADY" }, 409, request, env);
+    votes[option] = (Number(votes[option]) || 0) + 1;
+    voters.push(String(auth.user.id));
+    await env.DB.prepare("UPDATE party_polls SET votes = ?, voters = ? WHERE id = ?").bind(JSON.stringify(votes), JSON.stringify(voters), poll_id).run();
+    return json({ success: true, option }, 200, request, env);
+  }
+  return json({ error: "Not found" }, 404, request, env);
+}
+
+// ---------- (#32) Fan-out thông báo đội: vi/en theo user_settings.language ----------
+async function handleTeamNotify(request, env) {
+  if (!hasDB(env)) return json({ success: true }, 200, request, env);
+  await ensureSchema(env);
+  if (request.method !== "POST") return json({ error: "Not found" }, 404, request, env);
+  const auth = await getAuth(request, env);
+  if (!auth || !auth.user) return json({ error: "LOGIN_REQUIRED" }, 401, request, env);
+  const b = await request.json().catch(() => ({}));
+  const team = String(b.team || "").trim().slice(0, 60);
+  const kind = ["kickoff", "live", "goal"].includes(b.kind) ? b.kind : "live";
+  const score = String(b.score || "").slice(0, 20);
+  if (!team) return json({ error: "Thiếu team" }, 400, request, env);
+  try {
+    const rl = await rateLimitCheck(env, "teamnotify:" + team.toLowerCase() + ":" + kind, 4, 300);
+    if (!rl.allowed) return json({ success: true, limited: true }, 200, request, env);
+  } catch {}
+  const rows = await env.DB.prepare("SELECT user_id FROM team_follows WHERE team_name = ? COLLATE NOCASE").bind(team).all().catch(() => ({ results: [] }));
+  if (!rows || !rows.results.length) return json({ success: true, fans: 0 }, 200, request, env);
+  const fans = (rows.results || []).map((x) => Number(x.user_id)).filter((id) => id !== Number(auth.user.id));
+  if (!fans.length) return json({ success: true, fans: 0 }, 200, request, env);
+  const now = Math.floor(Date.now() / 1000);
+  for (const uid of fans.slice(0, 200)) {
+    try {
+      const st = await env.DB.prepare("SELECT language FROM user_settings WHERE user_id = ?").bind(uid).first().catch(() => null);
+      const vi = (st && st.language) !== "en";
+      let title = "", body = "";
+      if (kind === "kickoff") { title = vi ? `⚽ ${team} sắp đá` : `⚽ ${team} kick-off soon`; body = vi ? "Bấm xem trực tiếp để không bỏ lỡ nhé!" : "Tap watch live so you don't miss it!"; }
+      else if (kind === "goal") { title = vi ? `⚽ GOAL — ${team}!` : `⚽ GOAL — ${team}!`; body = score ? (vi ? `Tỉ số hiện tại: ${score}` : `Current score: ${score}`) : (vi ? "Vào xem ngay nào!" : "Tune in now!"); }
+      else { title = vi ? `🔴 ${team} đang thi đấu` : `🔴 ${team} is LIVE`; body = vi ? "Trận đang diễn ra — bấm để xem trực tiếp." : "Match is live now — tap to watch."; }
+      await env.DB.prepare("INSERT INTO notifications (title, body, type, url, target, created_by) VALUES (?, ?, 'team', ?, ?, 0)").bind(title, body, `/live?team=${encodeURIComponent(team)}`, String(uid)).run();
+      try {
+        const keys = await getVapidKeys(env);
+        if (keys) {
+          const subs = await env.DB.prepare("SELECT endpoint FROM push_subscriptions WHERE user_id = ?").bind(uid).all().catch(() => ({ results: [] }));
+          await Promise.allSettled((subs.results || []).map(async (s) => {
+            const st2 = await sendWebPush({ endpoint: s.endpoint, _vapidPublic: keys.publicB64url }, keys.privateJwk);
+            if (st2 === 404 || st2 === 410) await env.DB.prepare("DELETE FROM push_subscriptions WHERE endpoint = ?").bind(s.endpoint).run();
+          }));
+        }
+      } catch {}
+    } catch {}
+  }
+  return json({ success: true, fans: fans.length }, 200, request, env);
+}
+
 async function p48RunDueJobs(env) {
   if (!hasDB(env)) return;
   try {

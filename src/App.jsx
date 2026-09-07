@@ -530,7 +530,7 @@ function AppContent() {
         {movieToOpen && (
           <div className="fixed inset-0 z-[100] bg-black overflow-y-auto">
             <button onClick={() => setMovieToOpen(null)} className="fixed top-3 left-3 z-[110] px-4 py-2 rounded-full bg-black/70 border border-white/20 text-[12px] font-bold text-white">← {t('common.back')}</button>
-            <MoviesScreen openMovie={movieToOpen} onOpenMovieHandled={() => setMovieToOpen(null)} onRequireLogin={() => promptLogin(t('app.need_login_movie'))} />
+            <MoviesScreen openMovie={movieToOpen} onOpenMovieHandled={() => setMovieToOpen(null)} onRequireLogin={() => promptLogin(t('app.need_login_movie'))} onGoTab={goTab} onOpenChannel={handleOpenTvChannel} />
           </div>
         )}
         {isPlayerOpen && currentChannel && (
@@ -599,7 +599,7 @@ function AppContent() {
           ) : showSettings ? (
             <SettingsPage onClose={() => setShowSettings(false)} />
           ) : activeTab === 'movies' ? (
-            <MoviesScreen openMovie={movieToOpen} onOpenMovieHandled={() => setMovieToOpen(null)} onRequireLogin={() => promptLogin(t('app.need_login_movie'))} />
+            <MoviesScreen openMovie={movieToOpen} onOpenMovieHandled={() => setMovieToOpen(null)} onRequireLogin={() => promptLogin(t('app.need_login_movie'))} onGoTab={goTab} onOpenChannel={handleOpenTvChannel} />
           ) : activeTab === 'tv' ? (
             <TVPage
               channels={channels}

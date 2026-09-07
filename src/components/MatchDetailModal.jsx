@@ -102,6 +102,11 @@ export default function MatchDetailModal({ ev, leagueName = '', onClose, onTeam 
   }, [detail.strStatus, ev.idEvent, load]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const timeline = buildTimeline(detail);
+  // QUAN TRỌNG: video/live phải khai báo TRƯỚC các useEffect bên dưới vì dependency
+  // array của hook được đánh giá ngay lúc render (không phải lúc effect chạy) — để
+  // sau sẽ dính TDZ ReferenceError làm crash toàn bộ app (màn hình đen).
+  const video = detail.strVideo ? parseVideoUrl(detail.strVideo) : null;
+  const live = isLive(detail);
 
   // Radio: đọc các diễn biến chưa đọc
   useEffect(() => {
@@ -169,8 +174,6 @@ export default function MatchDetailModal({ ev, leagueName = '', onClose, onTeam 
     }
   };
 
-  const video = detail.strVideo ? parseVideoUrl(detail.strVideo) : null;
-  const live = isLive(detail);
   const tabs = [
     { id: 'timeline', label: `📝 ${t('match.timeline')}` },
     { id: 'chat', label: `💬 ${t('p48.chat_match')}` },

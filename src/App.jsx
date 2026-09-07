@@ -23,6 +23,7 @@ import KeyboardShortcuts from './components/KeyboardShortcuts';
 import ChannelInfoModal from './components/ChannelInfoModal';
 import AuthScreen from './components/AuthScreen';
 import ProfileGate from './components/ProfileGate';
+import ErrorBoundary from './components/ErrorBoundary';
 import AdminPanel from './components/AdminPanel';
 import HomePage from './components/HomePage';
 import TVPage from './components/TVPage';
@@ -728,7 +729,9 @@ export default function App() {
           <AuthProvider>
             <ProfileProvider>
               <SettingsProvider>
-                <AppContent />
+                <ErrorBoundary>
+                  <AppContent />
+                </ErrorBoundary>
               </SettingsProvider>
             </ProfileProvider>
           </AuthProvider>

@@ -1,11 +1,26 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import shaka from 'shaka-player';
 import Hls from 'hls.js';
-import { Play, Pause, Volume2, VolumeX, Maximize, Search, Heart, Radio, Clock, AlertTriangle, RefreshCw, Tv, ChevronDown, ChevronUp, LayoutGrid, List, MonitorPlay, Film, Trophy, Boxes, Globe, Star, Filter, X, Zap } from 'lucide-react';
+import { Play, Pause, Volume2, VolumeX, Maximize, Search, Heart, Radio, Clock, AlertTriangle, RefreshCw, Tv, ChevronDown, ChevronUp, LayoutGrid, List, MonitorPlay, Film, Trophy, Boxes, Globe, Star, Filter, X, Zap, Users, Wrench, History } from 'lucide-react';
+import { useToast } from '../contexts/ToastContext';
+import { PartyModal } from './Pack48Ui';
 import { useI18n } from '../contexts/I18nContext';
+import { getHomePrefs } from '../services/prefs';
 import { parseEpgDate, formatTimeHHMM } from '../utils/dateUtils';
 import { maskScores } from '../utils/spoiler';
 import { isHlsUrl, isProxiedStreamUrl, getRotateAtMs, refreshStreamToken, makeStreamRequestFilter, applyStreamClientHeaders } from '../services/streamGuard';
+
+// (#22) Timeshift: tìm chương trình trong EPG đang phát tại mốc `at` (ms)
+function programAtTime(list, at) {
+  return list.find(p => p._s <= at && p._e > at) || null;
+}
+// (#54) Gợi ý kênh thay thế cùng nhóm khi kênh đang bảo trì
+function altChannels(channels, ch) {
+  if (!ch) return [];
+  return (channels || [])
+    .filter(c => c.channel_id !== ch.channel_id && (c.group_title || '') === (ch.group_title || '') && !(Number(c.maintenance_until || 0) > Math.floor(Date.now() / 1000)))
+    .slice(0, 4);
+}
 
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 
@@ -263,6 +278,12 @@ export default function TVPage({
   const [showFavOnly, setShowFavOnly] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
   const [theater, setTheater] = useState(false);
+  const [partyOpen, setPartyOpen] = useState(false);
+  const { addToast } = useToast();
+  // (#54) bảo trì: chuyển kênh → tắt bỏ biển cũ
+  const [maintDismiss, setMaintDismiss] = useState(() => new Set());
+  const maintActive = !!tvChannel && Number(tvChannel.maintenance_until || 0) > Math.floor(Date.now() / 1000) && !maintDismiss.has(tvChannel.channel_id);
+  const altList = maintActive ? altChannels(channels, tvChannel) : [];
   const [collapsed, setCollapsed] = useState(() => new Set());
   const [viewMode, setViewMode] = useState('list'); // list | grid
   const groupRefs = useRef({});
@@ -278,13 +299,18 @@ export default function TVPage({
     });
     // Sắp xếp nhóm theo thứ tự ưu tiên + số lượng
     const order = ['VTV', 'TH -', 'BOX', 'SPORT', 'Phim', 'Giải trí', 'Thiếu nhi', 'Quốc tế'];
+    // (#61) Nhóm kênh yêu thích từ quiz cá nhân hoá được ưu tiên dồn lên đầu
+    const fav = (getHomePrefs().favGroups || []).map(g => String(g).toLowerCase()).filter(Boolean);
+    const rank = (name) => {
+      const lc = name.toLowerCase();
+      for (let i = 0; i < fav.length; i++) if (lc.includes(fav[i])) return -1000 + i;
+      const oi = order.findIndex(o => lc.includes(o.toLowerCase()));
+      return oi === -1 ? 1000 : oi;
+    };
     const entries = Array.from(map.entries());
     entries.sort((a, b) => {
-      const ai = order.findIndex(o => a[0].toLowerCase().includes(o.toLowerCase()));
-      const bi = order.findIndex(o => b[0].toLowerCase().includes(o.toLowerCase()));
-      if (ai !== -1 && bi !== -1) return ai - bi;
-      if (ai !== -1) return -1;
-      if (bi !== -1) return 1;
+      const ra = rank(a[0]), rb = rank(b[0]);
+      if (ra !== rb) return ra - rb;
       return b[1].length - a[1].length || a[0].localeCompare(b[0]);
     });
     return entries; // [ [groupName, channels[]], ... ]
@@ -365,6 +391,9 @@ export default function TVPage({
               <button onClick={onNextTv} className="px-3.5 py-2 rounded-full bg-white/10 hover:bg-white/15 text-xs font-bold border border-white/10">Sau ›</button>
             </>
           )}
+          <button onClick={() => setPartyOpen(true)} disabled={!tvChannel} className="px-3.5 py-2 rounded-full text-xs font-bold border flex items-center gap-1.5 disabled:opacity-35 disabled:cursor-not-allowed bg-emerald-950/40 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20 transition" title="Xem chung cùng bạn bè qua mã">
+            <Users className="w-4 h-4" /> Xem chung
+          </button>
           <button onClick={() => setTheater(v => !v)} className={`px-3.5 py-2 rounded-full text-xs font-bold border flex items-center gap-1.5 ${theater ? 'bg-[#f36f21] border-[#f36f21] text-white' : 'bg-white/10 border-white/10 text-stone-300 hover:text-white'}`}>
             <MonitorPlay className="w-4 h-4" /> {theater ? 'Thu gọn' : 'Rạp hát'}
           </button>
@@ -375,6 +404,35 @@ export default function TVPage({
         {/* LEFT — PLAYER BIGGER */}
         <div className="flex flex-col gap-4 min-w-0">
           <div className={`relative rounded-[24px] overflow-hidden bg-black border border-white/10 shadow-[0_20px_80px_rgba(0,0,0,.7)] ${theater ? 'aspect-video md:aspect-[21/9]' : 'aspect-video'}`}>
+            {/* (#54) Biển bảo trì kênh — kênh đang bảo trì thì không tự phát, gợi ý kênh thay thế cùng nhóm */}
+            {maintActive && (
+              <div className="absolute inset-0 z-40 flex items-center justify-center bg-[#0b0c10]/92 backdrop-blur p-4">
+                <div className="max-w-md w-full rounded-2xl border border-amber-500/30 bg-gradient-to-b from-amber-500/[0.08] to-black/40 p-4 text-center">
+                  <div className="w-12 h-12 mx-auto rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center mb-2"><Wrench className="w-6 h-6 text-amber-300" /></div>
+                  <p className="text-white font-black text-[15px] flex items-center justify-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>{t('p48.maintenance')} — {tvChannel.name}</p>
+                  <p className="text-[11px] text-stone-400 mt-1 line-clamp-2">{tvChannel.maintenance_note || 'Kênh đang được kỹ thuật viên kiểm tra. Quay lại sau ít phút nhé!'}</p>
+                  {Number(tvChannel.maintenance_until) > 0 && (
+                    <p className="text-[10px] font-mono text-stone-500 mt-1.5">mở lại ~ sau {Math.max(1, Math.ceil((Number(tvChannel.maintenance_until) * 1000 - Date.now()) / 60000))} phút</p>
+                  )}
+                  {altList.length > 0 ? (
+                    <>
+                      <p className="text-[10px] text-stone-500 font-black uppercase tracking-widest mt-3 mb-1.5">{t('p48.channel_alt')}</p>
+                      <div className="flex flex-wrap gap-1.5 justify-center">
+                        {altList.map(c => (
+                          <button key={c.channel_id} onClick={() => onOpenTvChannel && onOpenTvChannel(c)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/[0.07] border border-white/15 text-[11px] font-bold text-stone-200 hover:border-[#f36f21]/60 hover:text-white active:scale-95">
+                            {c.logo ? <img src={c.logo} alt="" className="w-4 h-4 rounded object-contain" onError={e => e.target.style.display='none'} /> : <Tv className="w-3.5 h-3.5 text-[#ff9a3d]" />}
+                            {c.name}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-[10px] text-stone-600 italic mt-2">Chưa có kênh thay thế cùng nhóm — thử nhóm khác bên phải nhé</p>
+                  )}
+                  <button onClick={() => setMaintDismiss(prev => new Set(prev).add(tvChannel.channel_id))} className="mt-3 px-4 py-1.5 rounded-full bg-white/[0.06] border border-white/10 text-[10px] font-bold text-stone-400 hover:text-white">Tôi vẫn muốn thử kênh này</button>
+                </div>
+              </div>
+            )}
             {tvChannel && tvStreamUrl && !tvLoading ? (
               <SimpleHlsPlayer key={`${tvChannel.channel_id}-${retryKey}-${tvStreamUrl}`} streamUrl={tvStreamUrl} channel={tvChannel} onRetry={() => setRetryKey(k => k + 1)} />
             ) : (
@@ -406,7 +464,7 @@ export default function TVPage({
                   {tvChannel.logo ? <img src={tvChannel.logo} alt="" className="w-11 h-11 rounded-xl object-contain bg-black/60 p-1 border border-white/10" onError={e => e.target.style.display='none'} /> : <span className="w-11 h-11 rounded-xl bg-white/10 flex items-center justify-center text-sm font-black">{(tvChannel.name||'?')[0]}</span>}
                   <div className="min-w-0">
                     <p className="text-[15px] md:text-[17px] font-black text-white leading-tight truncate flex items-center gap-2">{tvChannel.name} {favSet.has(tvChannel.channel_id) && <Heart className="w-4 h-4 fill-[#f36f21] text-[#f36f21]" />}</p>
-                    <p className="text-[11px] text-white/70 truncate flex items-center gap-1.5"><span className="px-1.5 py-0.5 rounded bg-white/10 border border-white/10 text-[9px] font-bold">{tvChannel.group_title}</span> • {epgNowNext?.now ? maskScores(epgNowNext.now.title) : 'LIVE'}</p>
+                    <p className="text-[11px] text-white/70 truncate flex items-center gap-1.5"><span className="px-1.5 py-0.5 rounded bg-white/10 border border-white/10 text-[9px] font-bold">{tvChannel.group_title}</span>{tvChannel.sponsored && <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-[9px] font-black text-emerald-300">★ TÀI TRỢ</span>} • {epgNowNext?.now ? maskScores(epgNowNext.now.title) : 'LIVE'}</p>
                   </div>
                   <span className="ml-auto px-2.5 py-1 rounded-full bg-red-600 text-white text-[10px] font-black tracking-widest animate-pulse shadow-lg shadow-red-600/20">LIVE</span>
                 </div>
@@ -414,6 +472,22 @@ export default function TVPage({
             )}
           </div>
 
+          {/* (#22) Timeshift: quay lại X giờ qua mốc EPG (cần kênh hỗ trợ catchup) */}
+          {tvChannel && onPlayCatchup && Number(tvChannel.catchup_days || 0) > 0 && (
+            <div className="rounded-2xl bg-white/[0.03] border border-white/[0.07] px-3 py-2.5 flex items-center gap-2 flex-wrap">
+              <span className="flex items-center gap-1.5 text-[11px] font-black text-stone-300"><History className="w-3.5 h-3.5 text-[#ff9a3d]" />Xem lại (timeshift)</span>
+              <div className="flex gap-1.5">
+                {[1, 2, 3].map(h => (
+                  <button key={h} onClick={() => {
+                    const prog = programAtTime(dayPrograms, Date.now() - h * 3600_000);
+                    if (prog) { onPlayCatchup(tvChannel, prog); addToast(`⏪ Đang tua về chương trình lúc ${formatTimeHHMM(prog.start)}`, 'info'); }
+                    else addToast('Không có chương trình ở mốc này — thử mốc khác', 'info');
+                  }} className="px-3 py-1.5 rounded-full bg-white/[0.06] border border-white/10 text-[10px] font-bold text-stone-300 hover:border-[#ff9a3d]/50 hover:text-white active:scale-95">−{h} giờ</button>
+                ))}
+              </div>
+              <span className="ml-auto text-[9px] text-stone-600 hidden sm:inline">Chương trình trong ngày → tua lại đúng giờ phát</span>
+            </div>
+          )}
           {tvChannel && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="rounded-2xl bg-white/[0.04] border border-white/[0.07] p-4 backdrop-blur">
@@ -594,6 +668,15 @@ export default function TVPage({
           </div>
         </div>
       </div>
+    {partyOpen && (
+      <PartyModal
+        open
+        channel={tvChannel}
+        onChangeChannel={(ch) => { if (ch && onOpenTvChannel) { onOpenTvChannel(ch); } }}
+        onClose={() => setPartyOpen(false)}
+      />
+    )}
+
     </div>
   );
 }

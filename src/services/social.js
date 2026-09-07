@@ -41,7 +41,7 @@ export const fetchPublicProfile = (handle) => get(`/api/u?handle=${encodeURIComp
 
 // ---- Bình luận ----
 export const fetchComments = (target) => get(`/api/comments?target=${encodeURIComponent(target)}`).then(d => d.comments || []).catch(() => []);
-export const postComment = (target, body) => post('/api/comments', { target, body });
+export const postComment = (target, body, extra = {}) => post('/api/comments', { target, body, ...extra });
 export const deleteComment = (id) => del('/api/comments', { id });
 
 // ---- Nhóm fan ----

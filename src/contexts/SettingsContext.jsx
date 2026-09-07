@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { useProfile } from './ProfileContext';
 
 const DEFAULT_SETTINGS = {
   theme: 'dark',
@@ -29,21 +30,64 @@ const DEFAULT_SETTINGS = {
   kidBedtimeEnd: '06:00',
 };
 
+// (#16) Nhóm "player" được lưu RIÊNG theo từng profile (đổi hồ sơ là đổi
+// chất lượng/data-saver/thao tác mà không đụng hồ sơ khác). Các mục còn lại
+// (giao diện, ngôn ngữ, nguồn EPG/M3U…) giữ chung theo thiết bị.
+const PLAYER_PREFS = new Set([
+  'defaultQuality', 'bufferGoal', 'rebufferingGoal', 'bufferBehind',
+  'autoNextOn', 'showStats', 'gestureEnabled', 'spoilerMask',
+  'dataSaver', 'dataSaverCap', 'autoQualityOnCellular', 'sleepTimerMinutes', 'upstreamUA',
+]);
+
 const SettingsContext = createContext(null);
 
-export function SettingsProvider({ children }) {
-  const [settings, setSettings] = useState(() => {
-    try {
-      const saved = localStorage.getItem('chrtv_settings');
-      return saved ? { ...DEFAULT_SETTINGS, ...JSON.parse(saved) } : DEFAULT_SETTINGS;
-    } catch {
-      return DEFAULT_SETTINGS;
-    }
-  });
+function readBase() {
+  try {
+    const saved = localStorage.getItem('chrtv_settings');
+    return saved ? JSON.parse(saved) : {};
+  } catch { return {}; }
+}
+function readOverlay(profileId) {
+  if (!profileId) return {};
+  try {
+    const saved = localStorage.getItem(`chrtv_settings_p${profileId}`);
+    return saved ? JSON.parse(saved) : {};
+  } catch { return {}; }
+}
 
+export function SettingsProvider({ children }) {
+  const { currentProfile } = useProfile();
+  const profileId = currentProfile?.id || null;
+  const [settings, setSettings] = useState(() => ({
+    ...DEFAULT_SETTINGS,
+    ...readBase(),
+    ...readOverlay(currentProfile?.id || null),
+  }));
+
+  // Đổi profile: áp lớp overlay của profile mới. Profile chưa từng được chỉnh
+  // (overlay rỗng) — kể cả khi thoát về khách — sẽ kế thừa cài đặt thiết bị
+  // (base) thay vì giữ nguyên setting của profile cũ.
+  const [prevProfile, setPrevProfile] = useState(profileId);
   useEffect(() => {
-    try { localStorage.setItem('chrtv_settings', JSON.stringify(settings)); } catch {}
-  }, [settings]);
+    if (prevProfile === profileId) return;
+    setPrevProfile(profileId);
+    const ov = readOverlay(profileId || null);
+    setSettings(prev => ({ ...prev, ...(Object.keys(ov).length ? ov : readBase()) }));
+  }, [profileId, prevProfile]);
+
+  // Lưu: player-prefs → overlay profile; còn lại → base chung.
+  useEffect(() => {
+    try {
+      const base = readBase();
+      const overlay = readOverlay(profileId || null);
+      for (const [k, v] of Object.entries(settings)) {
+        if (PLAYER_PREFS.has(k)) overlay[k] = v;
+        else base[k] = v;
+      }
+      localStorage.setItem('chrtv_settings', JSON.stringify(base));
+      if (profileId) localStorage.setItem(`chrtv_settings_p${profileId}`, JSON.stringify(overlay));
+    } catch {}
+  }, [settings, profileId]);
 
   const updateSetting = useCallback((key, value) => {
     setSettings(prev => ({ ...prev, [key]: value }));
@@ -51,7 +95,10 @@ export function SettingsProvider({ children }) {
 
   const resetSettings = useCallback(() => {
     setSettings(DEFAULT_SETTINGS);
-  }, []);
+    try {
+      if (profileId) localStorage.removeItem(`chrtv_settings_p${profileId}`);
+    } catch {}
+  }, [profileId]);
 
   return (
     <SettingsContext.Provider value={{ settings, updateSetting, resetSettings }}>

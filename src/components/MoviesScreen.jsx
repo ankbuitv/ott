@@ -1,17 +1,23 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Search, Star, Play, X, Info, Calendar, Clock, Tv, Film, SlidersHorizontal, TrendingUp, Heart, History, Plus, Check, Crown, Mic, Share2, CalendarClock, Users, Layers, MessageCircle, Sparkles, Clapperboard, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Star, Play, X, Info, Calendar, Clock, Tv, Film, SlidersHorizontal, TrendingUp, Heart, History, Plus, Check, Crown, Mic, Share2, CalendarClock, Users, Layers, MessageCircle, Sparkles, Clapperboard, ChevronLeft, ChevronRight, Ticket, Radio, BadgeCheck, ListVideo } from 'lucide-react';
 import { MovieAPI, imgPath, bgPath, COUNTRY_INFO, countryInfoOf, REGION_LIST, setTMDBRegion, getUpcoming, getMovieGenres, getCredits, getPerson, getPersonCredits, getRecommendations, getCollection, getMovieDetails, getTvDetails, discoverMovies } from '../services/tmdb';
 import { getMovieHistory, recordMovieWatch, recordMovieProgress, fmtWatchSec, isWatched, toggleWatchlistLocal, fetchWatchlist } from '../services/movieList';
 import { listenOnce, voiceSupported } from '../services/voice';
 import ShareMovieModal, { movieDeepId } from './ShareMovieModal';
+import { CodesModal, ResumeModal } from './Pack48Ui';
+import { WatchStatusBar, FollowSeriesBtn, useSeriesFollows, watchPlanOf, RouletteModal, WrappedModal, AdvancedFilters, AffiliateChips, HotCountryRow, AgeBadge } from './MoviesPack';
 import UpcomingModal from './UpcomingModal';
 import CommentsBox from './CommentsBox';
 import FanGroupBox from './FanGroupBox';
 import AdSlot from './AdSlot';
+import { SharePlaylistModal, PlaylistViewModal } from './PlaylistModals';
 import { resolveCountry, currentCountry, setManualCountry } from '../services/geo';
+import { getHomePrefs } from '../services/prefs';
 import MoviePlayerModal from './MoviePlayerModal';
 import { hasPlayableSources } from '../services/embeds';
 import { releaseState } from '../utils/release';
+import { API_BASE } from '../services/config';
+import { authHeaders } from '../services/session';
 import { runPreroll } from '../services/prerollGate';
 import { useDevice } from '../contexts/DeviceContext';
 import { useToast } from '../contexts/ToastContext';
@@ -51,7 +57,7 @@ function HScroll({ children, className = '' }) {
   );
 }
 
-export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onRequireLogin } = {}) {
+export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onRequireLogin, onGoTab = null, onOpenChannel = null } = {}) {
   const device = useDevice();
   const { addToast } = useToast();
   const { currentProfile } = useProfile();
@@ -109,17 +115,56 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
   const [myList, setMyList] = useState([]);
   const [heroTrailer, setHeroTrailer] = useState(null);
   const [shareMovie, setShareMovie] = useState(null);
+  const [codesOpen, setCodesOpen] = useState(false);
+  const [resumeOpen, setResumeOpen] = useState(false);
   const [upcomingOpen, setUpcomingOpen] = useState(false);
+  const [rouletteOpen, setRouletteOpen] = useState(false);
+  const [wrappedOpen, setWrappedOpen] = useState(false);
+  const [plShareOpen, setPlShareOpen] = useState(false);
+  const [plView, setPlView] = useState(null);
+  const [filtOpen, setFiltOpen] = useState(false);
+  const [advFilter, setAdvFilter] = useState(null);
+  const [homePrefs, setHomePrefs] = useState(() => getHomePrefs());
+  const advOn = !!(advFilter && (advFilter.year || advFilter.rating || advFilter.sort));
   const [forYou, setForYou] = useState({ base: null, items: [] });
   const [cartoons, setCartoons] = useState([]);
   const [listening, setListening] = useState(false);
 
   useEffect(() => { fetchWatchlist().then((l) => setMyList(l)).catch(() => {}); }, []);
 
+  // (#8) Theo dõi series: cảnh báo "TẬP MỚI" 1 lần/session khi TMDB có tập mới
+  const rootSf = useSeriesFollows();
+  useEffect(() => {
+    const ids = Object.keys(rootSf.fresh);
+    if (!ids.length) return;
+    try {
+      const seen = JSON.parse(localStorage.getItem('chrtv_fresh_toast') || '[]');
+      let changed = false;
+      ids.forEach((id) => {
+        if (!seen.includes(id)) {
+          const f = rootSf.fresh[id];
+          addToast(`🔔 Series #${id} có TẬP MỚI — S${f.season}E${f.episode}!`, 'info');
+          seen.push(id); changed = true;
+        }
+      });
+      if (changed) localStorage.setItem('chrtv_fresh_toast', JSON.stringify(seen));
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rootSf.fresh]);
+
   const refreshMovieLists = useCallback(() => {
     setMovieHistory(getMovieHistory());
     fetchWatchlist().then((l) => setMyList(l)).catch(() => {});
   }, []);
+
+  // (#11) Nhận playlist bạn bè → thêm cả list vào My List (bỏ trùng)
+  const addAllToWatchlist = useCallback((items) => {
+    let added = 0;
+    items.forEach((m) => {
+      if (!isWatched(m)) { toggleWatchlistLocal(m); added++; }
+    });
+    if (added > 0) refreshMovieLists();
+  }, [refreshMovieLists]);
 
   useEffect(() => {
     if (currentProfile?.is_child) addToast(t('toast.kid_blocked'), 'info');
@@ -228,6 +273,49 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
     return () => clearTimeout(t);
   }, [search, catalog]);
 
+  // (#64) Xu hướng tìm kiếm + (#62) kết quả kênh/creator/shorts trộn chung
+  const [trending, setTrending] = useState([]);
+  const [combined, setCombined] = useState({ ch: [], cr: [], sh: [] });
+  const loggedQ = useRef('');
+  const combinedTick = useRef(0);
+  useEffect(() => {
+    fetch(`${API_BASE}/api/stats/trending-search?limit=12`, { headers: { Accept: 'application/json' } })
+      .then(r => r.json()).then(d => setTrending(d.trending || [])).catch(() => {});
+  }, []);
+  useEffect(() => {
+    const q = search.trim();
+    if (q.length < 2 || q === loggedQ.current) return;
+    loggedQ.current = q;
+    fetch(`${API_BASE}/api/stats/search`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ q }) }).catch(() => {});
+  }, [search]);
+
+  // (#62) Kết quả kênh/creator/shorts theo cùng cụm tìm — phục vụ khi có kết quả phim
+  useEffect(() => {
+    const q = search.trim();
+    if (q.length < 2) { setCombined({ ch: [], cr: [], sh: [] }); return; }
+    const ql = q.toLowerCase();
+    const timer = setTimeout(() => {
+      const tick = ++combinedTick.current;
+      (async () => {
+        let ch = [], cr = [], sh = [];
+        try {
+          const r = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(q)}`, { headers: { Accept: 'application/json' } }).then(x => x.json());
+          ch = (r.results || []).slice(0, 8);
+        } catch {}
+        try {
+          const r = await fetch(`${API_BASE}/api/shorts/creators`, { headers: { Accept: 'application/json' } }).then(x => x.json());
+          cr = (r.creators || []).filter(c => ((c.handle || '') + ' ' + (c.display_name || '') + ' ' + (c.bio || '')).toLowerCase().includes(ql)).slice(0, 6);
+        } catch {}
+        try {
+          const r = await fetch(`${API_BASE}/api/shorts?limit=60`, { headers: { Accept: 'application/json' } }).then(x => x.json());
+          sh = (r.shorts || []).filter(s => ((s.title || '') + ' ' + (s.caption || '')).toLowerCase().includes(ql)).slice(0, 4);
+        } catch {}
+        if (tick === combinedTick.current) setCombined({ ch, cr, sh });
+      })();
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
   const voiceSearch = async () => {
     if (!voiceSupported()) { addToast(t('voice.unsupported'), 'error'); return; }
     setListening(true);
@@ -291,6 +379,38 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
     setPlayMovie(m);
   }, [addToast, t, ensureAuthed, openDetail, hasSource]);
 
+  /** Nhập mã chia sẻ (#A) — mở thẳng đúng phim/tập từ mã 6 ký tự. */
+  const openMovieFromCode = useCallback(async (it) => {
+    if (!it || !it.tmdb_id) return;
+    if (!ensureAuthed()) return;
+    setCodesOpen(false);
+    setSelected(null);
+    const isTv = it.media_type === 'tv';
+    setPlayMovie({
+      id: Number(it.tmdb_id),
+      media_type: isTv ? 'tv' : 'movie',
+      title: it.title || '',
+      season: isTv ? (Number(it.season) || 1) : 1,
+      episode: isTv ? (Number(it.episode) || 1) : 1,
+    });
+  }, [ensureAuthed]);
+
+  /** Resume đa thiết bị (#7): TV mở đúng tập/phim đang dở. */
+  const resumeFromCode = useCallback(async (item) => {
+    if (!item || !item.tmdb_id) return;
+    if (!ensureAuthed()) return;
+    setResumeOpen(false);
+    const isTv = item.media_type === 'tv';
+    setSelected(null);
+    setPlayMovie({
+      id: Number(item.tmdb_id),
+      media_type: isTv ? 'tv' : 'movie',
+      title: item.title || '',
+      season: isTv ? (Number(item.season) || 1) : 1,
+      episode: isTv ? (Number(item.episode) || 1) : 1,
+    });
+  }, [ensureAuthed]);
+
   const isKid = !!currentProfile?.is_child;
   const kidSafe = useMemo(() => {
     if (!isKid) return catalog;
@@ -302,11 +422,28 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
   }, [catalog, isKid]);
 
   const filteredCatalog = useMemo(() => {
-    const base = isKid ? kidSafe : catalog;
-    if (selectedGenre === 'all') return base;
-    const gid = Number(selectedGenre);
-    return base.filter(m => (m.genre_ids || []).includes(gid));
-  }, [catalog, kidSafe, isKid, selectedGenre]);
+    let base = isKid ? kidSafe : catalog;
+    if (selectedGenre !== 'all') {
+      const gid = Number(selectedGenre);
+      base = base.filter(m => (m.genre_ids || []).includes(gid));
+    }
+    // (#28) Lọc nâng cao: năm + điểm tối thiểu
+    if (advOn) {
+      if (advFilter.year) base = base.filter(m => String((m.release_date || m.first_air_date || '')).slice(0, 4) === advFilter.year);
+      if (advFilter.rating) base = base.filter(m => (m.vote_average || 0) >= advFilter.rating);
+    }
+    // (#61) Cá nhân hoá: ưu tiên phim thuộc thể loại người dùng chọn trong quiz
+    const fav = homePrefs.favGenres || [];
+    if (fav.length > 1 && !isKid) {
+      const score = (m) => (m.genre_ids || []).reduce((s, g) => s + (fav.includes(g) ? 1 : 0), 0);
+      base = [...base].sort((a, b) => score(b) - score(a) || ((b.vote_average || 0) - (a.vote_average || 0)));
+    } else if (advFilter?.sort === 'rating') {
+      base = [...base].sort((a, b) => (b.vote_average || 0) - (a.vote_average || 0));
+    } else if (advFilter?.sort === 'year') {
+      base = [...base].sort((a, b) => String(b.release_date || b.first_air_date || '').localeCompare(String(a.release_date || a.first_air_date || '')));
+    }
+    return base;
+  }, [catalog, kidSafe, isKid, selectedGenre, advFilter, advOn, homePrefs]);
 
   const visibleCatalog = filteredCatalog.slice(0, visibleCount);
   const gridCls = device.isMobile ? 'grid-cols-2' : device.isTablet ? 'grid-cols-3' : 'lg:grid-cols-6 grid-cols-3';
@@ -365,6 +502,20 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
                 </button>
               </div>
             </div>
+          </div>
+        </section>
+      )}
+
+      {/* (#64) Xu hướng tìm kiếm — bấm chip để tìm luôn */}
+      {!search.trim() && trending.length > 0 && (
+        <section className="px-6 md:px-8 mt-4">
+          <div className="max-w-7xl mx-auto flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+            <span className="shrink-0 text-[10px] font-black uppercase tracking-widest text-stone-500 flex items-center gap-1">🔥 {t('p48.trending')}</span>
+            {trending.map((x) => (
+              <button key={x.query} onClick={() => setSearch(x.query)} className="shrink-0 px-3 py-1.5 rounded-full bg-white/[0.05] border border-white/10 text-[11px] font-bold text-stone-300 hover:border-[#ff9a3d]/50 hover:text-white active:scale-95 transition">
+                {x.query} <span className="text-[9px] text-stone-600">({x.cnt})</span>
+              </button>
+            ))}
           </div>
         </section>
       )}
@@ -457,9 +608,56 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
         )}
       </div>
 
+      {/* (#5) Đang hot tại 🇻🇳 — top kênh theo quốc gia của người xem */}
+      {!search.trim() && <HotCountryRow onOpenChannel={() => { addToast('Mở kênh này ở tab Truyền hình nhé 📺', 'info'); }} />}
       {search.trim() ? (
         <div className="px-6 md:px-8 py-6 max-w-7xl mx-auto">
           <h3 className="text-sm font-semibold text-stone-400 mb-4">{t('movies.results')}: "{search}" ({searchResults.length})</h3>
+          {(combined.ch.length > 0 || combined.cr.length > 0 || combined.sh.length > 0) && (
+            <div className="mb-5 space-y-3 rounded-2xl border border-white/[0.07] bg-white/[0.02] p-3">
+              {combined.ch.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-stone-500 mb-1.5">📺 {t('nav.live')} · {t('p48.tv_kw')}</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {combined.ch.map(c => (
+                      <button key={c.channel_id} onClick={() => { onOpenChannel && onOpenChannel(c); if (onGoTab) onGoTab('tv'); }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/[0.06] border border-white/10 text-[11px] font-bold text-stone-200 hover:border-[#f36f21]/60 hover:text-white active:scale-95">
+                        {c.logo ? <img src={c.logo} alt="" className="w-4 h-4 rounded object-contain" onError={e => e.target.style.display = 'none'} /> : <Radio className="w-3.5 h-3.5 text-[#ff9a3d]" />}
+                        {c.name} <span className="text-[9px] text-stone-600">{c.group_title}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {combined.cr.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-stone-500 mb-1.5">⭐ Creator trên Shorts</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {combined.cr.map(c => (
+                      <button key={c.id} onClick={() => { addToast(`Mở tab Shorts → tìm @${c.handle} nhé`, 'info'); if (onGoTab) onGoTab('shorts'); }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/[0.06] border border-white/10 text-[11px] font-bold text-stone-200 hover:border-[#ff9a3d]/60 active:scale-95">
+                        {c.avatar_url ? <img src={c.avatar_url} alt="" className="w-4 h-4 rounded-full object-cover" onError={e => e.target.style.display = 'none'} /> : <BadgeCheck className="w-3.5 h-3.5 text-sky-300" />}
+                        @{c.handle || c.display_name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {combined.sh.length > 0 && (
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-stone-500 mb-1.5">🎬 Shorts trùng từ khoá</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {combined.sh.map(sh => (
+                      <button key={sh.id} onClick={() => { if (onGoTab) onGoTab('shorts'); addToast(`Short #${sh.id}: ${String(sh.title || '').slice(0, 40)}`, 'info'); }}
+                        className="px-3 py-1.5 rounded-full bg-white/[0.06] border border-white/10 text-[11px] font-bold text-stone-300 hover:border-[#ff9a3d]/60 active:scale-95">
+                        ▶ {(sh.title || sh.caption || '').slice(0, 40)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           {searchResults.length === 0 ? (
             <div className="text-center py-16"><Film className="w-12 h-12 text-stone-700 mx-auto mb-3" /><p className="text-stone-500 text-sm">{t('mv.no_result')}</p></div>
           ) : (<div className={`grid gap-2.5 ${gridCls}`}>{searchResults.map(m => <MovieCard key={`${m.media_type}-${m.id}`} movie={m} onClick={() => openDetail(m)} />)}</div>)}
@@ -468,7 +666,11 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
         <div className="pb-20 space-y-10 pt-6">
           {movieHistory.length > 0 && (<MovieRow title={`⏪ ${t('mv.continue')}`} items={movieHistory} onClick={openDetail} loading={false} showProgress />)}
           {forYou.items.length > 0 && (<MovieRow title={`✨ ${t('mv.for_you', { name: forYou.base?.title || '' })}`} items={forYou.items} onClick={openDetail} loading={false} />)}
-          {myList.length > 0 && (<MovieRow title={`❤️ ${t('mv.my_list')}`} items={myList} onClick={openDetail} loading={false} />)}
+          {myList.length > 0 && (<MovieRow title={`❤️ ${t('mv.my_list')}`} items={myList} onClick={openDetail} loading={false} action={
+            <button onClick={() => setPlShareOpen(true)} className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#f36f21]/12 border border-[#f36f21]/35 text-[10px] font-black text-[#ffb37a] hover:bg-[#f36f21]/25 transition active:scale-95" title={t('p48.pl_share')}>
+              <ListVideo className="w-3.5 h-3.5" />{t('p48.pl_share')}
+            </button>
+          } />)}
           <MovieRow title={t('movies.row.now_playing_in', { country: `${countryInfo.flag} ${countryInfo.name}` })} items={rows.nowPlaying} onClick={openDetail} loading={loading} />
           <MovieRow title={t('movies.row.top_rated')} items={rows.topRated} onClick={openDetail} loading={loading} />
           <MovieRow title={t('movies.row.upcoming')} items={rows.upcoming} onClick={openDetail} loading={loading} />
@@ -480,6 +682,11 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
           <section className="px-6 md:px-8">
             <div className="flex items-end justify-between mb-4">
               <div><p className="text-[10px] text-[#ff9a3d] font-bold uppercase tracking-widest mb-1">{t('mv.library')}</p><h3 className="text-xl md:text-2xl font-black tracking-tight">{selectedGenre === 'all' ? t('mv.all_titles') : genres.find(g => String(g.id) === selectedGenre)?.name || t('nav.movies')}</h3><p className="text-xs text-stone-500 mt-1">{t('mv.n_titles2', { n: filteredCatalog.length.toLocaleString(lang === 'vi' ? 'vi-VN' : 'en-US') })}</p></div>
+            <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+              <button onClick={() => setFiltOpen(true)} className={`flex items-center gap-1.5 px-3 py-2 rounded-full border text-[11px] font-black transition active:scale-95 ${advOn ? 'bg-sky-500/20 border-sky-500/40 text-sky-300' : 'bg-white/[0.05] border-white/10 text-stone-400 hover:text-white'}`} title="Lọc năm/điểm"><SlidersHorizontal className="w-3.5 h-3.5" />Lọc{advOn ? ' ✓' : ''}</button>
+              <button onClick={() => setRouletteOpen(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-white/[0.05] border border-white/10 text-stone-300 hover:border-[#ff9a3d]/50 hover:text-white text-[11px] font-black transition active:scale-95" title="Quay số chọn phim theo tâm trạng">🎲 Quay số</button>
+              {isAuthenticated && <button onClick={() => setWrappedOpen(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-gradient-to-r from-amber-500/20 to-[#f36f21]/20 border border-amber-500/30 text-amber-300 text-[11px] font-black transition active:scale-95" title="Tổng kết năm xem phim">✨ {t('p48.wrapped_btn')}</button>}
+            </div>
             </div>
             {catalogLoading && filteredCatalog.length === 0 ? (<div className={`grid gap-2.5 ${gridCls}`}>{Array.from({ length: 18 }).map((_, i) => <MovieSkeleton key={i} />)}</div>) : filteredCatalog.length === 0 ? (<div className="text-center py-16"><Tv className="w-12 h-12 text-stone-700 mx-auto mb-3" /><p className="text-stone-500 text-sm">{t('movies.no_results')}</p></div>) : (
               <><div className={`grid gap-2.5 ${gridCls}`}>{visibleCatalog.map(m => <MovieCard key={`${m.media_type}-${m.id}`} movie={m} onClick={() => openDetail(m)} />)}</div>{visibleCount < filteredCatalog.length && (<div className="flex justify-center mt-8"><button onClick={() => setVisibleCount(c => c + CATALOG_PAGE)} className="px-8 py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-white text-sm font-bold rounded-xl transition flex items-center gap-2"><Play className="w-4 h-4 rotate-90" /> {t('movies.load_more')} ({filteredCatalog.length - visibleCount})</button></div>)}</>
@@ -492,11 +699,41 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
       {shareMovie && <ShareMovieModal movie={shareMovie} onClose={() => setShareMovie(null)} />}
       {upcomingOpen && <UpcomingModal items={rows.upcoming} onClose={() => setUpcomingOpen(false)} onSelect={(m) => { setUpcomingOpen(false); openDetail(m); }} />}
       {playMovie && <MoviePlayerModal movie={playMovie} onClose={() => { setPlayMovie(null); refreshMovieLists(); }} />}
+
+      {/* (A) Nhập mã chia sẻ + (#7) Đồng bộ TV — vào nhanh từ tab Phim */}
+      <div className="fixed bottom-24 right-3 md:right-5 z-[130] flex flex-col gap-2 items-end pointer-events-none">
+        <button onClick={() => setResumeOpen(true)} className="pointer-events-auto flex items-center gap-2 pl-3.5 pr-4 py-2.5 rounded-full bg-black/70 border border-white/15 backdrop-blur text-white text-[11px] font-black hover:border-[#f36f21]/60 transition active:scale-95 shadow-xl shadow-black/40" title={t('p48.resume_code_title')}>
+          <Tv className="w-4 h-4 text-[#ff9a3d]" /> {t('p48.resume_code_title')}
+        </button>
+        <button onClick={() => setCodesOpen(true)} className="pointer-events-auto flex items-center gap-2 pl-3.5 pr-4 py-2.5 rounded-full grad-brand text-white text-[11px] font-black hover:brightness-110 transition active:scale-95 shadow-xl shadow-black/40" title={t('p48.enter_code')}>
+          <Ticket className="w-4 h-4" /> {t('p48.enter_code')}
+        </button>
+      </div>
+      {codesOpen && (
+        <CodesModal
+          open
+          mode="redeem"
+          onClose={() => setCodesOpen(false)}
+          onOpenMovie={openMovieFromCode}
+          onPartyCode={() => addToast('Vào tab Truyền hình → bấm "👥 Xem chung" → dán mã phòng', 'info')}
+          onOpenPlaylist={(payload) => { setPlView(payload); }}
+        />
+      )}
+      {resumeOpen && <ResumeModal open onClose={() => setResumeOpen(false)} onResumeMovie={resumeFromCode} />}
+
+      {/* (#11) Playlist chia sẻ từ My List */}
+      {plShareOpen && <SharePlaylistModal list={myList} onClose={() => setPlShareOpen(false)} />}
+      {plView && <PlaylistViewModal payload={plView} onClose={() => setPlView(null)} onOpen={(m) => { setPlView(null); openDetail(m); }} onAddAll={addAllToWatchlist} />}
+
+      {/* (#66) Quay số theo tâm trạng + (#84) Wrapped + (#28) lọc nâng cao */}
+      {rouletteOpen && <RouletteModal open pool={isKid ? kidSafe : catalog} onClose={() => setRouletteOpen(false)} onPick={(m) => { setRouletteOpen(false); openDetail(m); }} />}
+      {wrappedOpen && <WrappedModal open onClose={() => setWrappedOpen(false)} />}
+      {filtOpen && <AdvancedFilters open current={advFilter} onClose={() => setFiltOpen(false)} onApply={(f) => setAdvFilter(f)} onClear={() => setAdvFilter(null)} />}
     </div>
   );
 }
 
-function MovieRow({ title, items, onClick, loading, showProgress }) {
+function MovieRow({ title, items, onClick, loading, showProgress, action = null }) {
   const ref = useRef(null);
   const scroll = (dir) => {
     const el = ref.current;
@@ -505,8 +742,11 @@ function MovieRow({ title, items, onClick, loading, showProgress }) {
   };
   return (
     <section className="px-6 md:px-8 relative group/row">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-base md:text-xl font-bold tracking-tight">{title}</h3>
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <h3 className="text-base md:text-xl font-bold tracking-tight min-w-0 truncate">{title}</h3>
+        <div className="flex items-center gap-1 shrink-0">
+          {action}
+        </div>
         <div className="hidden md:flex items-center gap-1 opacity-0 group-hover/row:opacity-100 transition">
           <button onClick={() => scroll(-1)} className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center border border-white/10"><ChevronLeft className="w-4 h-4" /></button>
           <button onClick={() => scroll(1)} className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center border border-white/10"><ChevronRight className="w-4 h-4" /></button>
@@ -558,6 +798,8 @@ function MovieCard({ movie, onClick, showProgress }) {
 
 function MovieDetailModal({ movie, trailer, trailerLoading, genres = [], hasSource, onClose, onPlay, onMovieChange, onListChanged, onShare }) {
   const { t } = useI18n();
+  const sf = useSeriesFollows(); // (#8) follow series → fresh map "TẬP MỚI"
+  const [watchSt, setWatchSt] = useState(() => watchPlanOf(movie)?.s || null);
   const rs = releaseState(movie);
   // Nhãn CTA nói đúng cái user sẽ nhận được, không phải lời hứa "Xem phim" chung chung
   const ctaLabel = !rs.released || hasSource === false ? t('movies.btn.trailer') : t('movies.btn.play');
@@ -599,6 +841,7 @@ function MovieDetailModal({ movie, trailer, trailerLoading, genres = [], hasSour
               <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
                 {movie.vote_average > 0 && (<span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-400/15 border border-amber-400/30 text-amber-300 text-[11px] font-black"><Star className="w-3 h-3 fill-current" />{movie.vote_average.toFixed(1)}</span>)}
                 {year && (<span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/[0.07] border border-white/10 text-stone-200 text-[11px] font-bold"><Calendar className="w-3 h-3" />{year}</span>)}
+                <AgeBadge movie={movie} />
                 {movie.runtime > 0 && (<span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/[0.07] border border-white/10 text-stone-200 text-[11px] font-bold"><Clock className="w-3 h-3" />{t('mv.n_min', { n: movie.runtime })}</span>)}
                 {gnames.slice(0, 3).map((g) => (<span key={g} className="px-2.5 py-1 rounded-full bg-[#f36f21]/12 border border-[#f36f21]/30 text-[#ffb37a] text-[11px] font-bold">#{g}</span>))}
               </div>
@@ -614,7 +857,18 @@ function MovieDetailModal({ movie, trailer, trailerLoading, genres = [], hasSour
               <Info className="w-3.5 h-3.5 shrink-0" />{statusChip}
             </p>
           )}
+          {/* (#27) Kế hoạch xem + (#8) Follow series + (#85) affiliate */}
+          <div className="mt-3.5 flex flex-wrap items-center gap-2">
+            <WatchStatusBar movie={movie} onChange={setWatchSt} />
+            {movie.media_type === 'tv' && (
+              <FollowSeriesBtn movie={movie} follows={sf.follows} fresh={sf.fresh} onToggle={sf.toggle} />
+            )}
+            <div className="ml-auto"><AffiliateChips movie={movie} /></div>
+          </div>
           {movie.overview && (<p className="text-[13px] md:text-sm text-stone-300 leading-relaxed mt-4">{movie.overview}</p>)}
+          {watchSt && (
+            <p className="mt-1 text-[10px] text-stone-500 font-bold">{watchSt === 'want' ? '🎬 Trong "Muốn xem" của bạn' : watchSt === 'watching' ? '▶️ Bạn đang xem bộ này' : '✅ Bạn đã xem xong bộ này'}</p>
+          )}
         </div>
         <div className="px-5 md:px-8 pb-7">
           {cast.length > 0 && (
@@ -649,13 +903,39 @@ function MovieDetailModal({ movie, trailer, trailerLoading, genres = [], hasSour
 
 function PersonModal({ person, onClose, onMovieChange }) {
   const { t } = useI18n();
+  const { addToast } = useToast();
+  const { isAuthenticated } = useAuth();
   const [credits, setCredits] = useState([]);
+  // (#65) Follow diễn viên — đồng bộ qua /api/actors/follow
+  const [followed, setFollowed] = useState(false);
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
     getPersonCredits(person.id).then((r) => {
       const list = (r.cast || []).filter((m) => m.poster_path).sort((a, b) => (b.popularity || 0) - (a.popularity || 0)).slice(0, 18);
       setCredits(list);
     }).catch(() => {});
   }, [person.id]);
+  useEffect(() => {
+    if (!isAuthenticated) { setFollowed(false); return; }
+    let on = true;
+    fetch(`${API_BASE}/api/actors/follow`, { headers: { Accept: 'application/json', ...authHeaders() } })
+      .then(r => r.json()).then((d) => { if (on) setFollowed((d.follows || []).some(x => Number(x.person_id) === Number(person.id))); })
+      .catch(() => {});
+    return () => { on = false; };
+  }, [isAuthenticated, person.id]);
+  const toggleActorFollow = async () => {
+    if (!isAuthenticated) { addToast(t('p48.actor_need_login'), 'info'); return; }
+    setBusy(true);
+    try {
+      const r = await fetch(`${API_BASE}/api/actors/follow`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ person_id: person.id, name: person.name, follow: !followed }) });
+      const d = await r.json();
+      if (d.success || d.following !== undefined) {
+        setFollowed(d.following === true);
+        addToast(d.following ? t('p48.actor_followed', { name: person.name }) : t('p48.actor_unfollowed'), 'success');
+      } else addToast(d.error || 'Lỗi', 'error');
+    } catch { addToast(t('mv.net_err'), 'error'); }
+    setBusy(false);
+  };
   const dept = person.known_for_department === 'Acting' ? t('mv.actor') : (person.known_for_department || t('mv.artist'));
   return (
     <div className="fixed inset-0 z-[220] bg-black/90 backdrop-blur-sm overflow-y-auto anim-zoom-fade" onClick={onClose}>
@@ -672,6 +952,12 @@ function PersonModal({ person, onClose, onMovieChange }) {
               <span className="inline-block px-2.5 py-1 rounded-full bg-[#f36f21]/15 border border-[#f36f21]/40 text-[#ffb37a] text-[10px] font-black tracking-widest mb-2">{dept.toUpperCase()}</span>
               <h2 className="text-2xl md:text-3xl font-black tracking-tight text-white leading-tight">{person.name}</h2>
               {(person.birthday || person.place_of_birth) && (<p className="text-[12px] text-stone-400 mt-1.5 flex items-center gap-1.5 flex-wrap">{person.birthday && <span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5" />{t('mv.born', { d: person.birthday })}</span>}{person.place_of_birth && <span className="truncate">📍 {person.place_of_birth}</span>}</p>)}
+              {/* (#65) follow diễn viên: nút bên phải header, đồng bộ server */}
+              <button onClick={toggleActorFollow} disabled={busy}
+                className={`mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-black border transition-all active:scale-95 disabled:opacity-60 ${followed ? 'bg-[#f36f21]/15 text-[#ff9a3d] border-[#f36f21]/45' : 'bg-white/[0.06] text-stone-200 border-white/12 hover:bg-white/[0.14]'}`}>
+                {followed ? <Check className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                {followed ? t('mv.following') : t('p48.follow_actor')}
+              </button>
             </div>
           </div>
           {person.biography ? (<p className="text-[13px] text-stone-300 leading-relaxed mt-4 max-h-[130px] overflow-y-auto pr-1">{person.biography}</p>) : (<p className="text-[12px] text-stone-500 mt-4 italic">{t('mv.no_bio')}</p>)}

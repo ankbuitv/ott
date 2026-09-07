@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Heart, Share2, Volume2, VolumeX, Play, Eye, BadgeCheck, Users, Video, X, UserPlus, UserCheck, Edit3, Upload, Link2, Image as ImageIcon } from 'lucide-react';
+import { Heart, Share2, Volume2, VolumeX, Play, Eye, BadgeCheck, Users, Video, X, UserPlus, UserCheck, Edit3, Upload, Link2, Image as ImageIcon, Star, Trophy, Medal, Flame } from 'lucide-react';
 import { useI18n } from '../contexts/I18nContext';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { API_BASE } from '../services/config';
+import { authHeaders } from '../services/session';
 
 function fmtCount(n) {
   n = Number(n) || 0;
@@ -90,6 +91,21 @@ function ShortPlayer({ short, active, muted, onToggleMute, onAuthorClick, onFoll
     } catch {}
   };
 
+  // (#37) Tặng sao creator bằng XP (1 sao = 50 XP)
+  const doStar = async () => {
+    if (!token) { addToast(t('p48.need_xp').split(' (')[0] || 'Đăng nhập để tặng sao', 'warning'); return; }
+    try {
+      const r = await fetch(`${API_BASE}/api/shorts/star`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ short_id: short.id, stars: 1 })
+      });
+      const d = await r.json();
+      if (d.success) addToast(`${d.stars} ⭐ đã tới tay @${creator?.handle} (${d.spent_xp} XP)`, 'success');
+      else addToast(d.error || 'Không tặng được', 'error');
+    } catch { addToast('Lỗi kết nối', 'error'); }
+  };
+
   const handleFollow = async (e) => {
     e.stopPropagation();
     if (!token) { addToast('Đăng nhập để theo dõi', 'warning'); return; }
@@ -152,6 +168,14 @@ function ShortPlayer({ short, active, muted, onToggleMute, onAuthorClick, onFoll
           </span>
           <span className="text-[10px] font-bold text-white drop-shadow">{t('shorts.share')}</span>
         </button>
+        {creator?.id && (
+          <button onClick={doStar} className="flex flex-col items-center gap-1 group">
+            <span className="w-11 h-11 rounded-full bg-black/55 group-hover:bg-[#f5a623]/40 border border-white/10 group-hover:border-amber-400/60 flex items-center justify-center transition-all active:scale-90">
+              <Star className="w-5 h-5 text-amber-300" />
+            </span>
+            <span className="text-[10px] font-bold text-white drop-shadow">⭐ {t('p48.star_short')}</span>
+          </button>
+        )}
         <span className="flex flex-col items-center gap-1">
           <span className="w-11 h-11 rounded-full bg-black/55 flex items-center justify-center">
             <Eye className="w-5 h-5 text-white" />
@@ -462,6 +486,10 @@ export default function ShortsScreen({ startId = null, onStartHandled = null } =
   const [selectedCreator, setSelectedCreator] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
+  const [challenges, setChallenges] = useState([]);
+  const [showChal, setShowChal] = useState(false);
+  const [showBoard, setShowBoard] = useState(false);
+  const [chalFocus, setChalFocus] = useState(null);
   const listRef = useRef(null);
 
   const fetchShorts = useCallback(async () => {
@@ -496,6 +524,7 @@ export default function ShortsScreen({ startId = null, onStartHandled = null } =
     fetchShorts();
     fetchCreators();
     fetchMyProfile();
+    fetch(`${API_BASE}/api/challenges`).then(r => r.json()).then(d => setChallenges(d.challenges || [])).catch(() => {});
   }, [fetchShorts, fetchCreators, fetchMyProfile]);
 
   useEffect(() => {
@@ -525,6 +554,28 @@ export default function ShortsScreen({ startId = null, onStartHandled = null } =
       return s;
     }));
     setCreators(prev => prev.map(c => c.id === creatorId ? { ...c, is_following: isFollowing, followers } : c));
+  };
+
+  const playChallengeShort = async (sh) => {
+    // đưa short của challenge lên đầu feed và chạy luôn (kể cả short không có trong feed hiện tại).
+    // Ưu tiên object đầy đủ từ /api/shorts (creator kèm id/followers/…) — nếu không có thì tự
+    // ghép creator từ danh sách creators đã nạp để các nút follow/tặng sao vẫn hoạt động.
+    let item = shorts.find(x => String(x.id) === String(sh.id));
+    if (!item) {
+      try {
+        const d = await (await fetch(`${API_BASE}/api/shorts?limit=60`)).json();
+        item = (d.shorts || []).find(x => String(x.id) === String(sh.id)) || null;
+      } catch { item = null; }
+    }
+    if (!item) {
+      const handle = sh.creator?.handle || sh.creator_handle || '';
+      const c = creators.find(x => x.handle === handle) || null;
+      item = c ? { ...sh, creator: c } : { ...sh, creator: sh.creator ? { ...sh.creator, display_name: sh.creator.display_name || sh.creator.handle, bio: '' } : null };
+    }
+    setShorts(prev => prev.some(x => String(x.id) === String(item.id)) ? prev : [item, ...prev]);
+    if (listRef.current) listRef.current.scrollTop = 0;
+    setActiveIdx(0);
+    setShowChal(false);
   };
 
   const handleSelectShort = (id) => {
@@ -560,6 +611,30 @@ export default function ShortsScreen({ startId = null, onStartHandled = null } =
           )}
         </div>
       </div>
+
+      {/* (#40) Challenge hashtag tuần + (#38) BXH sao tuần */}
+      {challenges.length > 0 && (
+        <div className="px-5 md:px-8 mb-3">
+          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-1">
+            <span className="shrink-0 text-[10px] font-black uppercase tracking-widest text-stone-500 flex items-center gap-1"><Flame className="w-3.5 h-3.5 text-[#f36f21]" />{t('p48.challenge')}</span>
+            {challenges.slice(0, 6).map(c => (
+              <button key={c.id} onClick={() => { setChalFocus(c.id); setShowChal(true); }} className="shrink-0 px-3 py-1.5 rounded-full bg-gradient-to-r from-[#f36f21]/15 to-[#e94057]/10 border border-[#f36f21]/30 text-[11px] font-black text-[#ffb37a] hover:bg-[#f36f21]/25 transition active:scale-95">
+                #{c.hashtag} {String(c.ends_at || '').slice(0, 10) >= new Date().toISOString().slice(0, 10) || !c.ends_at ? '🔥' : ''}
+              </button>
+            ))}
+            <button onClick={() => setShowBoard(true)} className="shrink-0 ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-400/10 border border-amber-400/30 text-[11px] font-black text-amber-300 hover:bg-amber-400/20 transition active:scale-95">
+              <Trophy className="w-3.5 h-3.5" />{t('p48.leaderboard')}
+            </button>
+          </div>
+        </div>
+      )}
+      {challenges.length === 0 && (
+        <div className="px-5 md:px-8 mb-3 flex justify-end">
+          <button onClick={() => setShowBoard(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-400/10 border border-amber-400/30 text-[11px] font-black text-amber-300 hover:bg-amber-400/20 transition active:scale-95">
+            <Trophy className="w-3.5 h-3.5" />{t('p48.leaderboard')}
+          </button>
+        </div>
+      )}
 
       {/* Creator bar */}
       <div className="px-5 md:px-8 mb-3">
@@ -629,6 +704,94 @@ export default function ShortsScreen({ startId = null, onStartHandled = null } =
       {showUpload && (
         <UploadShortModal onClose={() => setShowUpload(false)} token={token} onUploaded={() => { fetchShorts(); fetchCreators(); }} />
       )}
+      {showChal && <ChallengesModal challenges={challenges} focusId={chalFocus} onClose={() => setShowChal(false)} onPick={playChallengeShort} />}
+      {showBoard && <WeeklyBoardModal onClose={() => setShowBoard(false)} token={token} />}
+    </div>
+  );
+}
+
+// (#40) Tổng hợp thử thách hashtag — mở từng challenge xem short tham gia
+function ChallengesModal({ challenges, focusId = null, onClose, onPick }) {
+  const { t } = useI18n();
+  const [active, setActive] = useState(() => challenges.find(c => String(c.id) === String(focusId)) || challenges[0] || null);
+  return (
+    <div className="fixed inset-0 z-[240] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <div className="w-full max-w-2xl modal-panel overflow-hidden max-h-[88vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+          <p className="text-[13px] font-black text-white flex items-center gap-2"><Flame className="w-4 h-4 text-[#f36f21]" />{t('p48.challenge_week')}</p>
+          <button onClick={onClose} className="p-1.5 rounded-full hover:bg-white/10"><X className="w-4 h-4 text-slate-400" /></button>
+        </div>
+        <div className="flex gap-1.5 px-4 pt-3 overflow-x-auto scrollbar-none">
+          {challenges.map(c => (
+            <button key={c.id} onClick={() => setActive(c)} className={`shrink-0 px-3 py-1.5 rounded-full text-[11px] font-black border transition ${active?.id === c.id ? 'grad-brand text-white border-transparent' : 'bg-white/[0.05] border-white/10 text-stone-400'}`}>#{c.hashtag}</button>
+          ))}
+        </div>
+        <div className="flex-1 overflow-y-auto p-4">
+          {active ? (
+            <>
+              <h3 className="text-[16px] font-black text-white">{active.title}</h3>
+              <p className="text-[11px] text-stone-400 mt-1 line-clamp-3">{active.description || 'Chưa có mô tả'}</p>
+              <div className="flex gap-2 text-[10px] text-stone-500 mt-1.5">
+                {active.starts_at ? <span>Bắt đầu: {String(active.starts_at).slice(0, 10)}</span> : null}
+                {active.ends_at ? <span>· Kết thúc: {String(active.ends_at).slice(0, 10)}</span> : <span>· Diễn ra thường xuyên</span>}
+              </div>
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5 mt-4">
+                {(active.shorts || []).map(sh => (
+                  <button key={sh.id} onClick={() => onPick(sh)} className="group relative aspect-[9/16] rounded-xl overflow-hidden bg-stone-900 border border-white/10 hover:border-[#f36f21]/60 active:scale-[0.98] transition">
+                    {sh.thumb_url ? <img src={sh.thumb_url} alt="" className="w-full h-full object-cover" onError={e => e.target.style.display = 'none'} /> : <div className="w-full h-full flex items-center justify-center text-2xl">🎬</div>}
+                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-transparent p-1.5 pt-6">
+                      <p className="text-[10px] font-bold text-white truncate">{(sh.title || sh.caption || '').slice(0, 50)}</p>
+                      <p className="text-[9px] text-stone-400 flex items-center gap-1"><Eye className="w-2.5 h-2.5" />{(sh.views || 0)} · @{sh.creator?.handle || sh.creator_handle || 'creator'}</p>
+                    </div>
+                  </button>
+                ))}
+                {(active.shorts || []).length === 0 && <p className="col-span-full text-[11px] text-stone-600 italic text-center py-10">Chưa có video nào dùng #{active.hashtag} — hãy là người đầu tiên!</p>}
+              </div>
+            </>
+          ) : <p className="text-[11px] text-stone-600 italic py-10 text-center">Chưa có thử thách nào đang chạy</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// (#38) BXH sao tuần creator
+function WeeklyBoardModal({ onClose, token }) {
+  const { t } = useI18n();
+  const [board, setBoard] = useState([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    fetch(`${API_BASE}/api/shorts/creator/weekly`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      .then(r => r.json()).then(d => { setBoard(d.board || []); setLoading(false); }).catch(() => setLoading(false));
+  }, [token]);
+  return (
+    <div className="fixed inset-0 z-[240] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <div className="w-full max-w-sm modal-panel overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+          <p className="text-[13px] font-black text-white flex items-center gap-2"><Trophy className="w-4 h-4 text-amber-300" />{t('p48.leaderboard')}</p>
+          <button onClick={onClose} className="p-1.5 rounded-full hover:bg-white/10"><X className="w-4 h-4 text-slate-400" /></button>
+        </div>
+        <div className="p-3 space-y-1.5 max-h-[60vh] overflow-y-auto">
+          {loading && <p className="text-[11px] text-stone-500 text-center py-6">Đang tính…</p>}
+          {!loading && board.length === 0 && <p className="text-[11px] text-stone-600 italic text-center py-6">Chưa ai nhận sao tuần này — tặng ⭐ cho creator bạn thích nhé!</p>}
+          {board.map((b, i) => (
+            <div key={b.creator_id} className={`flex items-center gap-3 px-3 py-2 rounded-xl border ${i < 3 ? 'border-amber-400/30 bg-amber-500/[0.06]' : 'border-white/[0.06] bg-white/[0.02]'}`}>
+              <span className="w-6 text-center text-[13px] font-black">{i === 0 ? <Medal className="w-4 h-4 text-amber-300" /> : i === 1 ? <Medal className="w-4 h-4 text-slate-300" /> : i === 2 ? <Medal className="w-4 h-4 text-orange-400/80" /> : i + 1}</span>
+              <span className="w-8 h-8 rounded-full bg-white/10 overflow-hidden flex items-center justify-center text-[11px] font-black shrink-0">
+                {b.avatar_url ? <img src={b.avatar_url} alt="" className="w-full h-full object-cover" /> : '@'}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[12px] font-bold text-white truncate">{b.display_name || b.handle}</p>
+                <p className="text-[9px] text-stone-500">@{b.handle}</p>
+              </div>
+              <div className="text-right shrink-0">
+                <p className="text-[13px] font-black text-amber-300">⭐ {b.stars}</p>
+                <p className="text-[9px] text-stone-500">{b.fans} fan</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

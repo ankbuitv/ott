@@ -120,6 +120,21 @@ console.log('\nA. Share codes / movie');
   check('POST /api/codes không auth bị chặn', bad.status === 401 || bad.status === 403, `status=${bad.status}`);
 }
 
+// ============ A2. Playlist chia sẻ (#11): tạo mã playlist từ Watchlist ============
+console.log('\nA2. Share playlist code');
+{
+  const pl = await call('POST', '/api/codes', { token: tokUser, body: { kind: 'playlist', ttl_min: 60 * 24, payload: { title: 'Phim cuối tuần', items: [{ tmdb_id: 550, media_type: 'movie', title: 'Fight Club', poster_path: '/x.jpg' }, { tmdb_id: 1399, media_type: 'tv', title: 'Game of Thrones', poster_path: '/y.jpg' }] } } });
+  check('POST /api/codes kind=playlist', pl.status === 200 && /^[A-Z0-9]{6}$/.test(pl.j?.code || ''), JSON.stringify(pl.j));
+  const plCode = pl.j?.code;
+  if (plCode) {
+    const g = await call('GET', `/api/codes?code=${plCode}`, {});
+    const items = g.j?.payload?.items || [];
+    check('GET playlist code trả đủ payload', g.status === 200 && g.j?.kind === 'playlist' && items.length === 2 && items.some((x) => Number(x.tmdb_id) === 550), JSON.stringify(g.j));
+    const bad2 = await call('GET', '/api/codes?code=AAAAAA', {});
+    check('mã sai trả lỗi', bad2.status === 404 || bad2.status === 410, JSON.stringify(bad2.j));
+  }
+}
+
 // ============ B. Mã mời (#10): invite → claim → XP + ngày gói ============
 console.log('\nB. Invite code + claim');
 {

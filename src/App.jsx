@@ -723,17 +723,17 @@ function AppContent() {
 export default function App() {
   return (
     <DeviceProvider>
-      <SettingsProvider>
-        <I18nProvider>
-          <ToastProvider>
-            <AuthProvider>
-              <ProfileProvider>
+      <I18nProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <ProfileProvider>
+              <SettingsProvider>
                 <AppContent />
-              </ProfileProvider>
-            </AuthProvider>
-          </ToastProvider>
-        </I18nProvider>
-      </SettingsProvider>
+              </SettingsProvider>
+            </ProfileProvider>
+          </AuthProvider>
+        </ToastProvider>
+      </I18nProvider>
     </DeviceProvider>
   );
 }

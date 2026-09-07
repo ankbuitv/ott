@@ -2,7 +2,7 @@
 
 > Branch: `arena/01a07b6d-ott` — PR duy nhất lên `main`.
 > Preview local: API worker `http://127.0.0.1:8787` (D1 local) · Web `http://127.0.0.1:3000` (Vite proxy).
-> Kiểm chứng: `node scripts/pack48-smoke.mjs` (**57 pass / 0 fail**) · `node --check worker/worker.js` · `npx vite build` (exit 0) · sanity API real D1 local trên từng route mới (`/api/movie/wishlist`, `/api/actors/follow`, `/api/party/poll*`, `/api/stats/trending-search`, `/api/sports/follow` + `/api/team/notify` fan-out vi/en).
+> Kiểm chứng: `node scripts/pack48-smoke.mjs` (**60 pass / 0 fail**) · `node --check worker/worker.js` · `npx vite build` (exit 0) · sanity API real D1 local trên từng route mới (`/api/movie/wishlist`, `/api/actors/follow`, `/api/party/poll*`, `/api/stats/trending-search`, `/api/sports/follow` + `/api/team/notify` fan-out vi/en, mã `playlist`).
 
 ## A. Mã chia sẻ & liên kết
 
@@ -17,7 +17,7 @@
 | #10 Mã mời +200 XP & +3 ngày gói cho cả 2 phía | ✅ | `POST /api/codes/claim` + “Mã của tôi” |
 | #1 Xem chung qua mã | ✅ | `/api/party/*` + nút “Xem chung” tab Truyền hình (`TVPage`) |
 | #35 Kèo dự đoán tỉ số gửi bạn qua mã | ✅ API mã `challenge`/`payload`; UI nhận mã hiện toast hướng dẫn | worker + CodesModal |
-| #11 Playlist chia sẻ (playlist từ Watchlist) | ⚠️ Cơ chế mã `playlist` + payload có sẵn; UI soạn playlist cá nhân hoá chưa đầy đủ | — |
+| #11 Playlist chia sẻ (playlist từ Watchlist) | ✅ nút “Chia sẻ playlist” trên hàng My List: tích chọn phim → đặt tên → mã 6 ký tự (24h) → chép/gửi bạn bè; nhập mã playlist → modal xem từng phim (bấm là mở chi tiết) + “Thêm tất cả vào My List” | `PlaylistModals.jsx` (Share/View) + `/api/codes kind=playlist` |
 
 ## B. Phim & khám phá
 
@@ -72,7 +72,7 @@
 | Mục | Trạng thái | Nơi |
 | --- | --- | --- |
 | #15 Auto quality + data-saver (khoá ≤480p, tắt trailer tự phát) | ✅ Settings sẵn có + trailer fallback không auto dính pre-roll | SettingsPage/MoviePlayer |
-| #16 Player settings theo profile | ⚠️ Settings lưu theo thiết bị (chưa theo từng profile) | — |
+| #16 Player settings theo profile | ✅ nhóm player (chất lượng, buffer, auto-next, data-saver, cử chỉ, spoiler, sleep timer…) lưu riêng theo từng profile (`chrtv_settings_p<id>`); giao diện/ngôn ngữ/nguồn giữ chung thiết bị; profile mới kế thừa cài đặt thiết bị hiện tại | `SettingsContext.jsx` (overlay theo `currentProfile.id`) + App.jsx (SettingsProvider trong ProfileProvider) |
 | #17 Thống kê dữ liệu + cảnh báo | ✅ đếm MB theo giây xem × chất lượng; hiện hôm nay/7 ngày + cảnh báo | `prefs.js` + SettingsPage |
 | #22 Timeshift tua lại X giờ | ✅ nút −1/−2/−3 giờ theo EPG (kênh có catchup) | TVPage |
 
@@ -91,11 +91,12 @@
 | #83 Chủ đề theo mùa | ✅ cài đặt + chip mùa | prefs.js/SettingsPage |
 | #84 Wrapped năm | ✅ `/api/wrapped` + nút “✨ Wrapped” (auth) | MoviesScreen/WrappedModal |
 
-## Còn thiếu rõ ràng (đã liệt kê ⚠️)
-UI soạn playlist cá nhân hoá từ Watchlist (#11 — cơ chế mã `playlist` đã có), player settings theo profile (#16 — Settings hiện lưu theo thiết bị).
+## Còn thiếu rõ ràng
+Không còn mục nào đánh ⚠️ trong map đợt 48 (xem bảng trên).
 
 ## Hướng dẫn kiểm thử nhanh (preview local)
 1. Mở `http://127.0.0.1:3000` → tab **Phim**: nút “🎟️ Nhập mã” (nhập mã từ bạn bè / tự tạo qua Share trong chi tiết), “📺 Đồng bộ TV” (tạo mã 6 số ở máy A, nhập ở máy B), “🎲 Quay số”, “✨ Wrapped”, “Lọc”.
+   - Trên hàng “❤️ My List” có nút **Chia sẻ playlist** (#11): tích phim → đặt tên → mã 6 ký tự gửi bạn bè; bên nhận dán mã → xem từng phim (bấm mở chi tiết) hoặc “Thêm tất cả vào My List”.
 2. Tab **Phim**: ô tìm kiếm trống hiện 🔥 **Xu hướng** — bấm chip là tìm luôn; gõ từ khoá bất kỳ → kết quả **gộp** kênh TV (bấm mở kênh + nhảy tab Truyền hình), creator/shorts, phim.
 3. Chi tiết phim TV: nút chuông **Theo dõi series**, thanh **Muốn xem/Đang xem/Đã xem**, chips **vé rạp/sách**, badge tuổi. Mở diễn viên (hàng Cast) → nút **Theo dõi diễn viên** (đồng bộ server).
 4. Thêm phim vào **wishlist** (theo dõi) → mở lại nguồn phim đó khi đã có bản HD: nhận notification “bản ngon hơn” (≤1 lần/3 ngày).
@@ -104,3 +105,4 @@ UI soạn playlist cá nhân hoá từ Watchlist (#11 — cơ chế mã `playlis
 7. Tab **Thể thao** → chi tiết trận: nút follow từng đội (đội theo dõi khi live/ghi bàn sẽ fan-out push), tab **💬 Chat trận** (vào phòng, nhắn/react/tạo poll — tự làm mới 2.5s).
 8. Tab **Shorts**: chips 🔥 thử thách hashtag + nút **BXH sao tuần**; bấm short trong challenge là phát ngay.
 9. Admin (đăng nhập admin): panel mới Realtime/Cảnh báo/Vùng chặn/Bảo trì/Challenge/Affiliate + lịch đăng có preview.
+10. Đổi hồ sơ trong app (Hồ sơ) → chất lượng mặc định / data-saver / cử chỉ / sleep timer… được nhớ **riêng theo từng hồ sơ** (#16); giao diện & ngôn ngữ vẫn chung thiết bị.

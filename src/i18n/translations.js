@@ -933,6 +933,7 @@ const T = {
   'p48.goals_tl': { vi: 'Diễn biến', en: 'Timeline' },
   'p48.scores_wall': { vi: 'Tường tỉ số', en: 'Score wall' },
   'p48.tv_kw': { vi: 'kênh truyền hình', en: 'TV channels' },
+  'p48.pl_share': { vi: 'Chia sẻ playlist', en: 'Share playlist' },
   'p48.follow_actor': { vi: 'Theo dõi diễn viên', en: 'Follow actor' },
   'p48.actor_followed': { vi: 'Đã theo dõi {name} 🎭', en: 'Now following {name} 🎭' },
   'p48.actor_unfollowed': { vi: 'Đã bỏ theo dõi diễn viên', en: 'Actor unfollowed' },

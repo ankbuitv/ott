@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Search, Star, Play, X, Info, Calendar, Clock, Tv, Film, SlidersHorizontal, TrendingUp, Heart, History, Plus, Check, Crown, Mic, Share2, CalendarClock, Users, Layers, MessageCircle, Sparkles, Clapperboard, ChevronLeft, ChevronRight, Ticket, Radio, BadgeCheck } from 'lucide-react';
+import { Search, Star, Play, X, Info, Calendar, Clock, Tv, Film, SlidersHorizontal, TrendingUp, Heart, History, Plus, Check, Crown, Mic, Share2, CalendarClock, Users, Layers, MessageCircle, Sparkles, Clapperboard, ChevronLeft, ChevronRight, Ticket, Radio, BadgeCheck, ListVideo } from 'lucide-react';
 import { MovieAPI, imgPath, bgPath, COUNTRY_INFO, countryInfoOf, REGION_LIST, setTMDBRegion, getUpcoming, getMovieGenres, getCredits, getPerson, getPersonCredits, getRecommendations, getCollection, getMovieDetails, getTvDetails, discoverMovies } from '../services/tmdb';
 import { getMovieHistory, recordMovieWatch, recordMovieProgress, fmtWatchSec, isWatched, toggleWatchlistLocal, fetchWatchlist } from '../services/movieList';
 import { listenOnce, voiceSupported } from '../services/voice';
@@ -10,6 +10,7 @@ import UpcomingModal from './UpcomingModal';
 import CommentsBox from './CommentsBox';
 import FanGroupBox from './FanGroupBox';
 import AdSlot from './AdSlot';
+import { SharePlaylistModal, PlaylistViewModal } from './PlaylistModals';
 import { resolveCountry, currentCountry, setManualCountry } from '../services/geo';
 import { getHomePrefs } from '../services/prefs';
 import MoviePlayerModal from './MoviePlayerModal';
@@ -119,6 +120,8 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
   const [upcomingOpen, setUpcomingOpen] = useState(false);
   const [rouletteOpen, setRouletteOpen] = useState(false);
   const [wrappedOpen, setWrappedOpen] = useState(false);
+  const [plShareOpen, setPlShareOpen] = useState(false);
+  const [plView, setPlView] = useState(null);
   const [filtOpen, setFiltOpen] = useState(false);
   const [advFilter, setAdvFilter] = useState(null);
   const [homePrefs, setHomePrefs] = useState(() => getHomePrefs());
@@ -153,6 +156,15 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
     setMovieHistory(getMovieHistory());
     fetchWatchlist().then((l) => setMyList(l)).catch(() => {});
   }, []);
+
+  // (#11) Nhận playlist bạn bè → thêm cả list vào My List (bỏ trùng)
+  const addAllToWatchlist = useCallback((items) => {
+    let added = 0;
+    items.forEach((m) => {
+      if (!isWatched(m)) { toggleWatchlistLocal(m); added++; }
+    });
+    if (added > 0) refreshMovieLists();
+  }, [refreshMovieLists]);
 
   useEffect(() => {
     if (currentProfile?.is_child) addToast(t('toast.kid_blocked'), 'info');
@@ -654,7 +666,11 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
         <div className="pb-20 space-y-10 pt-6">
           {movieHistory.length > 0 && (<MovieRow title={`⏪ ${t('mv.continue')}`} items={movieHistory} onClick={openDetail} loading={false} showProgress />)}
           {forYou.items.length > 0 && (<MovieRow title={`✨ ${t('mv.for_you', { name: forYou.base?.title || '' })}`} items={forYou.items} onClick={openDetail} loading={false} />)}
-          {myList.length > 0 && (<MovieRow title={`❤️ ${t('mv.my_list')}`} items={myList} onClick={openDetail} loading={false} />)}
+          {myList.length > 0 && (<MovieRow title={`❤️ ${t('mv.my_list')}`} items={myList} onClick={openDetail} loading={false} action={
+            <button onClick={() => setPlShareOpen(true)} className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#f36f21]/12 border border-[#f36f21]/35 text-[10px] font-black text-[#ffb37a] hover:bg-[#f36f21]/25 transition active:scale-95" title={t('p48.pl_share')}>
+              <ListVideo className="w-3.5 h-3.5" />{t('p48.pl_share')}
+            </button>
+          } />)}
           <MovieRow title={t('movies.row.now_playing_in', { country: `${countryInfo.flag} ${countryInfo.name}` })} items={rows.nowPlaying} onClick={openDetail} loading={loading} />
           <MovieRow title={t('movies.row.top_rated')} items={rows.topRated} onClick={openDetail} loading={loading} />
           <MovieRow title={t('movies.row.upcoming')} items={rows.upcoming} onClick={openDetail} loading={loading} />
@@ -700,10 +716,14 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
           onClose={() => setCodesOpen(false)}
           onOpenMovie={openMovieFromCode}
           onPartyCode={() => addToast('Vào tab Truyền hình → bấm "👥 Xem chung" → dán mã phòng', 'info')}
-          onOpenPlaylist={() => addToast('Playlist bạn bè sẽ mở tại đây — đang hoàn thiện', 'info')}
+          onOpenPlaylist={(payload) => { setPlView(payload); }}
         />
       )}
       {resumeOpen && <ResumeModal open onClose={() => setResumeOpen(false)} onResumeMovie={resumeFromCode} />}
+
+      {/* (#11) Playlist chia sẻ từ My List */}
+      {plShareOpen && <SharePlaylistModal list={myList} onClose={() => setPlShareOpen(false)} />}
+      {plView && <PlaylistViewModal payload={plView} onClose={() => setPlView(null)} onOpen={(m) => { setPlView(null); openDetail(m); }} onAddAll={addAllToWatchlist} />}
 
       {/* (#66) Quay số theo tâm trạng + (#84) Wrapped + (#28) lọc nâng cao */}
       {rouletteOpen && <RouletteModal open pool={isKid ? kidSafe : catalog} onClose={() => setRouletteOpen(false)} onPick={(m) => { setRouletteOpen(false); openDetail(m); }} />}
@@ -713,7 +733,7 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
   );
 }
 
-function MovieRow({ title, items, onClick, loading, showProgress }) {
+function MovieRow({ title, items, onClick, loading, showProgress, action = null }) {
   const ref = useRef(null);
   const scroll = (dir) => {
     const el = ref.current;
@@ -722,8 +742,11 @@ function MovieRow({ title, items, onClick, loading, showProgress }) {
   };
   return (
     <section className="px-6 md:px-8 relative group/row">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-base md:text-xl font-bold tracking-tight">{title}</h3>
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <h3 className="text-base md:text-xl font-bold tracking-tight min-w-0 truncate">{title}</h3>
+        <div className="flex items-center gap-1 shrink-0">
+          {action}
+        </div>
         <div className="hidden md:flex items-center gap-1 opacity-0 group-hover/row:opacity-100 transition">
           <button onClick={() => scroll(-1)} className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center border border-white/10"><ChevronLeft className="w-4 h-4" /></button>
           <button onClick={() => scroll(1)} className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center border border-white/10"><ChevronRight className="w-4 h-4" /></button>

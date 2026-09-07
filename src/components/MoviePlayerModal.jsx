@@ -11,10 +11,10 @@ import { recordProfileWatch } from '../services/kids';
 
 /**
  * CHRTV - Trình phát phim (nhiều nguồn, chọn server được)
- * Danh sách nguồn do admin quản lý (Admin Panel → Nguồn phim, API
- * /api/movie/sources) và chỉ gồm nguồn có domain nằm trong allowlist CSP
- * MOVIE_FRAME_SRC — xem src/services/embeds.js. kind 'embed' → iframe player
- * đối tác; kind 'hls' → app tự phát trực tiếp bằng hls.js (không iframe).
+ * Danh sách nguồn từ API /api/movie/sources: nguồn admin tự thêm (Admin Panel
+ * → Nguồn phim) đứng trước, sau đó là nguồn free mặc định (VidSrc, 2Embed,
+ * VidLink, MoviesAPI, EmbedSU, VidCore) — xem src/services/embeds.js.
+ * kind 'embed' → iframe player; kind 'hls' → app tự phát bằng hls.js (không iframe).
  *
  * Chống quảng cáo:
  * - Nút "Chặn QC" bật sandbox cho iframe (không allow-popups / allow-top-navigation*

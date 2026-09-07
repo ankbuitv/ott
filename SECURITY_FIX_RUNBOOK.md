@@ -281,10 +281,15 @@ thêm/bớt phải build + deploy lại), nguồn phim giờ đi qua server:
 | `/admin/movie_sources` (GET/POST/PUT/DELETE) | CRUD trong **Admin Panel → Nguồn phim**; từ chối lưu nếu thiếu `license_note` hoặc domain chưa được duyệt; mỗi lần sửa ghi `audit_log` (`movie_source.add/update/delete`) |
 | secret `MOVIE_FRAME_SRC` | allowlist domain, cách nhau bởi dấu cách/phẩy: `wrangler secret put MOVIE_FRAME_SRC` |
 
-Hành vi khi chưa cấu hình gì: `/api/movie/sources` trả `sources: []` +
-`reason: "no_frame_allowlist"`, modal hiện “Chưa có nguồn phát hợp lệ” kèm nút
-*Thử lại* — tức là mặc định vẫn an toàn như trước, thêm nguồn là một quyết
-định có chủ ý (phải sửa secret), không phải thứ trôi vào code qua một PR.
+Hành vi khi chưa cấu hình gì (từ 2026-09-07, theo yêu cầu chủ app “mở phim là
+xem được ngay”): `/api/movie/sources` trả sẵn 6 nguồn free mặc định
+(`BUILTIN_MOVIE_SOURCES` trong worker: VidSrc, 2Embed, VidLink, MoviesAPI,
+EmbedSU, VidCore — template `…/{type}/{tmdb}/{season}/{episode}`, phim lẻ tự
+nuốt đuôi `/{season}/{episode}`), và `frame-src` của CSP cũng mở sẵn 6 domain
+đó. App còn có lưới an toàn phía client (`BUILTIN_SOURCES` trong
+`src/services/embeds.js`) — API trả rỗng/lỗi thì vẫn mở phim được. Muốn về lại
+chế độ “chỉ nguồn tự khai”: đặt biến môi trường `MOVIE_BUILTIN_SOURCES=0`,
+lúc đó thiếu secret sẽ lại trả `sources: []` + `reason: "no_frame_allowlist"`.
 
 Quy trình thêm một nguồn:
 

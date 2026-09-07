@@ -1,24 +1,79 @@
 /**
  * CHRTV — danh sách nguồn phát cho mục Phim/TV show.
  *
- * LỊCH SỬ: trước đây file này hard-code ~50 domain embed kiểu "vidsrc".
- * Ngày 2026-09-05 (P3, xem SECURITY_FIX_RUNBOOK.md Phụ lục B) toàn bộ bị tắt vì
- * đó là nguồn KHÔNG có bản quyền và là vector bảo mật (iframe bên thứ 3).
+ * LỊCH SỬ:
+ * - Trước đây file này hard-code ~50 domain embed kiểu "vidsrc".
+ * - Ngày 2026-09-05 (P3, xem SECURITY_FIX_RUNBOOK.md Phụ lục B) toàn bộ bị tắt,
+ *   chuyển sang nguồn do admin quản lý (bảng `movie_sources` + allowlist CSP).
+ * - Ngày 2026-09-07: gắn lại 6 nguồn free mặc định (VidSrc, 2Embed, VidLink,
+ *   MoviesAPI, EmbedSU, VidCore — kiểm chứng 08/2026) ở CẢ server
+ *   (BUILTIN_MOVIE_SOURCES trong worker/worker.js) LẪN client (BUILTIN_SOURCES
+ *   dưới đây). Lý do có 2 lớp: server là nguồn chính (admin thêm nguồn riêng
+ *   không cần build lại app); client là lưới an toàn — worker cũ/proxy hỏng/
+ *   offline mà API trả rỗng thì app vẫn mở phim được ngay thay vì màn trống.
  *
- * GIỜ danh sách lấy từ server (bảng `movie_sources`, admin quản lý ở
- * Admin Panel → Nguồn phim) và server CHỈ trả về nguồn mà domain của nó có trong
- * allowlist CSP `MOVIE_FRAME_SRC`. Nghĩa là:
- *   - thêm/bớt nguồn không cần build lại app;
- *   - nguồn ở domain chưa được duyệt bị lọc ngay ở server, nên không thể "nhét"
- *     qua DB rồi mong chạy;
- *   - không có nguồn nào = card/modal tự chuyển sang chế độ TRAILER (không còn
- *     nút "Xem phim" hứa hão).
- *
- * Quy trình đúng: chỉ thêm nguồn mình CÓ HỢP ĐỒNG/QUYỀN PHÂN PHỐI, và ghi rõ
- * điều đó vào ô license_note khi thêm (admin bắt buộc điền).
+ * Quy tắc:
+ * - Server trả về nguồn nào thì dùng nguồn đó (ưu tiên nguồn admin tự thêm).
+ * - Server rỗng/lỗi -> dùng nguồn free mặc định dưới đây (phải đồng bộ tay với
+ *   BUILTIN_MOVIE_SOURCES ở worker khi đổi).
+ * - Không có nguồn nào = card/modal tự chuyển sang chế độ TRAILER.
  */
 
 import { API_BASE } from './config';
+
+/**
+ * Nguồn free mặc định phía client (đồng bộ với BUILTIN_MOVIE_SOURCES ở worker).
+ * Mỗi nguồn có template riêng cho phim lẻ và TV để khỏi xử lý đuôi /{season}/{episode}.
+ */
+const BUILTIN_SOURCES = [
+  {
+    name: 'VidSrc',
+    movie: 'https://vidsrc.to/embed/movie/{tmdb}',
+    tv: 'https://vidsrc.to/embed/tv/{tmdb}/{season}/{episode}',
+  },
+  {
+    name: '2Embed',
+    movie: 'https://www.2embed.cc/embed/movie/{tmdb}',
+    tv: 'https://www.2embed.cc/embed/tv/{tmdb}/{season}/{episode}',
+  },
+  {
+    name: 'VidLink',
+    movie: 'https://vidlink.pro/movie/{tmdb}',
+    tv: 'https://vidlink.pro/tv/{tmdb}/{season}/{episode}',
+  },
+  {
+    name: 'MoviesAPI',
+    movie: 'https://moviesapi.to/movie/{tmdb}',
+    tv: 'https://moviesapi.to/tv/{tmdb}/{season}/{episode}',
+  },
+  {
+    name: 'EmbedSU',
+    movie: 'https://www.embed.su/embed/movie/{tmdb}',
+    tv: 'https://www.embed.su/embed/tv/{tmdb}/{season}/{episode}',
+  },
+  {
+    name: 'VidCore',
+    movie: 'https://vidcore.org/embed/movie/{tmdb}',
+    tv: 'https://vidcore.org/embed/tv/{tmdb}/{season}/{episode}',
+  },
+];
+
+function builtinSources(movie, season, episode) {
+  const id = movie?.id;
+  if (!id) return [];
+  const isTV = movie.media_type === 'tv';
+  const s = isTV ? (Number(season) || 1) : 1;
+  const e = isTV ? (Number(episode) || 1) : 1;
+  return BUILTIN_SOURCES.map((b, i) => ({
+    id: 1000 + i,
+    name: b.name,
+    kind: 'embed',
+    url: (isTV ? b.tv : b.movie)
+      .replace(/\{tmdb\}/g, String(id))
+      .replace(/\{season\}/g, String(s))
+      .replace(/\{episode\}/g, String(e)),
+  }));
+}
 
 /**
  * @param {Object} movie  object TMDB (id, media_type)
@@ -37,12 +92,16 @@ export async function fetchMovieSources(movie, season, episode) {
   }
   try {
     const res = await fetch(`${API_BASE}/api/movie/sources?${q}`, { headers: { Accept: 'application/json' } });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return Array.isArray(data?.sources) ? data.sources : [];
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data?.sources) && data.sources.length > 0) return data.sources;
+    }
   } catch {
-    return []; // offline / worker chưa deploy: coi như không có nguồn
+    // offline / worker chưa deploy: rơi xuống nguồn mặc định bên dưới
   }
+  // Server chưa có nguồn (worker cũ trả no_frame_allowlist, DB trống...) ->
+  // dùng nguồn free mặc định để mở phim là xem được ngay.
+  return builtinSources(movie, season, episode);
 }
 
 /**

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Heart, Share2, Volume2, VolumeX, Play, Eye, BadgeCheck, Users, Video, X, UserPlus, UserCheck, Edit3, Upload, Link2, Image as ImageIcon } from 'lucide-react';
+import { Heart, Share2, Volume2, VolumeX, Play, Eye, BadgeCheck, Users, Video, X, UserPlus, UserCheck, Edit3, Upload, Link2, Image as ImageIcon, Star } from 'lucide-react';
 import { useI18n } from '../contexts/I18nContext';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -90,6 +90,21 @@ function ShortPlayer({ short, active, muted, onToggleMute, onAuthorClick, onFoll
     } catch {}
   };
 
+  // (#37) Tặng sao creator bằng XP (1 sao = 50 XP)
+  const doStar = async () => {
+    if (!token) { addToast(t('p48.need_xp').split(' (')[0] || 'Đăng nhập để tặng sao', 'warning'); return; }
+    try {
+      const r = await fetch(`${API_BASE}/api/shorts/star`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ short_id: short.id, stars: 1 })
+      });
+      const d = await r.json();
+      if (d.success) addToast(`${d.stars} ⭐ đã tới tay @${creator?.handle} (${d.spent_xp} XP)`, 'success');
+      else addToast(d.error || 'Không tặng được', 'error');
+    } catch { addToast('Lỗi kết nối', 'error'); }
+  };
+
   const handleFollow = async (e) => {
     e.stopPropagation();
     if (!token) { addToast('Đăng nhập để theo dõi', 'warning'); return; }
@@ -152,6 +167,14 @@ function ShortPlayer({ short, active, muted, onToggleMute, onAuthorClick, onFoll
           </span>
           <span className="text-[10px] font-bold text-white drop-shadow">{t('shorts.share')}</span>
         </button>
+        {creator?.id && (
+          <button onClick={doStar} className="flex flex-col items-center gap-1 group">
+            <span className="w-11 h-11 rounded-full bg-black/55 group-hover:bg-[#f5a623]/40 border border-white/10 group-hover:border-amber-400/60 flex items-center justify-center transition-all active:scale-90">
+              <Star className="w-5 h-5 text-amber-300" />
+            </span>
+            <span className="text-[10px] font-bold text-white drop-shadow">⭐ {t('p48.star_short')}</span>
+          </button>
+        )}
         <span className="flex flex-col items-center gap-1">
           <span className="w-11 h-11 rounded-full bg-black/55 flex items-center justify-center">
             <Eye className="w-5 h-5 text-white" />

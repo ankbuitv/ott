@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Film, Eye, Gift, CreditCard, Megaphone, Clock, MessageCircle, Target, FileSpreadsheet, Trash2, Check, X, Plus, Activity, Flag, RefreshCw, Bug } from 'lucide-react';
+import { Film, Eye, Gift, CreditCard, Megaphone, Clock, MessageCircle, Target, FileSpreadsheet, Trash2, Check, X, Plus, Activity, Flag, RefreshCw, Bug, MapPin, ShieldAlert, Radio, HandCoins } from 'lucide-react';
 
 // Các tab admin mới: trực tiếp, gift, thanh toán, QC, lịch đăng, bình luận, dự đoán, báo cáo.
 const inp = 'w-full bg-slate-900/60 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-[#f36f21]/50';
@@ -183,24 +183,40 @@ export function AdsTab({ BASE, headers, addToast }) {
 // ---- Lịch đăng ----
 export function SchedTab({ BASE, headers, addToast }) {
   const [posts, setPosts] = useState([]);
-  const [form, setForm] = useState({ kind: 'broadcast', title: '', body: '', link_value: '', publish_at: '' });
+  const [form, setForm] = useState({ kind: 'broadcast', title: '', body: '', link_value: '', image_url: '', publish_at: '', end_at: '' });
+  const [prev, setPrev] = useState(null); // {post, preview}
   const load = () => api(BASE, headers, '/admin/scheduled').then(d => setPosts(d.posts || [])).catch(() => {});
   useEffect(() => { load(); }, []); // eslint-disable-line
   const save = async (e) => {
     e.preventDefault();
     if (!form.publish_at || !form.body) { addToast('Cần nội dung + giờ đăng', 'error'); return; }
-    const d = await api(BASE, headers, '/admin/scheduled', { method: 'POST', body: JSON.stringify(form) });
-    if (d.success) { addToast('Đã hẹn giờ đăng.', 'success'); setForm({ kind: 'broadcast', title: '', body: '', link_value: '', publish_at: '' }); load(); }
+    const d = await api(BASE, headers, '/admin/scheduled', { method: 'POST', body: JSON.stringify({ ...form, publish_at: form.publish_at.replace('T', ' '), end_at: form.end_at ? form.end_at.replace('T', ' ') : '' }) });
+    if (d.success) { addToast('Đã hẹn giờ đăng.', 'success'); setForm({ kind: 'broadcast', title: '', body: '', link_value: '', image_url: '', publish_at: '', end_at: '' }); load(); }
     else addToast(d.error || 'Lỗi', 'error');
+  };
+  const doPreview = async (id) => {
+    const d = await api(BASE, headers, '/admin/scheduled/preview', { method: 'POST', body: JSON.stringify({ id }) });
+    setPrev(d.success ? { post: d.post, preview: d.preview } : null);
   };
   return (
     <div className="p-4 space-y-2">
-      <p className="text-[10px] text-slate-500">Tới giờ hệ thống tự đẩy ra app (không cần cron).</p>
+      <p className="text-[10px] text-slate-500">Tới giờ hệ thống tự đẩy ra app (không cần cron). Có thể đặt giờ <b className="text-slate-300">tự hết hiệu lực (end_at)</b> và bật/tắt từng lịch.</p>
       {posts.map(p => (
-        <div key={p.id} className="flex items-center gap-2 rounded-xl bg-black/30 border border-white/[0.06] px-3 py-2">
-          <span className={`text-[10px] font-black uppercase shrink-0 ${p.is_done ? 'text-emerald-400' : 'text-amber-300'}`}>{p.is_done ? '✓' : '⏳'} {p.kind}</span>
-          <span className="flex-1 min-w-0"><span className="block text-[12px] font-bold text-white truncate">{p.title || p.body}</span><span className="block text-[10px] text-slate-500">{p.publish_at}</span></span>
-          <button onClick={async () => { if (!confirm('Xoá lịch này?')) return; await api(BASE, headers, '/admin/scheduled', { method: 'DELETE', body: JSON.stringify({ id: p.id }) }); load(); }} className="text-slate-600 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>
+        <div key={p.id}>
+          <div className="flex items-center gap-2 rounded-xl bg-black/30 border border-white/[0.06] px-3 py-2">
+            <span className={`text-[10px] font-black uppercase shrink-0 ${p.is_done ? 'text-emerald-400' : p.is_active === 0 ? 'text-slate-600' : 'text-amber-300'}`}>{p.is_done ? '✓' : p.is_active === 0 ? '⏸' : '⏳'} {p.kind}</span>
+            <span className="flex-1 min-w-0"><span className="block text-[12px] font-bold text-white truncate">{p.title || p.body}</span><span className="block text-[10px] text-slate-500">{p.publish_at}{p.end_at ? ` → hết ${p.end_at}` : ''}</span></span>
+            <button onClick={() => doPreview(p.id)} title="Xem trước" className="text-slate-400 hover:text-white px-1.5"><Eye className="w-3.5 h-3.5" /></button>
+            <button onClick={async () => { await api(BASE, headers, '/admin/scheduled', { method: 'PUT', body: JSON.stringify({ id: p.id, is_active: p.is_active === 0 ? 1 : 0 }) }); load(); }} className="text-[10px] font-bold text-slate-400 hover:text-white px-1">{p.is_active === 0 ? 'Bật' : 'Ngừng'}</button>
+            <button onClick={async () => { if (!confirm('Xoá lịch này?')) return; await api(BASE, headers, '/admin/scheduled', { method: 'DELETE', body: JSON.stringify({ id: p.id }) }); load(); }} className="text-slate-600 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>
+          </div>
+          {prev && prev.post && prev.post.id === p.id && (
+            <div className="mt-1 rounded-xl bg-sky-950/30 border border-sky-500/20 px-3 py-2 text-[11px] text-slate-300">
+              <b className="text-sky-300">Xem trước:</b> {prev.preview?.title ? <><b>{prev.preview.title}</b> — </> : ''}{prev.preview?.message || prev.preview?.body || prev.preview?.subtitle || '(rỗng)'}
+              {prev.preview?.expires_at ? <span className="text-slate-500"> · tự tắt {new Date(prev.preview.expires_at * 1000).toLocaleString('vi-VN')}</span> : null}
+              <button onClick={() => setPrev(null)} className="ml-2 text-slate-500 hover:text-white">✕</button>
+            </div>
+          )}
         </div>
       ))}
       <form onSubmit={save} className="space-y-2 pt-2 border-t border-slate-800/40">
@@ -209,8 +225,10 @@ export function SchedTab({ BASE, headers, addToast }) {
             <option value="broadcast">Banner chạy chữ</option><option value="notify">Thông báo</option><option value="event">Sự kiện home</option>
           </select>
           <input type="datetime-local" value={form.publish_at} onChange={e => setForm({ ...form, publish_at: e.target.value })} className={inp} />
+          <input type="datetime-local" value={form.end_at} onChange={e => setForm({ ...form, end_at: e.target.value })} placeholder="Tự hết lúc (tuỳ chọn)" className={inp + ' col-span-2'} />
           <input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="Tiêu đề" className={inp + ' col-span-2'} />
           <input value={form.body} onChange={e => setForm({ ...form, body: e.target.value })} placeholder="Nội dung" className={inp + ' col-span-2'} />
+          <input value={form.image_url} onChange={e => setForm({ ...form, image_url: e.target.value })} placeholder="Ảnh (cho event)" className={inp + ' col-span-2'} />
           <input value={form.link_value} onChange={e => setForm({ ...form, link_value: e.target.value })} placeholder="Link (cho notify/event)" className={inp + ' col-span-2'} />
         </div>
         <button type="submit" className={btnP + ' w-full justify-center'}><Clock className="w-3.5 h-3.5" /> Hẹn giờ đăng</button>
@@ -538,4 +556,338 @@ export const EXTRA_TABS = [
   { id: 'comments', label: 'Bình luận', icon: MessageCircle },
   { id: 'predict', label: 'Dự đoán', icon: Target },
   { id: 'reports', label: 'Báo cáo', icon: FileSpreadsheet },
+  // ---- Đợt 48 ----
+  { id: 'rt48', label: 'Realtime', icon: Radio },
+  { id: 'alerts48', label: 'Cảnh báo', icon: ShieldAlert },
+  { id: 'regions48', label: 'Vùng chặn', icon: MapPin },
+  { id: 'maint48', label: 'Bảo trì kênh', icon: Flag },
+  { id: 'chal48', label: 'Challenge', icon: Target },
+  { id: 'aff48', label: 'Affiliate', icon: HandCoins },
 ];
+
+// ============================================================================
+// ĐỢT 48 — tab admin mới: realtime, cảnh báo in-dash, vùng chặn, bảo trì,
+// challenge hashtag, affiliate (vé rạp/sách), lịch đăng có preview.
+// ============================================================================
+function MiniStat({ label, value, color }) {
+  return (
+    <div className="rounded-xl bg-black/30 border border-white/[0.07] px-3 py-2.5">
+      <p className={`text-lg font-black ${color || 'text-white'}`}>{value}</p>
+      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{label}</p>
+    </div>
+  );
+}
+
+// (#53) Dashboard realtime: ai đang xem + kênh hot + lỗi + kênh chết
+export function RealtimeTab({ BASE, headers }) {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    let on = true;
+    const load = () => api(BASE, headers, '/admin/realtime').then((d) => { if (on && d.success) setData(d); }).catch(() => {});
+    load();
+    const iv = setInterval(load, 8000);
+    return () => { on = false; clearInterval(iv); };
+  }, [BASE]);
+  const bk = data?.by_kind || {};
+  return (
+    <div className="p-4 space-y-3">
+      <div className="grid grid-cols-3 gap-2">
+        <MiniStat label="Đang xem" value={data ? (data.online || 0) : '…'} color="text-emerald-400" />
+        <MiniStat label="Báo lỗi mở" value={data ? (data.open_reports || 0) : '…'} color={data?.open_reports ? 'text-amber-400' : 'text-slate-300'} />
+        <MiniStat label="Kênh chết" value={data ? (data.down_list || []).length : '…'} color={(data?.down_list || []).length ? 'text-red-400' : 'text-slate-300'} />
+      </div>
+      <div className="flex flex-wrap gap-1.5 text-[10px] font-bold">
+        {Object.entries(bk).map(([k, v]) => <span key={k} className="px-2 py-1 rounded-full bg-white/[0.06] text-slate-300">{k === 'movie' ? '🎬' : k === 'short' ? '▶️' : k === 'sport' ? '⚽' : '📺'} {k}: {v}</span>)}
+        {!Object.keys(bk).length && <span className="text-slate-600 italic px-1">Chưa có ai online — mở app xem kênh ~1 phút là hiện.</span>}
+      </div>
+      {data?.presence?.length > 0 && (
+        <div className="rounded-xl bg-black/30 border border-white/[0.06] p-3">
+          <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-2">Đang phát (presence)</p>
+          <div className="space-y-1 max-h-40 overflow-y-auto">
+            {data.presence.map((v, i) => (
+              <div key={i} className="flex items-center gap-2 text-[11px]">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                <span className="font-bold text-slate-200 truncate max-w-[160px]">{v.name || 'Khách'}</span>
+                <span className="text-slate-500 truncate">{v.ref_name || v.ref_id}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {data?.hot?.length > 0 && (
+        <div className="rounded-xl bg-black/30 border border-white/[0.06] p-3">
+          <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-2">🔥 Kênh hot 15 phút</p>
+          {data.hot.map((h, i) => (
+            <div key={i} className="flex items-center gap-2 text-[11px] py-0.5">
+              <b className="w-4 text-[#ff9a3d]">{i + 1}</b><span className="text-slate-200 truncate">{h.name}</span>
+              <span className="text-slate-600 shrink-0">{h.views || 0} lượt · {Math.round((h.seconds || 0) / 60)}′</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {data?.errors?.length > 0 && (
+        <div className="rounded-xl bg-black/30 border border-white/[0.06] p-3">
+          <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-2">⚠️ Lỗi player 2h gần nhất</p>
+          <div className="space-y-1 max-h-40 overflow-y-auto">
+            {data.errors.map((e, i) => (
+              <div key={i} className="text-[10px] text-slate-400 flex gap-2"><span className="text-slate-600 shrink-0">{String(e.created_at || '').slice(11, 16)}</span><b className="text-slate-300 truncate">{e.channel_name}</b><span className="truncate">{e.code || e.detail}</span></div>
+            ))}
+          </div>
+        </div>
+      )}
+      {data?.down_list?.length > 0 && (
+        <div className="rounded-xl bg-red-950/30 border border-red-500/20 p-3">
+          <p className="text-[10px] text-red-400 font-black uppercase tracking-widest mb-1.5">Kênh đang lỗi</p>
+          <div className="flex flex-wrap gap-1.5">{data.down_list.map((n, i) => <span key={i} className="px-2 py-0.5 rounded-full bg-red-500/10 text-red-300 text-[10px] font-bold">{n}</span>)}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// (#57) Cảnh báo IN-DASH (không Telegram): rules + feed + ack, chạy qua runDueJobs
+export function AlertsTab({ BASE, headers, addToast }) {
+  const [rules, setRules] = useState([]);
+  const [feed, setFeed] = useState([]);
+  const [form, setForm] = useState({ name: '', metric: 'channels_down', op: 'gt', threshold: 2, cooldown_s: 3600 });
+  const [note, setNote] = useState('');
+  const METRICS = [
+    ['channels_down', 'Số kênh chết'],
+    ['player_errors_1h', 'Lỗi player 1 giờ'],
+    ['viewers_online', 'Người đang xem'],
+    ['open_reports', 'Báo lỗi chưa xử lý'],
+  ];
+  const load = () => {
+    api(BASE, headers, '/admin/alerts/rules').then((d) => setRules(d.rules || [])).catch(() => {});
+    api(BASE, headers, '/admin/alerts/feed').then((d) => setFeed(d.feed || [])).catch(() => {});
+  };
+  useEffect(() => { load(); }, []); // eslint-disable-line
+  const save = async (e) => {
+    e.preventDefault();
+    const d = await api(BASE, headers, '/admin/alerts/rules', { method: 'POST', body: JSON.stringify(form) });
+    if (d.success) { addToast('Đã thêm rule cảnh báo', 'success'); setForm({ name: '', metric: 'channels_down', op: 'gt', threshold: 2, cooldown_s: 3600 }); load(); }
+    else addToast(d.error || 'Lỗi', 'error');
+  };
+  return (
+    <div className="p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-[11px] text-slate-400 font-bold flex items-center gap-1.5"><Activity className="w-3.5 h-3.5 text-amber-400" />Cảnh báo trong dashboard — mỗi request GET tự chạy đánh giá rule (không cần cron)</p>
+        <button onClick={async () => { const d = await api(BASE, headers, '/admin/alerts/test', { method: 'POST', body: '{}' }); addToast(d.message || 'Đã chạy', 'success'); load(); }} className={btnG + ' shrink-0'}><RefreshCw className="w-3.5 h-3.5" /> Chạy kiểm tra</button>
+      </div>
+      {/* Feed */}
+      <div className="rounded-xl bg-black/30 border border-white/[0.07] p-3">
+        <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-2">Feed ({feed.filter((f) => !f.ack).length} chưa xử lý)</p>
+        {feed.length === 0 && <p className="text-[11px] text-slate-600 italic">Chưa có cảnh báo nào.</p>}
+        <div className="space-y-1.5 max-h-52 overflow-y-auto">
+          {feed.map((f) => (
+            <div key={f.id} className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 border text-[11px] ${f.ack ? 'opacity-50 border-white/[0.05] bg-black/20' : f.level === 'critical' ? 'border-red-500/40 bg-red-950/30' : 'border-amber-500/30 bg-amber-950/20'}`}>
+              <span>{f.level === 'critical' ? '🔴' : '⚠️'}</span>
+              <span className="flex-1 text-slate-200">{f.message}</span>
+              <span className="text-[9px] text-slate-500 shrink-0">{String(f.created_at || '').slice(0, 16).replace('T', ' ')}</span>
+              {!f.ack && <button onClick={async () => { await api(BASE, headers, '/admin/alerts/ack', { method: 'POST', body: JSON.stringify({ ids: [f.id] }) }); load(); }} className="px-2 py-0.5 rounded-md bg-emerald-600/30 text-emerald-300 text-[10px] font-bold">Xong ✓</button>}
+            </div>
+          ))}
+        </div>
+      </div>
+      {/* Manual push */}
+      <div className="flex gap-2">
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Cảnh báo tay (vd: kênh VTV3 đang lỗi theo báo cáo)" className={inp} />
+        <button onClick={async () => { if (!note.trim()) return; const d = await api(BASE, headers, '/admin/alerts/push', { method: 'POST', body: JSON.stringify({ message: note.trim(), level: 'warn' }) }); if (d.success) { setNote(''); load(); } }} className={btnP + ' shrink-0'}>Đẩy cảnh báo</button>
+      </div>
+      {/* Rules */}
+      <div className="rounded-xl bg-black/30 border border-white/[0.07] p-3">
+        <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-2">Rules</p>
+        {rules.map((r) => (
+          <div key={r.id} className="flex items-center gap-2 text-[11px] py-1 border-b border-white/[0.04] last:border-0">
+            <span className={`w-2 h-2 rounded-full ${r.enabled ? 'bg-emerald-400' : 'bg-slate-600'}`} />
+            <b className="text-slate-200">{r.name}</b>
+            <span className="text-slate-500">{METRICS.find((m) => m[0] === r.metric)?.[1] || r.metric} {r.op === 'lt' ? '<' : '>'} {r.threshold}</span>
+            <span className="text-slate-600">· cooldown {(r.cooldown_s || 3600) / 60}′</span>
+            <span className="flex-1" />
+            <button onClick={async () => { await api(BASE, headers, '/admin/alerts/rules', { method: 'PUT', body: JSON.stringify({ id: r.id, enabled: r.enabled ? 0 : 1 }) }); load(); }} className="text-[10px] font-bold text-slate-400 hover:text-white px-1.5">{r.enabled ? 'Tắt' : 'Bật'}</button>
+            <button onClick={async () => { if (!confirm('Xoá rule?')) return; await api(BASE, headers, '/admin/alerts/rules', { method: 'DELETE', body: JSON.stringify({ id: r.id }) }); load(); }} className="text-slate-600 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>
+          </div>
+        ))}
+        <form onSubmit={save} className="grid grid-cols-6 gap-2 pt-2">
+          <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Tên rule" className={inp + ' col-span-6'} />
+          <select value={form.metric} onChange={(e) => setForm({ ...form, metric: e.target.value })} className={inp + ' col-span-3'}>
+            {METRICS.map((m) => <option key={m[0]} value={m[0]}>{m[1]}</option>)}
+          </select>
+          <select value={form.op} onChange={(e) => setForm({ ...form, op: e.target.value })} className={inp}>
+            <option value="gt">&gt;</option><option value="lt">&lt;</option>
+          </select>
+          <input type="number" step="any" value={form.threshold} onChange={(e) => setForm({ ...form, threshold: e.target.value })} className={inp} />
+          <input type="number" min="60" value={form.cooldown_s} onChange={(e) => setForm({ ...form, cooldown_s: e.target.value })} title="Cooldown (giây)" className={inp} />
+          <button type="submit" className={btnP + ' col-span-6 justify-center'}><Plus className="w-3.5 h-3.5" /> Thêm rule</button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// (B) Vùng quốc gia blocklist cho channels/events/ads/movie_sources
+export function RegionsTab({ BASE, headers, addToast }) {
+  const [type, setType] = useState('channel');
+  const [items, setItems] = useState([]);
+  const [edit, setEdit] = useState(null); // {channel_id|id, regions}
+  const [regions, setRegions] = useState('');
+  const load = () => api(BASE, headers, `/admin/regions?type=${type}`).then((d) => setItems(d.items || [])).catch(() => {});
+  useEffect(() => { load(); }, [type]); // eslint-disable-line
+  const TYPES = [['channel', '📺 Kênh'], ['event', '🎪 Sự kiện/banner'], ['ad', '📢 Quảng cáo'], ['movie_source', '🎬 Nguồn phim']];
+  return (
+    <div className="p-4 space-y-2">
+      <p className="text-[11px] text-slate-400 font-bold flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5 text-red-400" />Chặn cứng theo quốc gia — rỗng = phát toàn cầu. Nhập mã quốc gia cách nhau dấu phẩy: <code className="text-red-300">DE, US</code>. Xem thử UI theo vùng: mở web kèm <code className="text-red-300">?viewCountry=DE</code> (admin).</p>
+      <div className="flex flex-wrap gap-1.5">{TYPES.map(([v, l]) => <button key={v} onClick={() => { setType(v); setEdit(null); }} className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all ${type === v ? 'grad-brand text-white' : 'bg-white/[0.05] text-slate-400 hover:text-white'}`}>{l}</button>)}</div>
+      <div className="space-y-1.5 max-h-[340px] overflow-y-auto">
+        {items.map((it) => {
+          const idKey = it.channel_id !== undefined ? it.channel_id : it.id;
+          const name = it.name || it.title || String(it.channel_id);
+          const isEdit = edit === idKey;
+          return (
+            <div key={String(idKey)} className="flex items-center gap-2 rounded-lg bg-black/25 border border-white/[0.06] px-2.5 py-1.5">
+              <span className="text-[11px] text-slate-300 truncate flex-1">{name}</span>
+              {isEdit ? (
+                <>
+                  <input value={regions} onChange={(e) => setRegions(e.target.value.toUpperCase())} placeholder="VD: DE, US (trống = toàn cầu)" className={inp + ' w-52'} />
+                  <button onClick={async () => {
+                    await api(BASE, headers, '/admin/regions', { method: 'PUT', body: JSON.stringify({ type, ...(it.channel_id !== undefined ? { channel_id: it.channel_id } : { id: it.id }), regions }) });
+                    addToast('Đã lưu vùng chặn', 'success'); setEdit(null); load();
+                  }} className={btnP + ' shrink-0'}><Check className="w-3.5 h-3.5" /></button>
+                  <button onClick={() => setEdit(null)} className="px-2 py-1 text-slate-500"><X className="w-3.5 h-3.5" /></button>
+                </>
+              ) : (
+                <>
+                  {it.blocked_regions ? <span className="text-[10px] font-bold text-red-300">🚫 {it.blocked_regions}</span> : <span className="text-[10px] text-emerald-400/80">🌍 toàn cầu</span>}
+                  <button onClick={() => { setEdit(idKey); setRegions(it.blocked_regions || ''); }} className="text-[10px] font-bold text-slate-400 hover:text-white px-1.5">Sửa</button>
+                </>
+              )}
+            </div>
+          );
+        })}
+        {items.length === 0 && <p className="text-[11px] text-slate-600 italic">Chưa có mục nào.</p>}
+      </div>
+    </div>
+  );
+}
+
+// (#54) Biển bảo trì kênh + gợi ý kênh thay thế cùng nhóm
+export function MaintenanceTab({ BASE, headers, addToast }) {
+  const [channels, setChannels] = useState([]);
+  const [cur, setCur] = useState('');
+  const [minutes, setMinutes] = useState(30);
+  const [note, setNote] = useState('');
+  const [list, setList] = useState([]);
+  const [alts, setAlts] = useState([]);
+  const load = () => api(BASE, headers, '/admin/maintenance').then((d) => setList(d.items || [])).catch(() => {});
+  useEffect(() => {
+    api(BASE, headers, '/api/channels').then((d) => setChannels(d.channels || [])).catch(() => {});
+    load();
+  }, []); // eslint-disable-line
+  const pickChannel = (ch) => {
+    setCur(ch.channel_id);
+    setAlts(channels.filter((c) => c.group_title === ch.group_title && c.channel_id !== ch.channel_id).slice(0, 5));
+  };
+  return (
+    <div className="p-4 space-y-2">
+      <p className="text-[11px] text-slate-400 font-bold flex items-center gap-1.5"><Flag className="w-3.5 h-3.5 text-red-400" />Kênh bảo trì sẽ hiện biển "Đang bảo trì đến HH:MM" + gợi ý kênh thay thế cùng nhóm cho người xem. Hết giờ tự hết (không cần cron — đối chiếu khi xin token phát).</p>
+      <div className="grid grid-cols-3 gap-2">
+        <select value={cur} onChange={(e) => pickChannel(channels.find((c) => c.channel_id === e.target.value) || { channel_id: e.target.value, group_title: '' })} className={inp + ' col-span-3'}>
+          <option value="">— Chọn kênh cần bảo trì —</option>
+          {channels.map((c) => <option key={c.channel_id} value={c.channel_id}>{c.name} · {c.group_title}</option>)}
+        </select>
+        <input type="number" min="1" max="10080" value={minutes} onChange={(e) => setMinutes(e.target.value)} className={inp} />
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Lý do (hiện cho người xem)" className={inp + ' col-span-2'} />
+        <button onClick={async () => {
+          if (!cur) return addToast('Chọn kênh trước', 'error');
+          const d = await api(BASE, headers, '/admin/maintenance', { method: 'POST', body: JSON.stringify({ channel_id: cur, minutes: Number(minutes) || 30, note }) });
+          if (d.success) { addToast(`Bảo trì ${cur} trong ${minutes}′`, 'success'); setCur(''); setNote(''); setAlts([]); load(); }
+          else addToast(d.error || 'Lỗi', 'error');
+        }} className={btnP + ' col-span-3 justify-center'}><Flag className="w-3.5 h-3.5" /> Đặt bảo trì</button>
+      </div>
+      {alts.length > 0 && <p className="text-[10px] text-slate-500">Gợi ý thay thế sẽ hiện: {alts.map((a) => a.name).join(', ')}</p>}
+      <div className="space-y-1.5">
+        {list.map((it) => (
+          <div key={it.channel_id} className="flex items-center gap-2 rounded-lg bg-red-950/20 border border-red-500/20 px-2.5 py-1.5 text-[11px]">
+            <span className="text-red-300">🔧</span><b className="text-slate-200">{it.name}</b>
+            <span className="text-slate-500">đến {new Date(it.maintenance_until * 1000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</span>
+            {it.note && <span className="text-slate-500 truncate">· {it.note}</span>}
+            <span className="flex-1" />
+            <button onClick={async () => { await api(BASE, headers, '/admin/maintenance', { method: 'DELETE', body: JSON.stringify({ channel_id: it.channel_id }) }); load(); }} className="text-slate-500 hover:text-emerald-400"><Check className="w-3.5 h-3.5" /></button>
+          </div>
+        ))}
+        {list.length === 0 && <p className="text-[11px] text-slate-600 italic">Không kênh nào đang bảo trì.</p>}
+      </div>
+    </div>
+  );
+}
+
+// (#40) Challenge hashtag tuần
+export function ChallengesTab({ BASE, headers, addToast }) {
+  const [list, setList] = useState([]);
+  const [form, setForm] = useState({ title: '', hashtag: '', description: '', starts_at: '', ends_at: '' });
+  const load = () => api(BASE, headers, '/admin/challenges').then((d) => setList(d.challenges || [])).catch(() => {});
+  useEffect(() => { load(); }, []); // eslint-disable-line
+  const save = async (e) => {
+    e.preventDefault();
+    if (!form.title || !form.hashtag) return addToast('Cần title + hashtag', 'error');
+    const d = await api(BASE, headers, '/admin/challenges', { method: 'POST', body: JSON.stringify({ ...form, starts_at: form.starts_at ? form.starts_at.replace('T', ' ') : '', ends_at: form.ends_at ? form.ends_at.replace('T', ' ') : '' }) });
+    if (d.success) { addToast('Đã tạo challenge', 'success'); setForm({ title: '', hashtag: '', description: '', starts_at: '', ends_at: '' }); load(); }
+    else addToast(d.error || 'Lỗi', 'error');
+  };
+  return (
+    <div className="p-4 space-y-2">
+      {list.map((c) => (
+        <div key={c.id} className="flex items-center gap-2 rounded-xl bg-black/25 border border-white/[0.06] px-3 py-2 text-[11px]">
+          <span className="text-base">{c.is_active ? '🏆' : '⏸️'}</span>
+          <div className="flex-1 min-w-0"><b className="text-slate-200">{c.title}</b> <span className="text-[#ff9a3d] font-mono">#{c.hashtag}</span><p className="text-slate-500 truncate">{c.description || ''}</p></div>
+          <span className="text-slate-500 shrink-0">{c.starts_at?.slice(5, 10) || '…'} → {c.ends_at?.slice(5, 10) || '∞'}</span>
+          <button onClick={async () => { await api(BASE, headers, '/admin/challenges', { method: 'PUT', body: JSON.stringify({ id: c.id, is_active: c.is_active ? 0 : 1 }) }); load(); }} className="text-slate-400 hover:text-white px-1.5">{c.is_active ? 'Tắt' : 'Bật'}</button>
+          <button onClick={async () => { if (!confirm('Xoá challenge?')) return; await api(BASE, headers, '/admin/challenges', { method: 'DELETE', body: JSON.stringify({ id: c.id }) }); load(); }} className="text-slate-600 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>
+        </div>
+      ))}
+      <form onSubmit={save} className="grid grid-cols-2 gap-2 pt-1">
+        <input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Tên thử thách (tuần 1: #bongda)" className={inp} />
+        <input required value={form.hashtag} onChange={(e) => setForm({ ...form, hashtag: e.target.value.replace(/[^a-zA-Z0-9_]/g, '') })} placeholder="hashtag (không #)" className={inp + ' font-mono'} />
+        <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Mô tả ngắn" className={inp + ' col-span-2'} />
+        <input type="datetime-local" value={form.starts_at} onChange={(e) => setForm({ ...form, starts_at: e.target.value })} className={inp} />
+        <input type="datetime-local" value={form.ends_at} onChange={(e) => setForm({ ...form, ends_at: e.target.value })} className={inp} />
+        <button type="submit" className={btnP + ' col-span-2 justify-center'}><Plus className="w-3.5 h-3.5" /> Tạo challenge</button>
+      </form>
+    </div>
+  );
+}
+
+// (#85) Link affiliate (vé rạp / sách)
+export function AffiliatesTab({ BASE, headers, addToast }) {
+  const [list, setList] = useState([]);
+  const [form, setForm] = useState({ name: '', kind: 'cinema', url_template: '', label: '' });
+  const load = () => api(BASE, headers, '/admin/affiliates').then((d) => setList(d.affiliates || [])).catch(() => {});
+  useEffect(() => { load(); }, []); // eslint-disable-line
+  const save = async (e) => {
+    e.preventDefault();
+    const d = await api(BASE, headers, '/admin/affiliates', { method: 'POST', body: JSON.stringify(form) });
+    if (d.success) { addToast('Đã thêm affiliate', 'success'); setForm({ name: '', kind: 'cinema', url_template: '', label: '' }); load(); }
+    else addToast(d.error || 'Lỗi', 'error');
+  };
+  return (
+    <div className="p-4 space-y-2">
+      <p className="text-[11px] text-slate-400">Link affiliate hiện cạnh phim (vé rạp 🎟 / sách 📚). Dùng <code className="text-slate-300">{'{title}'}</code> để chèn tên phim.</p>
+      {list.map((a) => (
+        <div key={a.id} className="flex items-center gap-2 rounded-xl bg-black/25 border border-white/[0.06] px-3 py-2 text-[11px]">
+          <span>{a.kind === 'book' ? '📚' : '🎟️'}</span><b className="text-slate-200">{a.name}</b><span className="text-slate-500 truncate flex-1">{a.url_template}</span>
+          <button onClick={async () => { await api(BASE, headers, '/admin/affiliates', { method: 'PUT', body: JSON.stringify({ id: a.id, enabled: a.enabled ? 0 : 1 }) }); load(); }} className="text-slate-400 hover:text-white px-1.5">{a.enabled ? 'Bật' : 'Tắt'}</button>
+          <button onClick={async () => { if (!confirm('Xoá?')) return; await api(BASE, headers, '/admin/affiliates', { method: 'DELETE', body: JSON.stringify({ id: a.id }) }); load(); }} className="text-slate-600 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>
+        </div>
+      ))}
+      <form onSubmit={save} className="grid grid-cols-2 gap-2 pt-1">
+        <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Tên (VD: CGV, Galaxy)" className={inp} />
+        <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })} className={inp}>
+          <option value="cinema">🎟️ Vé rạp</option><option value="book">📚 Sách</option>
+        </select>
+        <input required value={form.url_template} onChange={(e) => setForm({ ...form, url_template: e.target.value })} placeholder="https://…/?q={title}" className={inp + ' col-span-2 font-mono'} />
+        <input value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} placeholder="Nhãn nút (VD: Mua vé)" className={inp + ' col-span-2'} />
+        <button type="submit" className={btnP + ' col-span-2 justify-center'}><Plus className="w-3.5 h-3.5" /> Thêm</button>
+      </form>
+    </div>
+  );
+}

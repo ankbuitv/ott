@@ -289,7 +289,7 @@ export default {
         return await guardApiRes(request, await handleAPI(p.startsWith("/api/v1/") ? p.replace("/api/v1", "/api") : p, request, env, ctx));
       }
       // Auth API
-      if (p.startsWith("/auth/")) return await guardApiRes(request, await handleAuth(p, request, env));
+      if (p.startsWith("/auth/")) return await guardApiRes(request, await handleAuth(p, request, env, ctx));
       // User API
       if (p.startsWith("/user/")) return await guardApiRes(request, await handleUser(p, request, env));
       // Admin API
@@ -780,7 +780,7 @@ async function handlePush(path, request, env) {
 async function sendBrevoEmail(env, { to, subject, html, text }) {
   const apiKey = env.BREVO_API_KEY;
   const senderEmail = env.BREVO_SENDER_EMAIL || "noreply@chrtv.app";
-  const senderName = env.BREVO_SENDER_NAME || "CHRTV";
+  const senderName = env.BREVO_SENDER_NAME || "NO REPLY - CHRTV PL▷Y";
   if (!apiKey) {
     console.warn("[Brevo] BREVO_API_KEY chưa cấu hình — bỏ qua gửi email");
     return { ok: false, reason: "no-api-key" };
@@ -1019,6 +1019,23 @@ const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS ad_views (id INTEGER PRIMARY KEY AUTOINCREMENT, user_key TEXT NOT NULL, ad_id INTEGER DEFAULT 0, kind TEXT DEFAULT 'channel', ref_id TEXT DEFAULT '', plan TEXT DEFAULT '', completed INTEGER DEFAULT 0, created_at INTEGER DEFAULT 0)`,
   `CREATE INDEX IF NOT EXISTS idx_ad_views_key ON ad_views(user_key, created_at)`,
   `CREATE TABLE IF NOT EXISTS preview_usage (user_key TEXT PRIMARY KEY, window_start INTEGER DEFAULT 0, seconds INTEGER DEFAULT 0, updated_at INTEGER DEFAULT 0)`,
+  // ---- ĐỢT 48 TÍNH NĂNG MỚI (share codes / progress / follow / stars / alert / region / ...) ----
+  `CREATE TABLE IF NOT EXISTS movie_share_codes (code TEXT PRIMARY KEY, kind TEXT DEFAULT 'movie', media_type TEXT DEFAULT 'movie', tmdb_id INTEGER DEFAULT 0, season INTEGER DEFAULT 0, episode INTEGER DEFAULT 0, payload TEXT DEFAULT '', created_by INTEGER DEFAULT 0, created_by_name TEXT DEFAULT '', used INTEGER DEFAULT 0, expires_at INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE INDEX IF NOT EXISTS idx_movie_share_codes_exp ON movie_share_codes(expires_at)`,
+  `CREATE TABLE IF NOT EXISTS movie_progress (user_id INTEGER NOT NULL, media_type TEXT DEFAULT 'movie', tmdb_id INTEGER NOT NULL, season INTEGER DEFAULT 0, episode INTEGER DEFAULT 0, position_sec REAL DEFAULT 0, duration_sec REAL DEFAULT 0, percent REAL DEFAULT 0, title TEXT DEFAULT '', poster_path TEXT DEFAULT '', updated_at INTEGER DEFAULT 0, PRIMARY KEY (user_id, media_type, tmdb_id, season, episode))`,
+  `CREATE TABLE IF NOT EXISTS resume_codes (code TEXT PRIMARY KEY, user_id INTEGER NOT NULL, payload TEXT DEFAULT '', expires_at INTEGER DEFAULT 0, used INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS series_follows (user_id INTEGER NOT NULL, tmdb_id INTEGER NOT NULL, season INTEGER DEFAULT 0, episode INTEGER DEFAULT 0, updated_at INTEGER DEFAULT 0, PRIMARY KEY (user_id, tmdb_id))`,
+  `CREATE TABLE IF NOT EXISTS creator_stars (id INTEGER PRIMARY KEY AUTOINCREMENT, creator_id INTEGER NOT NULL, user_id INTEGER DEFAULT 0, stars INTEGER DEFAULT 1, created_at INTEGER DEFAULT 0)`,
+  `CREATE INDEX IF NOT EXISTS idx_creator_stars_c ON creator_stars(creator_id, created_at)`,
+  `CREATE TABLE IF NOT EXISTS challenges (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, hashtag TEXT DEFAULT '', description TEXT DEFAULT '', starts_at TEXT DEFAULT '', ends_at TEXT DEFAULT '', is_active INTEGER DEFAULT 1, created_by INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS watch_cc (channel_id TEXT NOT NULL, country TEXT NOT NULL, bucket INTEGER NOT NULL, seconds INTEGER DEFAULT 0, views INTEGER DEFAULT 0, PRIMARY KEY (channel_id, country, bucket))`,
+  `CREATE TABLE IF NOT EXISTS user_watch (user_id INTEGER NOT NULL, kind TEXT NOT NULL, ref_id TEXT NOT NULL, ref_name TEXT DEFAULT '', sec INTEGER DEFAULT 0, updated_at INTEGER DEFAULT 0, PRIMARY KEY (user_id, kind, ref_id))`,
+  `CREATE TABLE IF NOT EXISTS admin_alert_rules (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, metric TEXT DEFAULT '', op TEXT DEFAULT 'gt', threshold REAL DEFAULT 0, enabled INTEGER DEFAULT 1, cooldown_s INTEGER DEFAULT 3600, last_fired_at INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS admin_alert_feed (id INTEGER PRIMARY KEY AUTOINCREMENT, rule_id INTEGER DEFAULT 0, level TEXT DEFAULT 'warn', message TEXT NOT NULL, data TEXT DEFAULT '', ack INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE INDEX IF NOT EXISTS idx_admin_alert_feed ON admin_alert_feed(ack, id)`,
+  `CREATE TABLE IF NOT EXISTS affiliates (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, kind TEXT DEFAULT 'cinema', url_template TEXT DEFAULT '', label TEXT DEFAULT '', enabled INTEGER DEFAULT 1, sort_order INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS user_quiz (user_id INTEGER PRIMARY KEY, answers_json TEXT DEFAULT '{}', done INTEGER DEFAULT 0, updated_at INTEGER DEFAULT 0)`,
+  `CREATE TABLE IF NOT EXISTS team_follows (user_id INTEGER NOT NULL, team_name TEXT NOT NULL, updated_at INTEGER DEFAULT 0, PRIMARY KEY (user_id, team_name))`,
 ];
 
 let schemaReady = false;
@@ -1089,6 +1106,27 @@ async function ensureSchema(env) {
       "CREATE INDEX IF NOT EXISTS idx_shorts_creator ON shorts(creator_id)",
     ]) {
       try { await env.DB.prepare(stmt).run(); } catch (e) { /* đã có — bỏ qua */ }
+    }
+    // MIGRATION: ĐỢT 48 — comments ghim/phút/voice · kênh vùng chặn/tài trợ/bảo trì ·
+    // ads/events/movie_sources vùng chặn · shorts hashtag · sessions ip · lịch đăng hết hạn
+    for (const stmt of [
+      "ALTER TABLE comments ADD COLUMN tstamp INTEGER DEFAULT -1",
+      "ALTER TABLE comments ADD COLUMN voice_url TEXT DEFAULT ''",
+      "ALTER TABLE comments ADD COLUMN kind TEXT DEFAULT 'comment'",
+      "ALTER TABLE comments ADD COLUMN pinned INTEGER DEFAULT 0",
+      "ALTER TABLE channels ADD COLUMN blocked_regions TEXT DEFAULT ''",
+      "ALTER TABLE channels ADD COLUMN is_sponsored INTEGER DEFAULT 0",
+      "ALTER TABLE events ADD COLUMN blocked_regions TEXT DEFAULT ''",
+      "ALTER TABLE ads ADD COLUMN blocked_regions TEXT DEFAULT ''",
+      "ALTER TABLE movie_sources ADD COLUMN blocked_regions TEXT DEFAULT ''",
+      "ALTER TABLE movie_sources ADD COLUMN label TEXT DEFAULT ''",
+      "ALTER TABLE shorts ADD COLUMN hashtags TEXT DEFAULT ''",
+      "ALTER TABLE channel_health ADD COLUMN maintenance_until INTEGER DEFAULT 0",
+      "ALTER TABLE sessions ADD COLUMN ip TEXT DEFAULT ''",
+      "ALTER TABLE scheduled_posts ADD COLUMN end_at TEXT DEFAULT ''",
+      "ALTER TABLE scheduled_posts ADD COLUMN is_active INTEGER DEFAULT 1",
+    ]) {
+      try { await env.DB.prepare(stmt).run(); } catch (e) { /* cột đã có — bỏ qua */ }
     }
     // Seed gói mặc định (admin sửa/thêm sau trong Admin → Gói cước)
     try {
@@ -1181,7 +1219,9 @@ async function handleAPI(path, request, env, ctx) {
     await ensureSchema(env);
     try {
       const now = new Date().toISOString().slice(0, 19).replace("T", " ");
-      const { results } = await env.DB.prepare("SELECT id, title, subtitle, image_url, link_type, link_value FROM events WHERE is_active = 1 AND (starts_at = '' OR starts_at IS NULL OR starts_at <= ?) AND (ends_at = '' OR ends_at IS NULL OR ends_at >= ?) ORDER BY sort_order ASC, id DESC LIMIT 20").bind(now, now).all();
+      const cc = viewerCountry(request);
+      // (B) chặn vùng: blocked_regions rỗng = toàn cầu
+      const { results } = await env.DB.prepare("SELECT id, title, subtitle, image_url, link_type, link_value FROM events WHERE is_active = 1 AND (starts_at = '' OR starts_at IS NULL OR starts_at <= ?) AND (ends_at = '' OR ends_at IS NULL OR ends_at >= ?) AND (blocked_regions IS NULL OR blocked_regions = '' OR INSTR(',' || blocked_regions || ',', ?) = 0) ORDER BY sort_order ASC, id DESC LIMIT 20").bind(now, now, "," + cc + ",").all();
       return json({ success: true, events: results || [] }, 200, request, env);
     } catch { return json({ success: true, events: [] }, 200, request, env); }
   }
@@ -1195,7 +1235,7 @@ async function handleAPI(path, request, env, ctx) {
   if (path === "/api/shorts/react") return await handleShortReact(request, env);
   if (path === "/auth/qr/request" || path === "/auth/qr/approve" || path === "/auth/qr/poll") return await handleQrLogin(request, env);
   if (path === "/api/broadcasts") return await handleBroadcasts(env, request);
-  if (path === "/api/channels") return await handleChannels(env);
+  if (path === "/api/channels") return await handleChannels(env, request);
   if (path === "/api/search") return await handleSearch(request, env);
   if (path === "/api/analytics") return await handleAnalytics(request, env);
   if (path === "/api/stats/beat" || path === "/api/stats/top" || path === "/api/stats/top-fans" || path === "/api/stats/trending") return await handleStats(path, request, env);
@@ -1221,6 +1261,18 @@ async function handleAPI(path, request, env, ctx) {
     return json({ success: true, plan: a.plan, preview_enabled: rank <= 1 && !a.guest, ...st }, 200, request, env);
   }
   if (path === "/api/predictions") return await handlePredictions(request, env);
+  // ---- ĐỢT 48: mã chia sẻ / progress đa thiết bị / follow series / sao creator / ...
+  if (path === "/api/movie/share" || path === "/api/codes" || path === "/api/codes/claim" || path === "/api/codes/my" || path.startsWith("/api/codes/")) return await handleShareCodesApi(path, request, env);
+  if (path.startsWith("/api/movie/progress") || path === "/api/resume") return await handleMovieProgressApi(path, request, env);
+  if (path.startsWith("/api/movie/series-follow")) return await handleSeriesFollowApi(path, request, env);
+  if (path === "/api/shorts/star") return await handleShortStar(request, env);
+  if (path === "/api/shorts/leaderboard" || path === "/api/shorts/creator/weekly") return await handleCreatorWeekly(request, env);
+  if (path === "/api/challenges") return await handleChallengesPublic(request, env);
+  if (path === "/api/affiliates") return await handleAffiliatesPublic(request, env);
+  if (path === "/api/wrapped") return await handleWrapped(request, env);
+  if (path === "/api/stats/top-country") return await handleCountryTop(request, env);
+  if (path === "/api/movie/certification") return json({ success: true, ok: true }, 200, request, env);
+  if (path.startsWith("/api/sports/follow")) return await handleTeamFollowApi(path, request, env);
   return json({ error: "Not found" }, 404, request, env);
 }
 
@@ -1323,6 +1375,11 @@ function publicChannel(ch, env) {
     protected: true, // client hiểu: phải xin token phát, không có URL sẵn
   };
   if (ch.health_status) out.health = ch.health_status; // up | flaky | down (từ bảng channel_health)
+  // (#54) biển bảo trì: status 'maintenance' + tới bao giờ + ghi chú
+  if (ch.maintenance_until) out.maintenance_until = ch.maintenance_until;
+  if (ch.health_note) out.maintenance_note = String(ch.health_note).slice(0, 160);
+  // (#86) kênh tài trợ — hiện huy hiệu "Tài trợ"
+  out.sponsored = !!ch.is_sponsored;
   if (streamUrlIsPublic(env)) {
     out.stream_url = ch.stream_url || "";
     out.user_agent = ch.user_agent || "";
@@ -1332,15 +1389,42 @@ function publicChannel(ch, env) {
   return out;
 }
 
+// Vùng quốc gia BLOCKLIST (#B): cột blocked_regions rỗng = phát toàn cầu.
+function cleanRegionList(raw) {
+  const seen = new Set();
+  for (const s of String(raw || "").split(",")) {
+    const c = s.trim().toUpperCase();
+    if (/^[A-Z]{2}$/.test(c)) seen.add(c);
+  }
+  return Array.from(seen);
+}
+function regionBlocked(row, cc) {
+  const country = String(cc || "").trim().toUpperCase();
+  if (!country || !/^[A-Z]{2}$/.test(country)) return false;
+  return cleanRegionList(row && (row.blocked_regions || row.blockedRegions)).includes(country);
+}
+function viewerCountry(request) {
+  const cf = (request && request.cf) || {};
+  return String(cf.country || "").trim().toUpperCase() || "";
+}
+
 async function handlePlaylist(env, request) {
   const refresh = request && new URL(request.url).searchParams.get("refresh") === "1";
+  // (Admin) cho phép xem thử playlist theo vùng khác — chỉ khi là admin
+  let country = viewerCountry(request);
+  const viewCountry = request && new URL(request.url).searchParams.get("viewCountry");
+  if (viewCountry && /^[A-Z]{2}$/.test(String(viewCountry))) {
+    const a = await getAuth(request, env);
+    const isAdmin = (a && a.user && a.user.role === "admin") || (request.headers.get("Authorization") || "") === `Bearer ${env.ADMIN_MASTER_TOKEN || ""}`;
+    if (isAdmin) country = String(viewCountry).toUpperCase();
+  }
   let d1_count = 0;
   if (hasDB(env)) {
     await ensureSchema(env);
     if (!refresh) {
       try {
-        const { results } = await env.DB.prepare("SELECT c.*, h.status AS health_status FROM channels c LEFT JOIN channel_health h ON h.channel_id = c.channel_id WHERE c.is_active = 1 ORDER BY c.id ASC").all();
-        if (results && results.length > 0) return json({ success: true, source: "d1", data: results.map((c) => publicChannel(c, env)), d1_count: results.length }, 200, request, env);
+        const { results } = await env.DB.prepare("SELECT c.*, h.status AS health_status, h.maintenance_until AS maintenance_until, h.note AS health_note FROM channels c LEFT JOIN channel_health h ON h.channel_id = c.channel_id WHERE c.is_active = 1 ORDER BY c.id ASC").all();
+        if (results && results.length > 0) return json({ success: true, source: "d1", data: results.filter((c) => !regionBlocked(c, country)).map((c) => publicChannel(c, env)), d1_count: results.length }, 200, request, env);
       } catch (e) { console.error("handlePlaylist D1 error:", e?.message || e); }
     }
   }
@@ -2021,13 +2105,15 @@ async function handleAdPreroll(request, env) {
   let ad = null;
   try {
     const now = new Date().toISOString().slice(0, 19).replace("T", " ");
+    const cc = viewerCountry(request);
     const { results } = await env.DB.prepare(
       `SELECT id, title, image_url, link_url, video_url FROM ads
        WHERE is_active = 1 AND slot = 'preroll'
          AND (starts_at = '' OR starts_at IS NULL OR starts_at <= ?)
          AND (ends_at = '' OR ends_at IS NULL OR ends_at >= ?)
+         AND (blocked_regions IS NULL OR blocked_regions = '' OR INSTR(',' || blocked_regions || ',', ?) = 0)
        ORDER BY sort_order ASC, id DESC LIMIT 10`
-    ).bind(now, now).all();
+    ).bind(now, now, "," + cc + ",").all();
     const list = results || [];
     if (list.length) ad = list[Math.floor(Math.random() * list.length)];
   } catch {}
@@ -2242,6 +2328,26 @@ async function handleStreamToken(request, env) {
     targetUrl = uParam;
   } else {
     return json({ error: "Thiếu tham số channel hoặc u" }, 400, request, env);
+  }
+
+  // (B) VÙNG QUỐC GIA BLOCKLIST — chặn cứng tại nguồn phát
+  const geoCountry = viewerCountry(request);
+  if (channel && regionBlocked(channel, geoCountry)) {
+    return json({ error: "REGION_BLOCKED", country: geoCountry, message: `Kênh không khả dụng ở vùng ${geoCountry}. Chọn kênh khác hoặc dùng VPN nếu bạn đang ở đúng quốc gia này.`, group: channel.group_title }, 403, request, env);
+  }
+  // (#54) Kênh đang bảo trì — chặn phát, kèm gợi ý kênh thay thế cùng nhóm
+  if (channel) {
+    try {
+      const { results: hr } = await env.DB.prepare("SELECT maintenance_until, note FROM channel_health WHERE channel_id = ?").bind(channel.channel_id).all();
+      const mUntil = hr && hr[0] ? (hr[0].maintenance_until || 0) : 0;
+      if (mUntil > Math.floor(Date.now() / 1000)) {
+        return json({
+          error: "CHANNEL_MAINTENANCE",
+          message: `Kênh đang bảo trì đến ${new Date(mUntil * 1000).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })} — thử kênh thay thế cùng nhóm nhé.`,
+          group: channel.group_title, name: channel.name, maintenance_until: mUntil, note: String((hr && hr[0] && hr[0].note) || "").slice(0, 160),
+        }, 403, request, env);
+      }
+    } catch {}
   }
 
   // 3) Entitlement PHÍA SERVER theo gói — không tin client (P0-B.2)
@@ -2513,7 +2619,7 @@ async function rewriteM3U8Sealed(text, targetUrl, proxyBase, ctx, env) {
 }
 
 // ========== AUTH ==========
-async function handleAuth(path, request, env) {
+async function handleAuth(path, request, env, ctx) {
   if (!hasDB(env)) return dbUnavailable();
   await ensureSchema(env);
   // QR login routes — must be handled inside handleAuth because fetch router dispatches /auth/* here
@@ -2679,10 +2785,17 @@ async function handleAuth(path, request, env) {
       const token = generateJWT(user.id, env);
       const expires = Date.now() + 30 * 24 * 3600 * 1000;
       try {
-        await env.DB.prepare("INSERT INTO sessions (user_id, token, expires_at, user_agent) VALUES (?, ?, ?, ?)").bind(user.id, token, expires, (request.headers.get("User-Agent") || "").slice(0, 160)).run();
+        await env.DB.prepare("INSERT INTO sessions (user_id, token, expires_at, user_agent, ip) VALUES (?, ?, ?, ?, ?)").bind(user.id, token, expires, (request.headers.get("User-Agent") || "").slice(0, 160), (request.headers.get("CF-Connecting-IP") || "").slice(0, 45)).run();
       } catch {
-        await env.DB.prepare("INSERT INTO sessions (user_id, token, expires_at) VALUES (?, ?, ?)").bind(user.id, token, expires).run();
+        try {
+          await env.DB.prepare("INSERT INTO sessions (user_id, token, expires_at, user_agent) VALUES (?, ?, ?, ?)").bind(user.id, token, expires, (request.headers.get("User-Agent") || "").slice(0, 160)).run();
+        } catch {
+          await env.DB.prepare("INSERT INTO sessions (user_id, token, expires_at) VALUES (?, ?, ?)").bind(user.id, token, expires).run();
+        }
       }
+
+      // (#48) Báo đăng nhập lạ qua email — chạy nền, không làm chậm đăng nhập
+      if (ctx && ctx.waitUntil) { try { ctx.waitUntil(maybeNewDeviceAlert(env, user.id, request)); } catch {} }
 
       // Track analytics
       try { await env.DB.prepare("INSERT INTO analytics (event, user_id, data) VALUES ('login', ?, ?)").bind(user.id, JSON.stringify({ login })).run(); } catch {}
@@ -3041,6 +3154,21 @@ async function handleUser(path, request, env) {
     return json({ success: true }, 200, request, env);
   }
 
+  // ========== ONBOARDING QUIZ (#61) — 3 câu hỏi → home cá nhân hoá ==========
+  if (path === "/user/quiz" && request.method === "GET") {
+    const { results } = await env.DB.prepare("SELECT answers_json, done FROM user_quiz WHERE user_id = ?").bind(user.id).all();
+    const row = results[0];
+    return json({ success: true, quiz: row ? JSON.parse(row.answers_json || "{}") : null, done: !!(row && row.done) }, 200, request, env);
+  }
+  if (path === "/user/quiz" && request.method === "PUT") {
+    const b = await request.json().catch(() => ({}));
+    const answers = (b.answers && typeof b.answers === "object") ? b.answers : {};
+    const done = b.done ? 1 : 0;
+    await env.DB.prepare("INSERT INTO user_quiz (user_id, answers_json, done, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET answers_json = ?, done = ?, updated_at = ?")
+      .bind(user.id, JSON.stringify(answers).slice(0, 2000), done, Math.floor(Date.now() / 1000), JSON.stringify(answers).slice(0, 2000), done, Math.floor(Date.now() / 1000)).run();
+    return json({ success: true }, 200, request, env);
+  }
+
   return json({ error: "Not found" }, 404, request, env);
 }
 
@@ -3115,6 +3243,13 @@ async function handleAdmin(path, request, env, ctx) {
   try { await logAudit(env, adminUser ? adminUser.id : 0, "admin.access", { path, ip, master: isMaster }); } catch {}
   adminAlert(env, ctx, "admin.access", { path, ip, user: adminUser ? adminUser.username : "master-token" });
 
+  // ---- ĐỢT 48: khu vực admin mới (cảnh báo in-dash, vùng chặn, bảo trì, challenge, affiliate, realtime) ----
+  if (path.startsWith("/admin/alerts") || path.startsWith("/admin/regions") || path.startsWith("/admin/maintenance") ||
+      path.startsWith("/admin/challenges") || path.startsWith("/admin/affiliates") || path.startsWith("/admin/realtime") ||
+      path.startsWith("/admin/wrapped") || path === "/admin/scheduled/preview") {
+    return await handleAdminPack48(path, request, env, { adminUser, isMaster });
+  }
+
   // Gói cước do admin quản lý
   if (path === "/admin/plans" && request.method === "GET") {
     const { results } = await env.DB.prepare("SELECT * FROM plans ORDER BY rank ASC").all();
@@ -3157,13 +3292,13 @@ async function handleAdmin(path, request, env, ctx) {
   if (path === "/admin/events" && request.method === "POST") {
     const b = await request.json().catch(() => ({}));
     if (!b.title) return json({ error: "Thiếu tiêu đề" }, 400, request, env);
-    await env.DB.prepare("INSERT INTO events (title, subtitle, image_url, link_type, link_value, starts_at, ends_at, is_active, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(String(b.title).slice(0, 120), String(b.subtitle || "").slice(0, 300), String(b.image_url || "").slice(0, 500), String(b.link_type || "none").slice(0, 20), String(b.link_value || "").slice(0, 300), String(b.starts_at || "").slice(0, 19), String(b.ends_at || "").slice(0, 19), b.is_active === 0 ? 0 : 1, parseInt(b.sort_order) || 0).run();
+    await env.DB.prepare("INSERT INTO events (title, subtitle, image_url, link_type, link_value, starts_at, ends_at, is_active, sort_order, blocked_regions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(String(b.title).slice(0, 120), String(b.subtitle || "").slice(0, 300), String(b.image_url || "").slice(0, 500), String(b.link_type || "none").slice(0, 20), String(b.link_value || "").slice(0, 300), String(b.starts_at || "").slice(0, 19), String(b.ends_at || "").slice(0, 19), b.is_active === 0 ? 0 : 1, parseInt(b.sort_order) || 0, cleanRegionList(b.blocked_regions).join(",")).run();
     return json({ success: true }, 200, request, env);
   }
   if (path === "/admin/events" && request.method === "PUT") {
     const b = await request.json().catch(() => ({}));
     if (!b.id) return json({ error: "Thiếu id" }, 400, request, env);
-    await env.DB.prepare("UPDATE events SET title = COALESCE(?, title), subtitle = COALESCE(?, subtitle), image_url = COALESCE(?, image_url), link_type = COALESCE(?, link_type), link_value = COALESCE(?, link_value), starts_at = COALESCE(?, starts_at), ends_at = COALESCE(?, ends_at), is_active = COALESCE(?, is_active), sort_order = COALESCE(?, sort_order) WHERE id = ?").bind(b.title ?? null, b.subtitle ?? null, b.image_url ?? null, b.link_type ?? null, b.link_value ?? null, b.starts_at ?? null, b.ends_at ?? null, b.is_active ?? null, b.sort_order ?? null, b.id).run();
+    await env.DB.prepare("UPDATE events SET title = COALESCE(?, title), subtitle = COALESCE(?, subtitle), image_url = COALESCE(?, image_url), link_type = COALESCE(?, link_type), link_value = COALESCE(?, link_value), starts_at = COALESCE(?, starts_at), ends_at = COALESCE(?, ends_at), is_active = COALESCE(?, is_active), sort_order = COALESCE(?, sort_order), blocked_regions = COALESCE(?, blocked_regions) WHERE id = ?").bind(b.title ?? null, b.subtitle ?? null, b.image_url ?? null, b.link_type ?? null, b.link_value ?? null, b.starts_at ?? null, b.ends_at ?? null, b.is_active ?? null, b.sort_order ?? null, b.blocked_regions === undefined ? null : cleanRegionList(b.blocked_regions).join(","), b.id).run();
     return json({ success: true }, 200, request, env);
   }
   if (path === "/admin/events" && request.method === "DELETE") {
@@ -3310,7 +3445,7 @@ async function handleAdmin(path, request, env, ctx) {
     const ch = await request.json().catch(() => ({}));
     if (!ch.channel_id || !ch.name || !ch.stream_url) return json({ error: "Thiếu thông tin kênh" }, 400, request, env);
     try {
-      await env.DB.prepare("INSERT OR REPLACE INTO channels (channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days, is_active, user_agent, referer, manifest_type, license_type, clear_key_id, clear_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(ch.channel_id, ch.name, ch.logo || "", ch.group_title || "", ch.stream_url, ch.catchup_type || "append", ch.catchup_days || 7, ch.is_active !== undefined ? ch.is_active : 1, (ch.user_agent || "").slice(0, 300), (ch.referer || "").slice(0, 300), (ch.manifest_type || "").slice(0, 16), (ch.license_type || "").slice(0, 32), (ch.clear_key_id || ch.clearKeyId || "").slice(0, 64), (ch.clear_key || ch.clearKey || "").slice(0, 64)).run();
+      await env.DB.prepare("INSERT OR REPLACE INTO channels (channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days, is_active, user_agent, referer, manifest_type, license_type, clear_key_id, clear_key, blocked_regions, is_sponsored) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(ch.channel_id, ch.name, ch.logo || "", ch.group_title || "", ch.stream_url, ch.catchup_type || "append", ch.catchup_days || 7, ch.is_active !== undefined ? ch.is_active : 1, (ch.user_agent || "").slice(0, 300), (ch.referer || "").slice(0, 300), (ch.manifest_type || "").slice(0, 16), (ch.license_type || "").slice(0, 32), (ch.clear_key_id || ch.clearKeyId || "").slice(0, 64), (ch.clear_key || ch.clearKey || "").slice(0, 64), cleanRegionList(ch.blocked_regions).join(","), ch.is_sponsored ? 1 : 0).run();
     } catch {
       await env.DB.prepare("INSERT OR REPLACE INTO channels (channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").bind(ch.channel_id, ch.name, ch.logo || "", ch.group_title || "", ch.stream_url, ch.catchup_type || "append", ch.catchup_days || 7, ch.is_active !== undefined ? ch.is_active : 1).run();
     }
@@ -3572,13 +3707,13 @@ async function handleAdmin(path, request, env, ctx) {
   }
   if (path === "/admin/ads" && request.method === "POST") {
     const b = await request.json().catch(() => ({}));
-    await env.DB.prepare("INSERT INTO ads (slot, title, image_url, link_url, video_url, starts_at, ends_at, sort_order, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(String(b.slot || "banner").slice(0, 30), String(b.title || "").slice(0, 120), String(b.image_url || "").slice(0, 500), String(b.link_url || "").slice(0, 500), String(b.video_url || "").slice(0, 500), String(b.starts_at || "").slice(0, 19), String(b.ends_at || "").slice(0, 19), parseInt(b.sort_order) || 0, b.is_active === 0 ? 0 : 1).run();
+    await env.DB.prepare("INSERT INTO ads (slot, title, image_url, link_url, video_url, starts_at, ends_at, sort_order, is_active, blocked_regions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(String(b.slot || "banner").slice(0, 30), String(b.title || "").slice(0, 120), String(b.image_url || "").slice(0, 500), String(b.link_url || "").slice(0, 500), String(b.video_url || "").slice(0, 500), String(b.starts_at || "").slice(0, 19), String(b.ends_at || "").slice(0, 19), parseInt(b.sort_order) || 0, b.is_active === 0 ? 0 : 1, cleanRegionList(b.blocked_regions).join(",")).run();
     return json({ success: true }, 200, request, env);
   }
   if (path === "/admin/ads" && request.method === "PUT") {
     const b = await request.json().catch(() => ({}));
     if (!b.id) return json({ error: "Thiếu id" }, 400, request, env);
-    await env.DB.prepare("UPDATE ads SET slot = ?, title = ?, image_url = ?, link_url = ?, video_url = ?, starts_at = ?, ends_at = ?, sort_order = ?, is_active = ? WHERE id = ?").bind(String(b.slot || "banner").slice(0, 30), String(b.title || "").slice(0, 120), String(b.image_url || "").slice(0, 500), String(b.link_url || "").slice(0, 500), String(b.video_url || "").slice(0, 500), String(b.starts_at || "").slice(0, 19), String(b.ends_at || "").slice(0, 19), parseInt(b.sort_order) || 0, b.is_active === 0 ? 0 : 1, b.id).run();
+    await env.DB.prepare("UPDATE ads SET slot = ?, title = ?, image_url = ?, link_url = ?, video_url = ?, starts_at = ?, ends_at = ?, sort_order = ?, is_active = ?, blocked_regions = ? WHERE id = ?").bind(String(b.slot || "banner").slice(0, 30), String(b.title || "").slice(0, 120), String(b.image_url || "").slice(0, 500), String(b.link_url || "").slice(0, 500), String(b.video_url || "").slice(0, 500), String(b.starts_at || "").slice(0, 19), String(b.ends_at || "").slice(0, 19), parseInt(b.sort_order) || 0, b.is_active === 0 ? 0 : 1, cleanRegionList(b.blocked_regions).join(","), b.id).run();
     return json({ success: true }, 200, request, env);
   }
   if (path === "/admin/ads" && request.method === "DELETE") {
@@ -3616,14 +3751,16 @@ async function handleAdmin(path, request, env, ctx) {
     if (!chk.ok) return json({ error: chk.error }, 400, request, env);
     const active = b.is_active === 0 ? 0 : 1;
     const order = parseInt(b.sort_order, 10) || 0;
+    const label = String(b.label || "").trim().slice(0, 20);
+    const regions = cleanRegionList(b.blocked_regions).join(",");
     if (request.method === "POST") {
-      const r = await env.DB.prepare("INSERT INTO movie_sources (name, kind, url_template, license_note, is_active, sort_order) VALUES (?, ?, ?, ?, ?, ?)")
-        .bind(name, kind, tpl, note, active, order).run();
+      const r = await env.DB.prepare("INSERT INTO movie_sources (name, kind, url_template, license_note, is_active, sort_order, label, blocked_regions) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+        .bind(name, kind, tpl, note, active, order, label, regions).run();
       await logAudit(env, adminUser?.id || 0, "movie_source.add", { id: r?.meta?.last_row_id, name, origin: chk.origin });
     } else {
       if (!b.id) return json({ error: "Thiếu id" }, 400, request, env);
-      await env.DB.prepare("UPDATE movie_sources SET name = ?, kind = ?, url_template = ?, license_note = ?, is_active = ?, sort_order = ? WHERE id = ?")
-        .bind(name, kind, tpl, note, active, order, parseInt(b.id, 10) || 0).run();
+      await env.DB.prepare("UPDATE movie_sources SET name = ?, kind = ?, url_template = ?, license_note = ?, is_active = ?, sort_order = ?, label = ?, blocked_regions = ? WHERE id = ?")
+        .bind(name, kind, tpl, note, active, order, label, regions, parseInt(b.id, 10) || 0).run();
       await logAudit(env, adminUser?.id || 0, "movie_source.update", { id: b.id, name, origin: chk.origin });
     }
     return json({ success: true }, 200, request, env);
@@ -3653,7 +3790,14 @@ async function handleAdmin(path, request, env, ctx) {
   if (path === "/admin/scheduled" && request.method === "POST") {
     const b = await request.json().catch(() => ({}));
     if (!["broadcast", "notify", "event"].includes(b.kind) || !b.publish_at) return json({ error: "Thiếu kind/publish_at" }, 400, request, env);
-    await env.DB.prepare("INSERT INTO scheduled_posts (kind, title, body, link_type, link_value, image_url, publish_at) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(b.kind, String(b.title || "").slice(0, 160), String(b.body || "").slice(0, 1000), String(b.link_type || "none").slice(0, 20), String(b.link_value || "").slice(0, 200), String(b.image_url || "").slice(0, 500), String(b.publish_at).slice(0, 19).replace("T", " ")).run();
+    await env.DB.prepare("INSERT INTO scheduled_posts (kind, title, body, link_type, link_value, image_url, publish_at, end_at, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(b.kind, String(b.title || "").slice(0, 160), String(b.body || "").slice(0, 1000), String(b.link_type || "none").slice(0, 20), String(b.link_value || "").slice(0, 200), String(b.image_url || "").slice(0, 500), String(b.publish_at).slice(0, 19).replace("T", " "), String(b.end_at || "").slice(0, 19).replace("T", " "), b.is_active === 0 ? 0 : 1).run();
+    return json({ success: true }, 200, request, env);
+  }
+  if (path === "/admin/scheduled" && request.method === "PUT") {
+    const b = await request.json().catch(() => ({}));
+    if (!b.id) return json({ error: "Thiếu id" }, 400, request, env);
+    await env.DB.prepare("UPDATE scheduled_posts SET kind = COALESCE(?, kind), title = COALESCE(?, title), body = COALESCE(?, body), link_type = COALESCE(?, link_type), link_value = COALESCE(?, link_value), image_url = COALESCE(?, image_url), publish_at = COALESCE(?, publish_at), end_at = COALESCE(?, end_at), is_active = COALESCE(?, is_active) WHERE id = ?")
+      .bind(b.kind ?? null, b.title ?? null, b.body ?? null, b.link_type ?? null, b.link_value ?? null, b.image_url ?? null, b.publish_at ? String(b.publish_at).slice(0, 19).replace("T", " ") : null, b.end_at ? String(b.end_at).slice(0, 19).replace("T", " ") : null, b.is_active ?? null, b.id).run();
     return json({ success: true }, 200, request, env);
   }
   if (path === "/admin/scheduled" && request.method === "DELETE") {
@@ -3671,6 +3815,11 @@ async function handleAdmin(path, request, env, ctx) {
   if (path === "/admin/comments" && request.method === "PUT") {
     const b = await request.json().catch(() => ({}));
     const ids = Array.isArray(b.ids) ? b.ids.map((x) => parseInt(x) || 0).filter(Boolean).slice(0, 100) : (b.id ? [parseInt(b.id) || 0] : []);
+    // (#39) ghim bình luận (1 phim/kênh/short ghim tối đa 3)
+    if (ids.length && b.pinned !== undefined) {
+      for (const id of ids) await env.DB.prepare("UPDATE comments SET pinned = ? WHERE id = ?").bind(b.pinned ? 1 : 0, id).run();
+      return json({ success: true, count: ids.length }, 200, request, env);
+    }
     if (!ids.length || !["visible", "hidden"].includes(b.status)) return json({ error: "Thiếu ids/status" }, 400, request, env);
     for (const id of ids) await env.DB.prepare("UPDATE comments SET status = ? WHERE id = ?").bind(b.status, id).run();
     await logAudit(env, adminUser?.id || 0, "comments." + b.status, { count: ids.length });
@@ -3867,7 +4016,7 @@ async function handleSessions(request, env) {
   if (!auth || !auth.user) return json({ error: "Chưa đăng nhập" }, 401, request, env);
   const cur = (request.headers.get("Authorization") || "").slice(7);
   if (request.method === "GET") {
-    const { results } = await env.DB.prepare("SELECT id, user_agent, expires_at, created_at FROM sessions WHERE user_id = ? AND expires_at > ? ORDER BY created_at DESC LIMIT 20").bind(auth.user.id, Date.now()).all();
+    const { results } = await env.DB.prepare("SELECT id, user_agent, ip, expires_at, created_at FROM sessions WHERE user_id = ? AND expires_at > ? ORDER BY created_at DESC LIMIT 20").bind(auth.user.id, Date.now()).all();
     let currentId = 0;
     try {
       const { results: me } = await env.DB.prepare("SELECT id FROM sessions WHERE token = ?").bind(cur).all();
@@ -3878,6 +4027,11 @@ async function handleSessions(request, env) {
   if (request.method === "DELETE") {
     const { id } = await request.json().catch(() => ({}));
     if (!id) return json({ error: "Thiếu id" }, 400, request, env);
+    if (String(id).toLowerCase() === "others") {
+      // (#48) đá toàn bộ thiết bị khác, giữ lại thiết bị hiện tại
+      const n = await env.DB.prepare("DELETE FROM sessions WHERE user_id = ? AND token != ?").bind(auth.user.id, cur).run();
+      return json({ success: true, revoked: (n && (n.meta?.changes || n.changes)) || 0 }, 200, request, env);
+    }
     await env.DB.prepare("DELETE FROM sessions WHERE id = ? AND user_id = ?").bind(id, auth.user.id).run();
     return json({ success: true }, 200, request, env);
   }
@@ -4329,11 +4483,12 @@ async function handleBroadcasts(env, request) {
 // ========== CHANNELS ==========
 async function handleChannels(env, request) {
   const refresh = request && new URL(request.url).searchParams.get("refresh") === "1";
+  const country = viewerCountry(request);
   if (hasDB(env)) {
     await ensureSchema(env);
     try {
-      const { results } = await env.DB.prepare("SELECT c.*, h.status AS health_status FROM channels c LEFT JOIN channel_health h ON h.channel_id = c.channel_id WHERE c.is_active = 1 ORDER BY c.id ASC").all();
-      if (results && results.length > 0 && !refresh) return json({ success: true, channels: results.map((c) => publicChannel(c, env)) }, 200, request, env);
+      const { results } = await env.DB.prepare("SELECT c.*, h.status AS health_status, h.maintenance_until AS maintenance_until, h.note AS health_note FROM channels c LEFT JOIN channel_health h ON h.channel_id = c.channel_id WHERE c.is_active = 1 ORDER BY c.id ASC").all();
+      if (results && results.length > 0 && !refresh) return json({ success: true, channels: results.filter((c) => !regionBlocked(c, country)).map((c) => publicChannel(c, env)) }, 200, request, env);
     } catch (e) { console.error("handleChannels D1 error:", e?.message || e); }
   }
   // Bảng rỗng hoặc yêu cầu refresh → nạp từ nguồn M3U và lưu vào D1
@@ -4341,7 +4496,7 @@ async function handleChannels(env, request) {
   if (hasDB(env) && fromSource && fromSource.length > 0) {
     await writeChannels(env, fromSource);
   }
-  return json({ success: true, channels: fromSource.map((c) => publicChannel(c, env)) }, 200, request, env);
+  return json({ success: true, channels: fromSource.filter((c) => !regionBlocked(c, country)).map((c) => publicChannel(c, env)) }, 200, request, env);
 }
 
 // Ghi danh sách kênh vào D1 (thay toàn bộ, dùng batch). Trả số kênh đã ghi (0 nếu không có DB).
@@ -4481,6 +4636,8 @@ const JOB_DEFS = {
   // tên: [chu kỳ giây, thời gian giữ khoá giây]
   channel_health: [600, 60],
   db_cleanup: [21600, 60],
+  p48_alerts: [300, 45],
+  p48_scheduled: [60, 30],
 };
 
 // Nhận việc: trả true nếu request này được quyền chạy job (đã tới hạn + chưa ai giữ khoá).
@@ -4524,10 +4681,20 @@ async function runDueJobs(env) {
           env.DB.prepare("DELETE FROM watch_pulse WHERE bucket < ?").bind(Math.floor(nowS / 300) - 24),
           env.DB.prepare("DELETE FROM player_errors WHERE created_at < datetime('now', '-14 days')"),
           env.DB.prepare("DELETE FROM channel_reports WHERE status = 'closed' AND created_at < datetime('now', '-30 days')"),
+          // (A) mã chia sẻ phim hết hạn + mã resume quá cũ
+          env.DB.prepare("DELETE FROM movie_share_codes WHERE expires_at > 0 AND expires_at < ?").bind(nowS),
+          env.DB.prepare("DELETE FROM resume_codes WHERE expires_at < ?").bind(nowS),
+          // (B) presence/xp/creator_stars cũ
+          env.DB.prepare("DELETE FROM creator_stars WHERE created_at < ?").bind(nowS - 120 * 86400),
+          env.DB.prepare("DELETE FROM admin_alert_feed WHERE ack = 1 AND created_at < datetime('now', '-30 days')"),
+          env.DB.prepare("DELETE FROM watch_cc WHERE bucket < ?").bind(Math.floor(nowS / 300) - 576),
+          env.DB.prepare("DELETE FROM movie_progress WHERE updated_at < ?").bind(nowS - 200 * 86400),
         ]);
       } catch (e) { msg = "error: " + (e?.message || e); }
       await finishJob(env, "db_cleanup", msg);
     }
+    // Đợt 48: cảnh báo in-dash (#57) + lịch đăng (#56)
+    await p48RunDueJobs(env);
   } catch {}
 }
 
@@ -4565,11 +4732,13 @@ async function runChannelHealthCheck(env, limit = 12, onlyIds = null) {
     const r = await env.DB.prepare(`SELECT channel_id, name, stream_url, user_agent, referer FROM channels WHERE channel_id IN (${marks})`).bind(...onlyIds).all();
     rows = r.results || [];
   } else {
+    const nowSq = Math.floor(Date.now() / 1000);
     const r = await env.DB.prepare(
       `SELECT c.channel_id, c.name, c.stream_url, c.user_agent, c.referer
        FROM channels c LEFT JOIN channel_health h ON h.channel_id = c.channel_id
-       WHERE c.is_active = 1 ORDER BY COALESCE(h.checked_at, 0) ASC LIMIT ?`
-    ).bind(Math.max(1, Math.min(30, limit))).all();
+       WHERE c.is_active = 1 AND COALESCE(h.maintenance_until, 0) <= ?
+       ORDER BY COALESCE(h.checked_at, 0) ASC LIMIT ?`
+    ).bind(nowSq, Math.max(1, Math.min(30, limit))).all();
     rows = r.results || [];
   }
   if (!rows.length) return "no-channels";
@@ -4865,6 +5034,17 @@ async function handleStats(path, request, env) {
         const bucket = Math.floor(nowS / 300);
         await env.DB.prepare("INSERT INTO watch_pulse (channel_id, bucket, seconds, views) VALUES (?, ?, ?, ?) ON CONFLICT(channel_id, bucket) DO UPDATE SET seconds = seconds + ?, views = views + ?")
           .bind(refId, bucket, sec, b.viewed ? 1 : 0, sec, b.viewed ? 1 : 0).run();
+        // (#5) tách theo quốc gia người xem — "Đang hot tại 🇻🇳"
+        const cc = String(((b && b.country) || (request.cf && request.cf.country) || "")).trim().toUpperCase().slice(0, 2);
+        if (/^[A-Z]{2}$/.test(cc)) {
+          await env.DB.prepare("INSERT INTO watch_cc (channel_id, country, bucket, seconds, views) VALUES (?, ?, ?, ?, ?) ON CONFLICT(channel_id, country, bucket) DO UPDATE SET seconds = seconds + ?, views = views + ?")
+            .bind(refId, cc, bucket, sec, b.viewed ? 1 : 0, sec, b.viewed ? 1 : 0).run();
+        }
+      }
+      // (#84) dữ liệu cho Wrapped: giây xem theo loại
+      if (uid && refId && sec > 0) {
+        await env.DB.prepare("INSERT INTO user_watch (user_id, kind, ref_id, ref_name, sec, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(user_id, kind, ref_id) DO UPDATE SET sec = sec + excluded.sec, ref_name = COALESCE(NULLIF(excluded.ref_name, ''), ref_name), updated_at = excluded.updated_at")
+          .bind(uid, kind, refId.slice(0, 80), refName, sec, nowS).run();
       }
       if (uid && sec > 0) {
         const xp = Math.floor(sec / 60); // 1 phút xem = 1 XP
@@ -4968,7 +5148,7 @@ async function handleComments(request, env) {
   if (request.method === "GET") {
     const target = String(q.get("target") || "").slice(0, 100);
     if (!target) return json({ error: "Thiếu target" }, 400, request, env);
-    const { results } = await env.DB.prepare("SELECT id, user_id, name, body, created_at FROM comments WHERE target = ? AND status = 'visible' ORDER BY id DESC LIMIT 50").bind(target).all();
+    const { results } = await env.DB.prepare("SELECT id, user_id, name, body, created_at, tstamp, voice_url, kind, pinned FROM comments WHERE target = ? AND status = 'visible' ORDER BY pinned DESC, id DESC LIMIT 100").bind(target).all();
     return json({ success: true, comments: results || [] }, 200, request, env);
   }
   const auth = await getAuth(request, env);
@@ -4983,7 +5163,12 @@ async function handleComments(request, env) {
     const body = String(b.body || "").trim().slice(0, 500);
     if (!target || !body) return json({ error: "Thiếu nội dung" }, 400, request, env);
     const name = String(auth.user.display_name || auth.user.username || "Bạn xem").slice(0, 40);
-    const r = await env.DB.prepare("INSERT INTO comments (target, user_id, name, body) VALUES (?, ?, ?, ?)").bind(target, auth.user.id, name, body).run();
+    // (#9) bình luận gắn phút: tstamp >= 0; (#68) voice-note: voice_url (dataURL nhỏ) + kind='voice'
+    const tstamp = Number.isFinite(Number(b.tstamp)) && Number(b.tstamp) >= 0 ? Math.floor(Number(b.tstamp)) : -1;
+    const voice_url = String(b.voice_url || "").slice(0, 600000);
+    const kind = b.kind === "voice" ? "voice" : "comment";
+    const insert = "INSERT INTO comments (target, user_id, name, body, tstamp, voice_url, kind) VALUES (?, ?, ?, ?, ?, ?, ?)";
+    const r = await env.DB.prepare(insert).bind(target, auth.user.id, name, body, tstamp, voice_url, kind).run();
     try { await env.DB.prepare("INSERT INTO user_xp (user_id, xp, watch_sec, updated_at) VALUES (?, 2, 0, ?) ON CONFLICT(user_id) DO UPDATE SET xp = xp + 2").bind(auth.user.id, Math.floor(Date.now() / 1000)).run(); } catch {}
     return json({ success: true, id: r.meta?.last_row_id || 0 }, 200, request, env);
   }
@@ -5257,10 +5442,11 @@ async function handleAds(request, env) {
   await ensureSchema(env);
   if (request.method !== "GET") return json({ error: "Not found" }, 404, request, env);
   const slot = String(new URL(request.url).searchParams.get("slot") || "").slice(0, 30);
+  const cc = viewerCountry(request);
   try {
     const now = new Date().toISOString().slice(0, 19).replace("T", " ");
-    let sql = "SELECT id, slot, title, image_url, link_url, video_url FROM ads WHERE is_active = 1 AND (starts_at = '' OR starts_at IS NULL OR starts_at <= ?) AND (ends_at = '' OR ends_at IS NULL OR ends_at >= ?)";
-    const args = [now, now];
+    let sql = "SELECT id, slot, title, image_url, link_url, video_url FROM ads WHERE is_active = 1 AND (starts_at = '' OR starts_at IS NULL OR starts_at <= ?) AND (ends_at = '' OR ends_at IS NULL OR ends_at >= ?) AND (blocked_regions IS NULL OR blocked_regions = '' OR INSTR(',' || blocked_regions || ',', ?) = 0)";
+    const args = [now, now, "," + cc + ","];
     if (slot) { sql += " AND slot = ?"; args.push(slot); }
     sql += " ORDER BY sort_order ASC, id DESC LIMIT 10";
     const { results } = await env.DB.prepare(sql).bind(...args).all();
@@ -5294,9 +5480,11 @@ async function handleMovieSources(request, env) {
 
   let rows = [];
   try {
+    const cc = viewerCountry(request);
+    // (B) lọc vùng chặn ở movie_sources — nguồn không phát được ở quốc gia của khán giả
     const { results } = await env.DB.prepare(
-      "SELECT id, name, kind, url_template FROM movie_sources WHERE is_active = 1 ORDER BY sort_order ASC, id ASC LIMIT 20"
-    ).all();
+      "SELECT id, name, kind, url_template, label FROM movie_sources WHERE is_active = 1 AND (blocked_regions IS NULL OR blocked_regions = '' OR INSTR(',' || blocked_regions || ',', ?) = 0) ORDER BY sort_order ASC, id ASC LIMIT 20"
+    ).bind("," + cc + ",").all();
     rows = results || [];
   } catch { rows = []; } // bảng lỗi cũng không sao — nguồn mặc định vẫn chạy
 
@@ -5318,7 +5506,9 @@ async function handleMovieSources(request, env) {
       origin = u.origin.toLowerCase();
     } catch { continue; }
     if (!allow.includes(origin)) continue;
-    out.push({ id: r.id, name: String(r.name || "Nguồn").slice(0, 40), kind: r.kind === "hls" ? "hls" : "embed", url });
+    // (#29) label chất lượng nguồn (HD/4K...) để so "bản ngon hơn"
+    const label = String(r.label || "").trim().slice(0, 20) || "";
+    out.push({ id: r.id, name: String(r.name || "Nguồn").slice(0, 40), kind: r.kind === "hls" ? "hls" : "embed", url, label });
   }
   return json({ success: true, sources: out }, 200, request, env);
 }
@@ -5535,4 +5725,794 @@ function handleWebSocket(request, env, ctx) {
   });
 
   return new Response(null, { status: 101, webSocket: client });
+}
+
+// ============================================================================
+// ĐỢT 48 TÍNH NĂNG MỚI — handlers dùng chung (thêm cuối file, function hoisted)
+// ============================================================================
+const P48_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // bỏ 0/O,1/I/L
+function genP48Code(len = 6) {
+  const b = crypto.getRandomValues(new Uint8Array(len));
+  let s = "";
+  for (let i = 0; i < len; i++) s += P48_ALPHABET[b[i] % P48_ALPHABET.length];
+  return s;
+}
+function genP48Num(len = 6) {
+  const b = crypto.getRandomValues(new Uint8Array(len));
+  let s = "";
+  for (let i = 0; i < len; i++) s += String(b[i] % 10);
+  return s;
+}
+function xpAdd(env, userId, xp) {
+  if (!userId) return;
+  try {
+    return env.DB.prepare("INSERT INTO user_xp (user_id, xp, watch_sec, updated_at) VALUES (?, ?, 0, ?) ON CONFLICT(user_id) DO UPDATE SET xp = xp + ?")
+      .bind(userId, xp, Math.floor(Date.now() / 1000), xp).run();
+  } catch (e) { return null; }
+}
+function xpGet(env, userId) {
+  try { return env.DB.prepare("SELECT xp FROM user_xp WHERE user_id = ?").bind(userId).first(); } catch { return null; }
+}
+async function p48UserName(env, userId) {
+  try {
+    const r = await env.DB.prepare("SELECT COALESCE(display_name, username, '') AS n FROM users WHERE id = ?").bind(userId).all();
+    return (r.results && r.results[0] && r.results[0].n) || "";
+  } catch { return ""; }
+}
+// Người xem đang ở vùng nào (B)
+function regionCountryOf(request) {
+  return viewerCountry(request);
+}
+function p48StoreCode(env, { kind = "movie", media_type = "movie", tmdb_id = 0, season = 0, episode = 0, payload = "", userId = 0, name = "", ttlMin = 10, code = null }) {
+  const c = code || genP48Code();
+  const exp = Math.floor(Date.now() / 1000) + Math.max(1, parseInt(ttlMin, 10) || 10) * 60;
+  return env.DB.prepare("INSERT OR REPLACE INTO movie_share_codes (code, kind, media_type, tmdb_id, season, episode, payload, created_by, created_by_name, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+    .bind(c, String(kind).slice(0, 16), media_type === "tv" ? "tv" : "movie", parseInt(tmdb_id) || 0, parseInt(season) || 0, parseInt(episode) || 0, String(payload).slice(0, 2000), userId, String(name || "").slice(0, 40), exp).run()
+    .then(() => c);
+}
+function p48ReadCode(env, code) {
+  const c = String(code || "").trim().toUpperCase().slice(0, 32);
+  if (!c) return Promise.resolve(null);
+  return env.DB.prepare("SELECT * FROM movie_share_codes WHERE code = ?").bind(c).first().then((row) => row || null).catch(() => null);
+}
+
+// ---------- /api/movie/share (A) + mã tổng quát (#2) + mời bạn (#10) + kèo (#35) + playlist (#11) ----------
+async function handleShareCodesApi(path, request, env) {
+  if (!hasDB(env)) return dbUnavailable();
+  await ensureSchema(env);
+  const q = new URL(request.url).searchParams;
+  const method = request.method;
+
+  // --- Tạo mã (movie) — login + 20/h ---
+  if (path === "/api/movie/share" && method === "POST") {
+    const auth = await getAuth(request, env);
+    if (!auth || !auth.user) return json({ error: "LOGIN_REQUIRED", message: "Đăng nhập để tạo mã chia sẻ." }, 401, request, env);
+    try {
+      const rl = await rateLimitCheck(env, "mvshare:u:" + auth.user.id, 20, 3600);
+      if (!rl.allowed) return json({ error: "Bạn tạo mã hơi nhanh — thử lại sau.", code: "RATE_LIMITED" }, 429, request, env);
+    } catch {}
+    const b = await request.json().catch(() => ({}));
+    const media_type = b.media_type === "tv" ? "tv" : "movie";
+    const tmdb_id = parseInt(b.tmdb_id, 10) || 0;
+    if (!tmdb_id) return json({ error: "Thiếu tmdb_id" }, 400, request, env);
+    const code = await p48StoreCode(env, { kind: "movie", media_type, tmdb_id, season: parseInt(b.season) || 0, episode: parseInt(b.episode) || 0, userId: auth.user.id, name: auth.user.display_name || auth.user.username, ttlMin: 10 });
+    return json({ success: true, code, kind: "movie", media_type, tmdb_id, ttl_sec: 600, unlimited: true }, 200, request, env);
+  }
+
+  // --- Nhập mã (movie) — public + rate-limit IP ---
+  if (path === "/api/movie/share" && method === "GET") {
+    const code = String(q.get("code") || "").trim().toUpperCase().slice(0, 32);
+    if (!code) return json({ error: "Thiếu code" }, 400, request, env);
+    try {
+      const rl = await rateLimitCheck(env, "mvin:ip:" + (request.headers.get("CF-Connecting-IP") || "local"), 60, 60);
+      if (!rl.allowed) return json({ error: "Thử lại sau ít phút.", code: "RATE_LIMITED" }, 429, request, env);
+    } catch {}
+    const row = await p48ReadCode(env, code);
+    if (!row) return json({ error: "Mã không tồn tại hoặc đã hết hạn", code: "NOT_FOUND" }, 404, request, env);
+    if (row.expires_at && row.expires_at < Math.floor(Date.now() / 1000)) {
+      try { await env.DB.prepare("DELETE FROM movie_share_codes WHERE code = ?").bind(row.code).run(); } catch {}
+      return json({ error: "Mã đã hết hạn (10 phút) — xin mã mới nhé.", code: "EXPIRED" }, 410, request, env);
+    }
+    return json({ success: true, code: row.code, kind: row.kind, media_type: row.media_type, tmdb_id: row.tmdb_id, season: row.season, episode: row.episode, payload: safeJsonParseP48(row.payload, {}), created_by_name: row.created_by_name }, 200, request, env);
+  }
+
+  // --- Tạo mã tổng quát theo kind (#2/#10/#35/#11) ---
+  if (path === "/api/codes" && method === "POST") {
+    const auth = await getAuth(request, env);
+    if (!auth || !auth.user) return json({ error: "LOGIN_REQUIRED" }, 401, request, env);
+    const b = await request.json().catch(() => ({}));
+    const kind = String(b.kind || "movie").slice(0, 16);
+    const allowedKinds = ["movie", "channel", "event", "party", "invite", "challenge", "playlist", "resume", "short", "creator"];
+    if (!allowedKinds.includes(kind)) return json({ error: "kind không hợp lệ" }, 400, request, env);
+    try {
+      const rl = await rateLimitCheck(env, "p48code:u:" + auth.user.id, 30, 3600);
+      if (!rl.allowed) return json({ error: "Tạo mã hơi nhanh — thử lại sau.", code: "RATE_LIMITED" }, 429, request, env);
+    } catch {}
+    const name = auth.user.display_name || auth.user.username || "";
+    if (kind === "invite") {
+      // mỗi user 1 mã mời dài hạn (lấy lại nếu còn)
+      const existing = await env.DB.prepare("SELECT code, expires_at FROM movie_share_codes WHERE kind = 'invite' AND created_by = ?").bind(auth.user.id).first().catch(() => null);
+      if (existing) return json({ success: true, code: existing.code, kind: "invite", reused: true }, 200, request, env);
+      const code = await p48StoreCode(env, { kind: "invite", userId: auth.user.id, name, ttlMin: 60 * 24 * 365, payload: JSON.stringify({ type: "invite" }) });
+      return json({ success: true, code, kind: "invite", reused: false }, 200, request, env);
+    }
+    const code = await p48StoreCode(env, { kind, media_type: b.media_type || "movie", tmdb_id: b.tmdb_id, season: b.season, episode: b.episode, payload: typeof b.payload === "string" ? b.payload : JSON.stringify(b.payload || {}), userId: auth.user.id, name, ttlMin: parseInt(b.ttl_min, 10) > 0 ? Math.min(parseInt(b.ttl_min, 10), 60 * 24) : 10 });
+    return json({ success: true, code, kind, ttl_sec: 600 }, 200, request, env);
+  }
+
+  // --- Mã của tôi ---
+  if (path === "/api/codes/my" && method === "GET") {
+    const auth = await getAuth(request, env);
+    if (!auth || !auth.user) return json({ error: "LOGIN_REQUIRED" }, 401, request, env);
+    const r = await env.DB.prepare("SELECT code, kind, media_type, tmdb_id, season, episode, payload, created_at, expires_at FROM movie_share_codes WHERE created_by = ? AND (expires_at = 0 OR expires_at > ?) ORDER BY created_at DESC, code DESC LIMIT 30").bind(auth.user.id, Math.floor(Date.now() / 1000)).all().catch(() => ({ results: [] }));
+    return json({ success: true, codes: (r.results || []).map((x) => ({ ...x, payload: safeJsonParseP48(x.payload, {}) })) }, 200, request, env);
+  }
+
+  // --- Nhập mã tổng quát (#1 party / #11 playlist / #35 kèo) ---
+  if (path === "/api/codes" && method === "GET") {
+    const code = String(q.get("code") || "").trim().toUpperCase().slice(0, 32);
+    if (!code) return json({ error: "Thiếu code" }, 400, request, env);
+    try {
+      const rl = await rateLimitCheck(env, "p48in:ip:" + (request.headers.get("CF-Connecting-IP") || "local"), 60, 60);
+      if (!rl.allowed) return json({ error: "Thử lại sau ít phút.", code: "RATE_LIMITED" }, 429, request, env);
+    } catch {}
+    const row = await p48ReadCode(env, code);
+    if (!row) return json({ error: "Mã không tồn tại hoặc đã hết hạn", code: "NOT_FOUND" }, 404, request, env);
+    if (row.expires_at && row.expires_at < Math.floor(Date.now() / 1000)) {
+      try { await env.DB.prepare("DELETE FROM movie_share_codes WHERE code = ?").bind(row.code).run(); } catch {}
+      return json({ error: "Mã đã hết hạn", code: "EXPIRED" }, 410, request, env);
+    }
+    if (row.kind === "invite") {
+      // xem thử thông tin (không tặng quà khi chỉ GET) — claim ở POST /api/codes/claim
+      return json({ success: true, code: row.code, kind: "invite", created_by_name: row.created_by_name }, 200, request, env);
+    }
+    const payload = safeJsonParseP48(row.payload, {});
+    const out = { success: true, code: row.code, kind: row.kind, media_type: row.media_type, tmdb_id: row.tmdb_id, season: row.season, episode: row.episode, payload, created_by_name: row.created_by_name };
+    if (row.kind === "movie") { out.media_type = row.media_type; out.tmdb_id = row.tmdb_id; out.season = row.season; out.episode = row.episode; }
+    return json(out, 200, request, env);
+  }
+
+  // --- Nhận quà mã mời (#10): cả 2 bên +XP + ngày gói ---
+  if (path === "/api/codes/claim" && method === "POST") {
+    const auth = await getAuth(request, env);
+    if (!auth || !auth.user) return json({ error: "LOGIN_REQUIRED" }, 401, request, env);
+    const b = await request.json().catch(() => ({}));
+    const code = String(b.code || "").trim().toUpperCase().slice(0, 32);
+    if (!code) return json({ error: "Thiếu code" }, 400, request, env);
+    const row = await p48ReadCode(env, code);
+    if (!row || row.kind !== "invite") return json({ error: "Mã mời không hợp lệ", code: "NOT_FOUND" }, 404, request, env);
+    if (row.expires_at && row.expires_at < Math.floor(Date.now() / 1000)) return json({ error: "Mã mời đã hết hạn", code: "EXPIRED" }, 410, request, env);
+    if (row.created_by === auth.user.id) return json({ error: "Không dùng mã của chính mình được nha", code: "SELF" }, 409, request, env);
+    // 1 mã mời dùng được nhiều lần nhưng mỗi người chỉ 1 lần
+    const usedBy = safeJsonParseP48(row.payload, {});
+    const usedUsers = (Array.isArray(usedBy.users) ? usedBy.users : []).map(Number);
+    if (usedUsers.includes(Number(auth.user.id))) return json({ error: "Bạn đã nhận thưởng từ mã này rồi", code: "USED" }, 409, request, env);
+    // thưởng: người nhận +200XP & +3 ngày gói; người mời +200XP & +3 ngày
+    const nowS = Math.floor(Date.now() / 1000);
+    await xpAdd(env, auth.user.id, 200);
+    await xpAdd(env, row.created_by, 200);
+    try { await activatePlan(env, auth.user.id, "signature", 3); } catch {}
+    try { if (row.created_by) await activatePlan(env, row.created_by, "signature", 3); } catch {}
+    try {
+      const cur = safeJsonParseP48(row.payload, {});
+      cur.users = cur.users || [];
+      if (!cur.users.includes(auth.user.id)) cur.users.push(auth.user.id);
+      await env.DB.prepare("UPDATE movie_share_codes SET payload = ?, used = used + 1, expires_at = ? WHERE code = ?").bind(JSON.stringify(cur).slice(0, 2000), nowS + 365 * 86400, code).run();
+    } catch {}
+    try { await logAudit(env, auth.user.id, "invite.claim", { code, from: row.created_by }); } catch {}
+    return json({ success: true, xp: 200, plan_days: 3, message: "Cả 2 đều nhận +200 XP và +3 ngày gói Signature! 🎉" }, 200, request, env);
+  }
+  return json({ error: "Not found" }, 404, request, env);
+}
+
+function safeJsonParseP48(s, fb) {
+  try { return JSON.parse(String(s || "")) || fb; } catch { return fb; }
+}
+
+// ---------- (#7) Resume đa thiết bị: progress server + mã 6 số phone→TV ----------
+async function handleMovieProgressApi(path, request, env) {
+  if (!hasDB(env)) return dbUnavailable();
+  await ensureSchema(env);
+  const q = new URL(request.url).searchParams;
+  const method = request.method;
+
+  if (path === "/api/movie/progress" && method === "GET") {
+    const auth = await getAuth(request, env);
+    if (!auth || !auth.user) return json({ error: "LOGIN_REQUIRED" }, 401, request, env);
+    const limit = Math.min(50, parseInt(q.get("limit") || "20", 10));
+    const r = await env.DB.prepare("SELECT media_type, tmdb_id, season, episode, position_sec, duration_sec, percent, title, poster_path, updated_at FROM movie_progress WHERE user_id = ? ORDER BY updated_at DESC LIMIT ?").bind(auth.user.id, limit).all().catch(() => ({ results: [] }));
+    return json({ success: true, items: (r.results || []).map((x) => ({ ...x, percent: Number(x.percent || 0) })) }, 200, request, env);
+  }
+
+  if (path === "/api/movie/progress" && method === "PUT" || (path === "/api/movie/progress" && method === "POST")) {
+    const auth = await getAuth(request, env);
+    if (!auth || !auth.user) return json({ error: "LOGIN_REQUIRED" }, 401, request, env);
+    const b = await request.json().catch(() => ({}));
+    const media_type = b.media_type === "tv" ? "tv" : "movie";
+    const tmdb_id = parseInt(b.tmdb_id, 10) || 0;
+    if (!tmdb_id) return json({ error: "Thiếu tmdb_id" }, 400, request, env);
+    const season = parseInt(b.season, 10) || 0;
+    const episode = parseInt(b.episode, 10) || 0;
+    const pos = Math.max(0, parseFloat(b.position_sec) || 0);
+    const dur = Math.max(0, parseFloat(b.duration_sec) || 0);
+    const pct = Math.max(0, Math.min(100, parseFloat(b.percent) || (dur > 0 ? (pos / dur) * 100 : 0)));
+    const now = Math.floor(Date.now() / 1000);
+    try {
+      await env.DB.prepare("INSERT INTO movie_progress (user_id, media_type, tmdb_id, season, episode, position_sec, duration_sec, percent, title, poster_path, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(user_id, media_type, tmdb_id, season, episode) DO UPDATE SET position_sec = excluded.position_sec, duration_sec = excluded.duration_sec, percent = excluded.percent, title = COALESCE(NULLIF(excluded.title, ''), title), poster_path = COALESCE(NULLIF(excluded.poster_path, ''), poster_path), updated_at = excluded.updated_at")
+        .bind(auth.user.id, media_type, tmdb_id, season, episode, pos, dur, pct, String(b.title || "").slice(0, 160), String(b.poster_path || "").slice(0, 300), now).run();
+    } catch {}
+    return json({ success: true }, 200, request, env);
+  }
+
+  // Tạo mã đồng bộ phone→TV (login)
+  if (path === "/api/movie/progress/code" && method === "POST") {
+    const auth = await getAuth(request, env);
+    if (!auth || !auth.user) return json({ error: "LOGIN_REQUIRED" }, 401, request, env);
+    try {
+      const rl = await rateLimitCheck(env, "resumecode:u:" + auth.user.id, 10, 300);
+      if (!rl.allowed) return json({ error: "Tạo mã hơi nhanh — thử lại sau.", code: "RATE_LIMITED" }, 429, request, env);
+    } catch {}
+    const code = genP48Num(6);
+    const exp = Math.floor(Date.now() / 1000) + 120; // 2 phút để TV nhập
+    try {
+      await env.DB.prepare("DELETE FROM resume_codes WHERE user_id = ? OR expires_at < ?").bind(auth.user.id, Math.floor(Date.now() / 1000)).run();
+      await env.DB.prepare("INSERT INTO resume_codes (code, user_id, expires_at, used) VALUES (?, ?, ?, 0)").bind(code, auth.user.id, exp).run();
+    } catch { return json({ error: "Lỗi tạo mã" }, 500, request, env); }
+    return json({ success: true, code, ttl_sec: 120 }, 200, request, env);
+  }
+
+  // TV nhập mã (không cần đăng nhập — mã ngắn hạn) → trả progress đang xem dở
+  if (path === "/api/movie/progress/code" && method === "GET" || path === "/api/resume" && method === "GET") {
+    const code = String(q.get("code") || "").trim().slice(0, 6);
+    if (!/^\d{6}$/.test(code)) return json({ error: "Mã gồm 6 chữ số" }, 400, request, env);
+    try {
+      const rl = await rateLimitCheck(env, "resumein:ip:" + (request.headers.get("CF-Connecting-IP") || "local"), 30, 60);
+      if (!rl.allowed) return json({ error: "Thử lại sau ít phút.", code: "RATE_LIMITED" }, 429, request, env);
+    } catch {}
+    const row = await env.DB.prepare("SELECT * FROM resume_codes WHERE code = ?").bind(code).first().catch(() => null);
+    if (!row) return json({ error: "Mã không đúng", code: "NOT_FOUND" }, 404, request, env);
+    if (row.expires_at < Math.floor(Date.now() / 1000)) return json({ error: "Mã đã hết hạn — tạo mã mới trên điện thoại", code: "EXPIRED" }, 410, request, env);
+    const prog = await env.DB.prepare("SELECT media_type, tmdb_id, season, episode, position_sec, duration_sec, percent, title, poster_path, updated_at FROM movie_progress WHERE user_id = ? ORDER BY updated_at DESC LIMIT 1").bind(row.user_id).first().catch(() => null);
+    try {
+      await env.DB.prepare("DELETE FROM resume_codes WHERE code = ?").bind(code).run();
+    } catch {}
+    if (!prog) return json({ success: true, empty: true }, 200, request, env);
+    return json({ success: true, item: { ...prog, percent: Number(prog.percent || 0) } }, 200, request, env);
+  }
+  return json({ error: "Not found" }, 404, request, env);
+}
+
+// ---------- (#8) Follow series — nhận "TẬP MỚI" khi có tập mới ----------
+async function handleSeriesFollowApi(path, request, env) {
+  if (!hasDB(env)) return dbUnavailable();
+  await ensureSchema(env);
+  const method = request.method;
+  const q = new URL(request.url).searchParams;
+
+  if (path === "/api/movie/series-follow" && method === "GET") {
+    const auth = await getAuth(request, env);
+    if (!auth || !auth.user) return json({ error: "LOGIN_REQUIRED" }, 401, request, env);
+    const r = await env.DB.prepare("SELECT tmdb_id, season, episode, updated_at FROM series_follows WHERE user_id = ? ORDER BY updated_at DESC LIMIT 100").bind(auth.user.id).all().catch(() => ({ results: [] }));
+    return json({ success: true, follows: (r.results || []).map((x) => ({ tmdb_id: x.tmdb_id, season: x.season, episode: x.episode })) }, 200, request, env);
+  }
+  if (path === "/api/movie/series-follow" && method === "POST") {
+    const auth = await getAuth(request, env);
+    if (!auth || !auth.user) return json({ error: "LOGIN_REQUIRED" }, 401, request, env);
+    const b = await request.json().catch(() => ({}));
+    const tmdb_id = parseInt(b.tmdb_id, 10) || 0;
+    if (!tmdb_id) return json({ error: "Thiếu tmdb_id" }, 400, request, env);
+    const follow = b.follow === false;
+    const season = parseInt(b.season, 10) || 0;
+    const episode = parseInt(b.episode, 10) || 0;
+    if (follow) await env.DB.prepare("DELETE FROM series_follows WHERE user_id = ? AND tmdb_id = ?").bind(auth.user.id, tmdb_id).run();
+    else await env.DB.prepare("INSERT INTO series_follows (user_id, tmdb_id, season, episode, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(user_id, tmdb_id) DO UPDATE SET season = excluded.season, episode = excluded.episode, updated_at = excluded.updated_at")
+      .bind(auth.user.id, tmdb_id, season, episode, Math.floor(Date.now() / 1000)).run();
+    return json({ success: true, following: !follow }, 200, request, env);
+  }
+  if (path === "/api/movie/series-follow/latest" && method === "GET") {
+    const tmdb_id = parseInt(q.get("tmdb_id"), 10) || 0;
+    if (!tmdb_id) return json({ error: "Thiếu tmdb_id" }, 400, request, env);
+    const r = await env.DB.prepare("SELECT COUNT(*) AS c FROM series_follows WHERE tmdb_id = ?").bind(tmdb_id).first().catch(() => ({ c: 0 }));
+    return json({ success: true, followers: (r && r.c) || 0 }, 200, request, env);
+  }
+  return json({ error: "Not found" }, 404, request, env);
+}
+
+// ---------- (#37) Tặng sao creator bằng XP + (#38) BXH creator tuần ----------
+async function handleShortStar(request, env) {
+  if (!hasDB(env)) return dbUnavailable();
+  await ensureSchema(env);
+  if (request.method !== "POST") return json({ error: "Not found" }, 404, request, env);
+  const auth = await getAuth(request, env);
+  if (!auth || !auth.user) return json({ error: "LOGIN_REQUIRED" }, 401, request, env);
+  const b = await request.json().catch(() => ({}));
+  const short_id = parseInt(b.short_id, 10) || 0;
+  const stars = Math.max(1, Math.min(10, parseInt(b.stars, 10) || 1));
+  if (!short_id) return json({ error: "Thiếu short_id" }, 400, request, env);
+  const short = await env.DB.prepare("SELECT creator_id FROM shorts WHERE id = ? AND status = 'live'").bind(short_id).first().catch(() => null);
+  if (!short || !short.creator_id) return json({ error: "Shorts không có creator" }, 404, request, env);
+  const cost = stars * 50; // 1 sao = 50 XP
+  const me = await xpGet(env, auth.user.id);
+  const have = (me && me.xp) || 0;
+  if (have < cost) return json({ error: `Cần ${cost} XP để tặng ${stars} sao (bạn có ${have} XP) — xem phim để kiếm XP nhé!`, code: "LOW_XP", have, need: cost }, 402, request, env);
+  const now = Math.floor(Date.now() / 1000);
+  try {
+    // giới hạn 10 sao/giờ/người cho 1 creator (chống spam)
+    const rl = await rateLimitCheck(env, "star:u:" + auth.user.id + ":c:" + short.creator_id, 10, 3600);
+    if (!rl.allowed) return json({ error: "Tặng hơi nhiều rồi — thử lại sau 1 giờ.", code: "RATE_LIMITED" }, 429, request, env);
+  } catch {}
+  await env.DB.prepare("UPDATE user_xp SET xp = xp - ? WHERE user_id = ? AND xp >= ?").bind(cost, auth.user.id, cost).run();
+  const rr = await env.DB.prepare("INSERT INTO creator_stars (creator_id, user_id, stars, created_at) VALUES (?, ?, ?, ?)").bind(short.creator_id, auth.user.id, stars, now).run();
+  try { await logAudit(env, auth.user.id, "creator.star", { short_id, creator_id: short.creator_id, stars }); } catch {}
+  return json({ success: true, stars, spent_xp: cost, id: rr.meta && rr.meta.last_row_id }, 200, request, env);
+}
+
+// BXH sao tuần (thứ Hai tuần này → giờ) — #38
+async function handleCreatorWeekly(request, env) {
+  if (!hasDB(env)) return json({ success: true, board: [] }, 200, request, env);
+  await ensureSchema(env);
+  const q = new URL(request.url).searchParams;
+  const tzOffset = parseInt(q.get("tz") || "0", 10); // phút lệch client
+  const d = new Date(Date.now() + (tzOffset || 0) * 60000);
+  const day = (d.getUTCDay() + 6) % 7; // Thứ 2 = 0
+  const weekStart = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - day, 0, 0, 0) - (tzOffset || 0) * 60000;
+  try {
+    const r = await env.DB.prepare(
+      `SELECT p.id AS creator_id, p.handle, p.display_name, p.avatar_url, COALESCE(SUM(s.stars), 0) AS stars, COUNT(DISTINCT s.user_id) AS fans
+       FROM creator_stars s JOIN short_creator_profiles p ON p.id = s.creator_id
+       WHERE s.created_at >= ? GROUP BY p.id ORDER BY stars DESC, fans DESC LIMIT 20`
+    ).bind(Math.floor(weekStart / 1000)).all();
+    const mine = await env.DB.prepare("SELECT user_id FROM short_creator_profiles WHERE user_id = ?").bind(0).first().catch(() => null);
+    return json({ success: true, week_start: Math.floor(weekStart / 1000), board: (r.results || []).map((x) => ({ creator_id: x.creator_id, handle: x.handle, display_name: x.display_name || x.handle, avatar_url: x.avatar_url || "", stars: Number(x.stars) || 0, fans: Number(x.fans) || 0 })) }, 200, request, env);
+  } catch (e) { return json({ success: true, board: [] }, 200, request, env); }
+}
+
+// ---------- (#40) Challenge hashtag tuần ----------
+async function handleChallengesPublic(request, env) {
+  if (!hasDB(env)) return json({ success: true, challenges: [] }, 200, request, env);
+  await ensureSchema(env);
+  const q = new URL(request.url).searchParams;
+  if (request.method !== "GET") return json({ error: "Not found" }, 404, request, env);
+  const hashtag = String(q.get("hashtag") || "").slice(0, 40);
+  try {
+    const now = new Date().toISOString().slice(0, 19).replace("T", " ");
+    let rows = [];
+    if (hashtag) {
+      const r = await env.DB.prepare("SELECT * FROM challenges WHERE is_active = 1 AND LOWER(hashtag) = LOWER(?) AND (ends_at = '' OR ends_at IS NULL OR ends_at >= ?) LIMIT 1").bind(hashtag, now).all();
+      rows = r.results || [];
+    } else {
+      const r = await env.DB.prepare("SELECT * FROM challenges WHERE is_active = 1 AND (ends_at = '' OR ends_at IS NULL OR ends_at >= ?) AND (starts_at = '' OR starts_at IS NULL OR starts_at <= ?) ORDER BY id DESC LIMIT 10").bind(now, now).all();
+      rows = r.results || [];
+    }
+    // gom shorts theo hashtag
+    const out = [];
+    for (const c of rows) {
+      const shortsR = await env.DB.prepare("SELECT s.id, s.title, s.caption, s.video_url, s.thumb_url, s.duration, s.views, s.likes, s.created_at, p.handle AS creator_handle, p.avatar_url AS creator_avatar FROM shorts s LEFT JOIN short_creator_profiles p ON p.id = s.creator_id WHERE s.status = 'live' AND s.hashtags LIKE ? ORDER BY s.created_at DESC LIMIT 60").bind("%" + c.hashtag + "%").all().catch(() => ({ results: [] }));
+      out.push({ ...c, hashtag: c.hashtag || "", shorts: (shortsR.results || []).map((x) => ({ ...x, creator: { handle: x.creator_handle, avatar_url: x.creator_avatar } })) });
+    }
+    return json({ success: true, challenges: out }, 200, request, env);
+  } catch (e) { return json({ success: true, challenges: [] }, 200, request, env); }
+}
+
+// ---------- (#85) Link affiliate (vé rạp / sách) ----------
+async function handleAffiliatesPublic(request, env) {
+  if (!hasDB(env)) return json({ success: true, affiliates: [] }, 200, request, env);
+  await ensureSchema(env);
+  const q = new URL(request.url).searchParams;
+  const kind = String(q.get("kind") || "").slice(0, 20);
+  try {
+    let rows;
+    if (kind) {
+      const r = await env.DB.prepare("SELECT id, name, kind, url_template, label FROM affiliates WHERE enabled = 1 AND kind = ? ORDER BY sort_order ASC, id ASC LIMIT 20").bind(kind).all();
+      rows = r.results || [];
+    } else {
+      const r = await env.DB.prepare("SELECT id, name, kind, url_template, label FROM affiliates WHERE enabled = 1 ORDER BY sort_order ASC, id ASC LIMIT 50").all();
+      rows = r.results || [];
+    }
+    return json({ success: true, affiliates: rows || [] }, 200, request, env);
+  } catch { return json({ success: true, affiliates: [] }, 200, request, env); }
+}
+
+// ---------- (#84) Wrapped cuối năm (từ dữ liệu người dùng) ----------
+async function handleWrapped(request, env) {
+  if (!hasDB(env)) return dbUnavailable();
+  await ensureSchema(env);
+  const auth = await getAuth(request, env);
+  if (!auth || !auth.user) return json({ error: "LOGIN_REQUIRED" }, 401, request, env);
+  const uid = auth.user.id;
+  try {
+    const xr = await env.DB.prepare("SELECT xp, watch_sec FROM user_xp WHERE user_id = ?").bind(uid).first().catch(() => null);
+    const wt = await env.DB.prepare("SELECT kind, ref_id, ref_name, sec FROM user_watch WHERE user_id = ? ORDER BY sec DESC LIMIT 40").bind(uid).all().catch(() => ({ results: [] }));
+    const mp = await env.DB.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(CASE WHEN percent >= 90 THEN 1 ELSE 0 END), 0) AS done FROM movie_progress WHERE user_id = ?").bind(uid).first().catch(() => null);
+    const lr = await env.DB.prepare("SELECT COUNT(*) AS n FROM analytics WHERE user_id = ? AND event = 'login'").bind(uid).first().catch(() => null);
+    const tops = {};
+    const byKind = {};
+    let moviesWatch = 0, shortsWatch = 0;
+    for (const row of (wt.results || [])) {
+      const k = row.kind || "other";
+      byKind[k] = (byKind[k] || 0) + (row.sec || 0);
+      if ((k === "channel" || k === "movie" || k === "short") && !tops[k]) tops[k] = { name: row.ref_name || row.ref_id, sec: row.sec || 0 };
+      if (k === "movie") moviesWatch += row.sec || 0;
+      if (k === "short") shortsWatch += row.sec || 0;
+    }
+    const totalSec = (xr && xr.watch_sec) || (byKind.channel || 0) + moviesWatch + shortsWatch;
+    return json({
+      success: true,
+      wrapped: {
+        year: new Date().getFullYear(),
+        total_sec: totalSec || 0,
+        minutes: { channel: Math.round(((byKind.channel || 0)) / 60), movie: Math.round(moviesWatch / 60), short: Math.round(shortsWatch / 60) },
+        top_channel: tops.channel || null,
+        top_movie: tops.movie || null,
+        top_short: tops.short || null,
+        xp: (xr && xr.xp) || 0,
+        movies_started: (mp && mp.n) || 0,
+        movies_finished: (mp && mp.done) || 0,
+        logins: (lr && lr.n) || 0,
+        badges: serverBadges((xr && xr.xp) || 0, (xr && xr.watch_sec) || 0, 0),
+      },
+    }, 200, request, env);
+  } catch (e) { return json({ error: "Chưa đủ dữ liệu để wrap — xem thêm vài phim nhé!" }, 200, request, env); }
+}
+
+// ---------- (#5) Đang hot theo quốc gia ----------
+async function handleCountryTop(request, env) {
+  if (!hasDB(env)) return json({ success: true, top: [] }, 200, request, env);
+  await ensureSchema(env);
+  const q = new URL(request.url).searchParams;
+  const cc = String(q.get("cc") || viewerCountry(request) || "").toUpperCase().slice(0, 2);
+  if (!cc) return json({ success: true, top: [], cc }, 200, request, env);
+  const nowS = Math.floor(Date.now() / 1000);
+  const hours = Math.max(1, Math.min(72, parseInt(q.get("hours") || "24", 10)));
+  const fromBucket = Math.floor((nowS - hours * 3600) / 300);
+  try {
+    const r = await env.DB.prepare(
+      `SELECT w.channel_id, SUM(w.seconds) AS seconds, SUM(w.views) AS views, c.name, c.logo, c.group_title
+       FROM watch_cc w LEFT JOIN channels c ON c.channel_id = w.channel_id
+       WHERE w.country = ? AND w.bucket >= ? GROUP BY w.channel_id ORDER BY seconds DESC, views DESC LIMIT 10`
+    ).bind(cc, fromBucket).all();
+    return json({ success: true, cc, hours, top: (r.results || []).map((x) => ({ ...x, seconds: Number(x.seconds || 0), views: Number(x.views || 0) })) }, 200, request, env);
+  } catch { return json({ success: true, cc, top: [] }, 200, request, env); }
+}
+
+// ---------- (#32) Follow đội bóng ----------
+async function handleTeamFollowApi(path, request, env) {
+  if (!hasDB(env)) return dbUnavailable();
+  await ensureSchema(env);
+  const method = request.method;
+  if (method === "GET") {
+    const auth = await getAuth(request, env);
+    if (!auth || !auth.user) return json({ success: true, teams: [] }, 200, request, env);
+    const r = await env.DB.prepare("SELECT team_name FROM team_follows WHERE user_id = ? ORDER BY updated_at DESC LIMIT 100").bind(auth.user.id).all().catch(() => ({ results: [] }));
+    return json({ success: true, teams: (r.results || []).map((x) => x.team_name) }, 200, request, env);
+  }
+  const auth = await getAuth(request, env);
+  if (!auth || !auth.user) return json({ error: "LOGIN_REQUIRED" }, 401, request, env);
+  const b = await request.json().catch(() => ({}));
+  const team = String(b.team || "").trim().slice(0, 60);
+  if (!team) return json({ error: "Thiếu team" }, 400, request, env);
+  const now = Math.floor(Date.now() / 1000);
+  if (b.follow === false) await env.DB.prepare("DELETE FROM team_follows WHERE user_id = ? AND team_name = ?").bind(auth.user.id, team).run();
+  else await env.DB.prepare("INSERT OR IGNORE INTO team_follows (user_id, team_name, updated_at) VALUES (?, ?, ?)").bind(auth.user.id, team, now).run();
+  return json({ success: true }, 200, request, env);
+}
+
+// ---------- (#57) Cảnh báo in-dash: đánh giá rule ----------
+async function evalAlertRules(env) {
+  if (!hasDB(env)) return;
+  try {
+    await ensureSchema(env);
+    const r = await env.DB.prepare("SELECT * FROM admin_alert_rules WHERE enabled = 1").all().catch(() => ({ results: [] }));
+    const now = Math.floor(Date.now() / 1000);
+    const metricVal = {};
+    for (const rule of (r.results || [])) {
+      const m = rule.metric || "";
+      if (metricVal[m] === undefined) {
+        if (m === "channels_down") {
+          const x = await env.DB.prepare("SELECT COUNT(*) AS c FROM channel_health WHERE status = 'down'").first().catch(() => null);
+          metricVal[m] = (x && x.c) || 0;
+        } else if (m === "player_errors_1h") {
+          const x = await env.DB.prepare("SELECT COUNT(*) AS c FROM player_errors WHERE created_at > datetime('now', '-1 hour')").first().catch(() => null);
+          metricVal[m] = (x && x.c) || 0;
+        } else if (m === "viewers_online") {
+          const x = await env.DB.prepare("SELECT COUNT(*) AS c FROM presence WHERE updated_at > ?").bind(now - 180).first().catch(() => null);
+          metricVal[m] = (x && x.c) || 0;
+        } else if (m === "open_reports") {
+          const x = await env.DB.prepare("SELECT COUNT(*) AS c FROM channel_reports WHERE status = 'open'").first().catch(() => null);
+          metricVal[m] = (x && x.c) || 0;
+        } else {
+          metricVal[m] = 0;
+        }
+      }
+      const val = metricVal[m] || 0;
+      const threshold = parseFloat(rule.threshold) || 0;
+      const fired = rule.op === "lt" ? val < threshold : val > threshold;
+      if (fired && now - (rule.last_fired_at || 0) >= (rule.cooldown_s || 3600)) {
+        await env.DB.prepare("INSERT INTO admin_alert_feed (rule_id, level, message, data) VALUES (?, 'warn', ?, ?)")
+          .bind(rule.id, `${rule.name}: hiện tại = ${val} (ngưỡng ${rule.op === "lt" ? "<" : ">"} ${threshold})`, JSON.stringify({ metric: m, value: val, threshold })).run();
+        await env.DB.prepare("UPDATE admin_alert_rules SET last_fired_at = ? WHERE id = ?").bind(now, rule.id).run();
+      }
+    }
+  } catch {}
+}
+
+// ---------- (#48) Báo đăng nhập lạ qua email ----------
+async function maybeNewDeviceAlert(env, userId, request) {
+  try {
+    if (!hasDB(env)) return;
+    const ip = request.headers.get("CF-Connecting-IP") || "IP lạ";
+    const ua = String(request.headers.get("User-Agent") || "").slice(0, 120);
+    const usr = await env.DB.prepare("SELECT email, COALESCE(display_name, username, '') AS name FROM users WHERE id = ?").bind(userId).first().catch(() => null);
+    if (!usr) return;
+    const st = await env.DB.prepare("SELECT settings_json FROM user_settings WHERE user_id = ?").bind(userId).first().catch(() => null);
+    let flag = false;
+    try { flag = !!JSON.parse((st && st.settings_json) || "{}").notifyNewLogin; } catch {}
+    if (!flag) return;
+    // thiết bị đã biết = các phiên 30 ngày gần nhất cùng UA (và ip nếu có)
+    const known = await env.DB.prepare("SELECT user_agent, ip FROM sessions WHERE user_id = ? AND created_at > datetime('now', '-30 days') ORDER BY id DESC LIMIT 10").bind(userId).all().catch(() => ({ results: [] }));
+    const uaKey = ua.replace(/[\d.]+/g, "#");
+    const seenUA = (known.results || []).some((s) => String(s.user_agent || "").replace(/[\d.]+/g, "#") === uaKey);
+    const seenIP = (known.results || []).some((s) => String(s.ip || "") === ip);
+    if (seenUA && seenIP) return;
+    const tmpl = {
+      subject: "🔐 CHRTV — Đăng nhập từ thiết bị lạ",
+      html: `<div style="font-family:system-ui;background:#0b0c10;padding:24px;color:#e7e5e4"><div style="max-width:520px;margin:auto;background:#17181d;border-radius:16px;padding:24px;border:1px solid #26272e"><h2 style="margin:0 0 8px">Đăng nhập từ thiết bị lạ</h2><p style="color:#a8a29e;font-size:14px">Tài khoản <b>${escHtmlP48(usr.name || usr.email)}</b> vừa đăng nhập CHRTV trên một thiết bị bạn chưa từng dùng:</p><div style="background:#0f1014;border-radius:10px;padding:14px;margin:14px 0;font-size:13px"><div>🌐 IP: ${escHtmlP48(ip)}</div><div>📱 Trình duyệt: ${escHtmlP48(ua)}</div></div><p style="font-size:13px;color:#a8a29e">Không phải bạn? Vào <b>Cài đặt → Thiết bị của bạn</b> để đá thiết bị lạ ngay, và đổi mật khẩu.</p></div></div>`,
+    };
+    const sender = { name: env.BREVO_SENDER_NAME || "NO REPLY - CHRTV PL▷Y", email: env.BREVO_SENDER_EMAIL || "noreply@chrtv.app" };
+    const apiKey = env.BREVO_API_KEY;
+    if (!apiKey) return;
+    await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: { "api-key": apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ sender, to: [{ email: usr.email }], subject: tmpl.subject, htmlContent: tmpl.html }),
+    }).catch(() => {});
+  } catch {}
+}
+function escHtmlP48(s) {
+  return String(s || "").replace(/[<>&"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;" }[c]));
+}
+
+// ============================================================================
+// ADMIN PACK 48 (đã qua xác thực admin ở handleAdmin)
+// ============================================================================
+async function handleAdminPack48(path, request, env, adminCtx) {
+  const body = await request.json().catch(() => ({}));
+  const method = request.method;
+  const adminUser = adminCtx && adminCtx.adminUser;
+  const aid = (adminUser && adminUser.id) || 0;
+
+  // ---------- (#57) CẢNH BÁO IN-DASH ----------
+  if (path === "/admin/alerts/rules" && method === "GET") {
+    const r = await env.DB.prepare("SELECT * FROM admin_alert_rules ORDER BY id ASC").all().catch(() => ({ results: [] }));
+    return json({ success: true, rules: r.results || [] }, 200, request, env);
+  }
+  if (path === "/admin/alerts/rules" && method === "POST") {
+    const name = String(body.name || "").slice(0, 80);
+    const metric = String(body.metric || "").slice(0, 30);
+    if (!name || !["channels_down", "player_errors_1h", "viewers_online", "open_reports"].includes(metric)) return json({ error: "Thiếu name/metric hợp lệ" }, 400, request, env);
+    const r = await env.DB.prepare("INSERT INTO admin_alert_rules (name, metric, op, threshold, enabled, cooldown_s) VALUES (?, ?, ?, ?, ?, ?)")
+      .bind(name, metric, body.op === "lt" ? "lt" : "gt", parseFloat(body.threshold) || 0, body.enabled === 0 ? 0 : 1, Math.max(60, parseInt(body.cooldown_s, 10) || 3600)).run();
+    try { await logAudit(env, aid, "alert.rule.add", { name, metric }); } catch {}
+    return json({ success: true, id: r.meta && r.meta.last_row_id }, 200, request, env);
+  }
+  if (path === "/admin/alerts/rules" && method === "PUT") {
+    if (!body.id) return json({ error: "Thiếu id" }, 400, request, env);
+    await env.DB.prepare("UPDATE admin_alert_rules SET name = COALESCE(?, name), metric = COALESCE(?, metric), op = COALESCE(?, op), threshold = COALESCE(?, threshold), enabled = COALESCE(?, enabled), cooldown_s = COALESCE(?, cooldown_s) WHERE id = ?")
+      .bind(body.name ?? null, body.metric ?? null, body.op ?? null, body.threshold ?? null, body.enabled ?? null, body.cooldown_s ?? null, body.id).run();
+    try { await logAudit(env, aid, "alert.rule.update", { id: body.id }); } catch {}
+    return json({ success: true }, 200, request, env);
+  }
+  if (path === "/admin/alerts/rules" && method === "DELETE") {
+    if (!body.id) return json({ error: "Thiếu id" }, 400, request, env);
+    await env.DB.prepare("DELETE FROM admin_alert_rules WHERE id = ?").bind(body.id).run();
+    return json({ success: true }, 200, request, env);
+  }
+  if (path === "/admin/alerts/feed" && method === "GET") {
+    const q = new URL(request.url).searchParams;
+    const limit = Math.min(100, parseInt(q.get("limit") || "50", 10));
+    const onlyPending = q.get("pending") === "1";
+    const sql = onlyPending
+      ? "SELECT f.*, r.name AS rule_name FROM admin_alert_feed f LEFT JOIN admin_alert_rules r ON r.id = f.rule_id WHERE f.ack = 0 ORDER BY f.id DESC LIMIT ?"
+      : "SELECT f.*, r.name AS rule_name FROM admin_alert_feed f LEFT JOIN admin_alert_rules r ON r.id = f.rule_id ORDER BY f.id DESC LIMIT ?";
+    const rr = await env.DB.prepare(sql).bind(limit).all().catch(() => ({ results: [] }));
+    return json({ success: true, feed: rr.results || [] }, 200, request, env);
+  }
+  if (path === "/admin/alerts/ack" && method === "POST") {
+    const ids = (Array.isArray(body.ids) ? body.ids : [body.id]).map((x) => parseInt(x) || 0).filter(Boolean).slice(0, 100);
+    if (!ids.length) return json({ error: "Thiếu id" }, 400, request, env);
+    for (const id of ids) await env.DB.prepare("UPDATE admin_alert_feed SET ack = 1 WHERE id = ?").bind(id).run();
+    try { await logAudit(env, aid, "alert.ack", { count: ids.length }); } catch {}
+    return json({ success: true }, 200, request, env);
+  }
+  if (path === "/admin/alerts/test" && method === "POST") {
+    await evalAlertRules(env);
+    const rr = await env.DB.prepare("SELECT COUNT(*) AS c FROM admin_alert_feed WHERE created_at > datetime('now', '-1 minute')").first().catch(() => ({ c: 0 }));
+    return json({ success: true, fired: (rr && rr.c) || 0, message: "Đã chạy đánh giá rule — xem feed bên dưới." }, 200, request, env);
+  }
+  if (path === "/admin/alerts/push" && method === "POST") {
+    // thêm cảnh báo tay (vd: "kênh X đang lỗi theo báo cáo")
+    const message = String(body.message || "").slice(0, 300);
+    if (!message) return json({ error: "Thiếu message" }, 400, request, env);
+    await env.DB.prepare("INSERT INTO admin_alert_feed (rule_id, level, message, data) VALUES (0, ?, ?, ?)").bind(body.level === "critical" ? "critical" : "warn", message, JSON.stringify({ manual: true, by: (adminUser && adminUser.username) || "admin" })).run();
+    return json({ success: true }, 200, request, env);
+  }
+
+  // ---------- (B) VÙNG QUỐC GIA BLOCKLIST ----------
+  if (path === "/admin/regions" && method === "GET") {
+    const qq = new URL(request.url).searchParams;
+    const type = String(qq.get("type") || "channel");
+    const table = type === "event" ? "events" : type === "ad" ? "ads" : type === "movie_source" ? "movie_sources" : "channels";
+    let sql, r;
+    if (type === "channel") {
+      sql = `SELECT channel_id, name, is_sponsored, blocked_regions FROM ${table} WHERE is_active = 1 ORDER BY id ASC LIMIT 300`;
+      r = await env.DB.prepare(sql).all().catch(() => ({ results: [] }));
+    } else if (type === "movie_source") {
+      sql = `SELECT id, name AS title, blocked_regions FROM ${table} ORDER BY id DESC LIMIT 300`;
+      r = await env.DB.prepare(sql).all().catch(() => ({ results: [] }));
+    } else {
+      sql = `SELECT id, title, subtitle, blocked_regions FROM ${table} ORDER BY id DESC LIMIT 300`;
+      r = await env.DB.prepare(sql).all().catch(() => ({ results: [] }));
+    }
+    return json({ success: true, type, items: r.results || [] }, 200, request, env);
+  }
+  if (path === "/admin/regions" && method === "PUT") {
+    const type = String(body.type || "channel");
+    const table = type === "event" ? "events" : type === "ad" ? "ads" : type === "movie_source" ? "movie_sources" : "channels";
+    const regions = cleanRegionList(body.regions).join(",");
+    const id = body.id !== undefined ? parseInt(body.id, 10) || 0 : 0;
+    const channelId = String(body.channel_id || "");
+    try {
+      if (table === "channels" && channelId) await env.DB.prepare("UPDATE channels SET blocked_regions = ? WHERE channel_id = ?").bind(regions, channelId).run();
+      else if (id) await env.DB.prepare(`UPDATE ${table} SET blocked_regions = ? WHERE id = ?`).bind(regions, id).run();
+      else return json({ error: "Thiếu id/channel_id" }, 400, request, env);
+    } catch (e) { return json({ error: String(e.message || e) }, 500, request, env); }
+    try { _chanCache = null; } catch {}
+    try { await logAudit(env, aid, "region.update", { type, channel_id: channelId || undefined, id: id || undefined, regions }); } catch {}
+    return json({ success: true }, 200, request, env);
+  }
+  // (#54) BẢO TRÌ KÊNH
+  if (path === "/admin/maintenance" && method === "GET") {
+    const now = Math.floor(Date.now() / 1000);
+    const r = await env.DB.prepare("SELECT h.channel_id, c.name, c.group_title, h.maintenance_until, h.note FROM channel_health h LEFT JOIN channels c ON c.channel_id = h.channel_id WHERE h.maintenance_until > ? ORDER BY h.maintenance_until ASC").bind(now).all().catch(() => ({ results: [] }));
+    return json({ success: true, items: (r.results || []).map((x) => ({ ...x, maintenance_until: Number(x.maintenance_until || 0) })) }, 200, request, env);
+  }
+  if (path === "/admin/maintenance" && method === "POST") {
+    const channelId = String(body.channel_id || "");
+    const minutes = Math.max(1, Math.min(10080, parseInt(body.minutes, 10) || 30));
+    const note = String(body.note || "").slice(0, 200);
+    if (!channelId) return json({ error: "Thiếu channel_id" }, 400, request, env);
+    const until = Math.floor(Date.now() / 1000) + minutes * 60;
+    const status = body.status === "up" ? "up" : body.status === "down" ? "down" : "maintenance";
+    await env.DB.prepare("INSERT INTO channel_health (channel_id, status, maintenance_until, checked_at, note) VALUES (?, ?, ?, ?, ?) ON CONFLICT(channel_id) DO UPDATE SET status = excluded.status, maintenance_until = excluded.maintenance_until, checked_at = excluded.checked_at, note = excluded.note")
+      .bind(channelId, status, until, Math.floor(Date.now() / 1000), note).run();
+    try { await logAudit(env, aid, "channel.maintenance", { channel_id: channelId, minutes, note }); } catch {}
+    try { _chanCache = null; } catch {}
+    return json({ success: true, maintenance_until: until }, 200, request, env);
+  }
+  if (path === "/admin/maintenance" && method === "DELETE") {
+    const channelId = String(body.channel_id || "");
+    if (!channelId) return json({ error: "Thiếu channel_id" }, 400, request, env);
+    await env.DB.prepare("UPDATE channel_health SET maintenance_until = 0, status = 'unknown' WHERE channel_id = ?").bind(channelId).run();
+    return json({ success: true }, 200, request, env);
+  }
+  // (#40) CHALLENGE HASHTAG
+  if (path === "/admin/challenges" && method === "GET") {
+    const r = await env.DB.prepare("SELECT * FROM challenges ORDER BY id DESC LIMIT 100").all().catch(() => ({ results: [] }));
+    return json({ success: true, challenges: r.results || [] }, 200, request, env);
+  }
+  if (path === "/admin/challenges" && method === "POST") {
+    const title = String(body.title || "").slice(0, 120);
+    const hashtag = String(body.hashtag || "").trim().replace(/^#/, "").replace(/\s+/g, "").slice(0, 40);
+    if (!title || !hashtag) return json({ error: "Thiếu title/hashtag" }, 400, request, env);
+    const r = await env.DB.prepare("INSERT INTO challenges (title, hashtag, description, starts_at, ends_at, is_active, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .bind(title, hashtag, String(body.description || "").slice(0, 500), String(body.starts_at || "").slice(0, 19), String(body.ends_at || "").slice(0, 19), body.is_active === 0 ? 0 : 1, aid).run();
+    return json({ success: true, id: r.meta && r.meta.last_row_id }, 200, request, env);
+  }
+  if (path === "/admin/challenges" && method === "PUT") {
+    if (!body.id) return json({ error: "Thiếu id" }, 400, request, env);
+    await env.DB.prepare("UPDATE challenges SET title = COALESCE(?, title), hashtag = COALESCE(?, hashtag), description = COALESCE(?, description), starts_at = COALESCE(?, starts_at), ends_at = COALESCE(?, ends_at), is_active = COALESCE(?, is_active) WHERE id = ?")
+      .bind(body.title ?? null, body.hashtag ?? null, body.description ?? null, body.starts_at ?? null, body.ends_at ?? null, body.is_active ?? null, body.id).run();
+    return json({ success: true }, 200, request, env);
+  }
+  if (path === "/admin/challenges" && method === "DELETE") {
+    if (!body.id) return json({ error: "Thiếu id" }, 400, request, env);
+    await env.DB.prepare("DELETE FROM challenges WHERE id = ?").bind(body.id).run();
+    return json({ success: true }, 200, request, env);
+  }
+  // (#85) AFFILIATE LINKS
+  if (path === "/admin/affiliates" && method === "GET") {
+    const r = await env.DB.prepare("SELECT * FROM affiliates ORDER BY sort_order ASC, id ASC").all().catch(() => ({ results: [] }));
+    return json({ success: true, affiliates: r.results || [] }, 200, request, env);
+  }
+  if (path === "/admin/affiliates" && method === "POST") {
+    const name = String(body.name || "").slice(0, 80);
+    const tpl = String(body.url_template || "").slice(0, 500);
+    if (!name || !tpl) return json({ error: "Thiếu name/url_template" }, 400, request, env);
+    const r = await env.DB.prepare("INSERT INTO affiliates (name, kind, url_template, label, enabled, sort_order) VALUES (?, ?, ?, ?, ?, ?)")
+      .bind(name, body.kind === "book" ? "book" : "cinema", tpl, String(body.label || "").slice(0, 60), body.enabled === 0 ? 0 : 1, parseInt(body.sort_order, 10) || 0).run();
+    return json({ success: true, id: r.meta && r.meta.last_row_id }, 200, request, env);
+  }
+  if (path === "/admin/affiliates" && method === "PUT") {
+    if (!body.id) return json({ error: "Thiếu id" }, 400, request, env);
+    await env.DB.prepare("UPDATE affiliates SET name = COALESCE(?, name), kind = COALESCE(?, kind), url_template = COALESCE(?, url_template), label = COALESCE(?, label), enabled = COALESCE(?, enabled), sort_order = COALESCE(?, sort_order) WHERE id = ?")
+      .bind(body.name ?? null, body.kind ?? null, body.url_template ?? null, body.label ?? null, body.enabled ?? null, body.sort_order ?? null, body.id).run();
+    return json({ success: true }, 200, request, env);
+  }
+  if (path === "/admin/affiliates" && method === "DELETE") {
+    if (!body.id) return json({ error: "Thiếu id" }, 400, request, env);
+    await env.DB.prepare("DELETE FROM affiliates WHERE id = ?").bind(body.id).run();
+    return json({ success: true }, 200, request, env);
+  }
+  // (#53) DASHBOARD REALTIME
+  if (path === "/admin/realtime" && method === "GET") {
+    const now = Math.floor(Date.now() / 1000);
+    try {
+      const [pres, hot, errs, reports, down] = await Promise.all([
+        env.DB.prepare("SELECT name, kind, ref_name, updated_at FROM presence WHERE updated_at > ? ORDER BY updated_at DESC LIMIT 60").bind(now - 300).all(),
+        env.DB.prepare("SELECT p.channel_id, SUM(p.seconds) AS seconds, SUM(p.views) AS views, c.name, c.logo FROM watch_pulse p LEFT JOIN channels c ON c.channel_id = p.channel_id WHERE p.bucket >= ? GROUP BY p.channel_id ORDER BY seconds DESC LIMIT 10").bind(Math.floor(now / 300) - 2).all(),
+        env.DB.prepare("SELECT channel_name, code, detail, platform, created_at FROM player_errors WHERE created_at > datetime('now', '-2 hours') ORDER BY id DESC LIMIT 30").all(),
+        env.DB.prepare("SELECT COUNT(*) AS c FROM channel_reports WHERE status = 'open'").first(),
+        env.DB.prepare("SELECT c.name FROM channels c JOIN channel_health h ON h.channel_id = c.channel_id WHERE h.status = 'down' AND c.is_active = 1 LIMIT 15").all(),
+      ]);
+      const online = pres.results ? pres.results.length : 0;
+      return json({
+        success: true,
+        now,
+        online,
+        by_kind: (pres.results || []).reduce((a, x) => { a[x.kind || "other"] = (a[x.kind || "other"] || 0) + 1; return a; }, {}),
+        presence: pres.results || [],
+        hot: hot.results || [],
+        errors: errs.results || [],
+        open_reports: (reports && reports.c) || 0,
+        down_list: (down.results || []).map((x) => x.name),
+      }, 200, request, env);
+    } catch (e) { return json({ success: true, error: String(e.message || e) }, 200, request, env); }
+  }
+  // (#56) XEM TRƯỚC lịch đăng
+  if (path === "/admin/scheduled/preview" && method === "POST") {
+    const id = parseInt(body.id, 10) || 0;
+    if (!id) return json({ error: "Thiếu id" }, 400, request, env);
+    const r = await env.DB.prepare("SELECT * FROM scheduled_posts WHERE id = ?").bind(id).first().catch(() => null);
+    if (!r) return json({ error: "Không tìm thấy" }, 404, request, env);
+    let preview = null;
+    if (r.kind === "broadcast") preview = { type: "broadcast", title: r.title, message: String(r.title ? r.title + " — " : "") + String(r.body || ""), expires_at: r.end_at ? Math.floor(new Date(String(r.end_at).replace(" ", "T")).getTime() / 1000) : 0 };
+    else if (r.kind === "notify") preview = { type: "notify", title: r.title || "Thông báo", body: r.body || "", url: r.link_value || "", target: "all", expires_at: r.end_at ? Math.floor(new Date(String(r.end_at).replace(" ", "T")).getTime() / 1000) : 0 };
+    else if (r.kind === "event") preview = { type: "event", title: r.title || "", subtitle: r.body || "", image_url: r.image_url || "", link_type: r.link_type || "none", link_value: r.link_value || "" };
+    return json({ success: true, post: r, preview }, 200, request, env);
+  }
+  // (#84) Wrapped xem nhanh cho admin (toàn hệ thống)
+  if (path === "/admin/wrapped" && method === "GET") {
+    try {
+      const [totals, users, movies] = await Promise.all([
+        env.DB.prepare("SELECT kind, SUM(sec) AS sec FROM user_watch GROUP BY kind").all(),
+        env.DB.prepare("SELECT COUNT(*) AS c FROM users").first(),
+        env.DB.prepare("SELECT COUNT(*) AS c, COALESCE(SUM(percent) / 100.0, 0) AS hrs FROM movie_progress WHERE duration_sec > 0").first(),
+      ]);
+      const byKind = {};
+      for (const t of (totals.results || [])) byKind[t.kind] = Number(t.sec || 0);
+      const topCh = await env.DB.prepare("SELECT ref_name, SUM(sec) AS sec FROM user_watch WHERE kind = 'channel' GROUP BY ref_id ORDER BY sec DESC LIMIT 10").all().catch(() => ({ results: [] }));
+      return json({ success: true, by_kind: byKind, total_sec: Object.values(byKind).reduce((a, b) => a + b, 0), users: (users && users.c) || 0, movie_hours: Math.round(((movies && movies.hrs) || 0) / 3600), top_channels: topCh.results || [] }, 200, request, env);
+    } catch (e) { return json({ success: true, error: String(e.message || e) }, 200, request, env); }
+  }
+  return json({ error: "Not found" }, 404, request, env);
+}
+
+// ============================================================================
+// Job nền: dọn mã share hết hạn + đánh giá cảnh báo + lịch đăng (chạy trong runDueJobs)
+// ============================================================================
+async function p48RunDueJobs(env) {
+  if (!hasDB(env)) return;
+  try {
+    await ensureSchema(env);
+    if (await claimJob(env, "p48_alerts")) {
+      let msg = "ok";
+      try { await evalAlertRules(env); } catch (e) { msg = "error: " + (e?.message || e); }
+      await finishJob(env, "p48_alerts", msg);
+    }
+    if (await claimJob(env, "p48_scheduled")) {
+      let msg = "ok";
+      try { await evalScheduled(env); } catch (e) { msg = "error: " + (e?.message || e); }
+      await finishJob(env, "p48_scheduled", msg);
+    }
+  } catch {}
 }

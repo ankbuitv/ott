@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Settings, RotateCcw, Crown, Eye, EyeOff, Globe, Database, Shield, Monitor, Trash2, Languages, Moon, Sun, MapPin, Info, Cpu, Leaf, Copy, CheckCircle2, ShieldOff, Palette, Tv, Trophy, Smartphone, LogOut, QrCode, Users, KeyRound, Lock } from 'lucide-react';
 import ShareButtons from './ShareButtons';
 import { getDeviceInfo } from '../services/device';
-import { Fingerprint, Wifi, Clock, Server } from 'lucide-react';
+import { Fingerprint, Wifi, Clock, Server, Sparkles } from 'lucide-react';
+import { getHomePrefs, saveHomePrefs, seasonalThemeOn, setSeasonalTheme, seasonOf, SEASON_META, getUsageDay, getUsageWeek } from '../services/prefs';
 import { hasAppPin, setAppPin, clearAppPin, weekReport, getKidLimit, setKidLimit, fmtDur } from '../services/kids';
 import { useProfile } from '../contexts/ProfileContext';
 import QrScanner from './QrScanner';
@@ -16,6 +17,7 @@ import { detectCountry } from '../i18n/translations';
 import { COUNTRY_INFO } from '../services/tmdb';
 import { removeStorage } from '../hooks/useStorage';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 
 // Toggle chung
 function Toggle({ on, onClick, label }) {
@@ -45,12 +47,17 @@ function AboutRow({ Icon, label, value, loading, mono, accent }) {
 }
 
 export default function SettingsPage({ onClose }) {
+  const { addToast } = useToast();
   const { profiles } = useProfile();
   const [pinOn, setPinOn] = useState(() => hasAppPin());
   const [pinNew, setPinNew] = useState('');
   const [pinMsg, setPinMsg] = useState('');
   const { t, lang, setLang, languages, detectedLang } = useI18n();
   const { settings, updateSetting, resetSettings } = useSettings();
+  const [seasonTheme, setSeasonTheme] = useState(() => seasonalThemeOn());
+  const [quizPrefs, setQuizPrefs] = useState(() => getHomePrefs());
+  const [usageDay, setUsageDay] = useState(() => getUsageDay());
+  const [usageWeek, setUsageWeek] = useState(() => getUsageWeek());
   const device = useDevice();
   const [pin, setPin] = useState('');
   const [showPin, setShowPin] = useState(false);
@@ -164,6 +171,8 @@ export default function SettingsPage({ onClose }) {
     } catch {}
   };
   useEffect(() => { loadSessions(); setAchStats(getStats()); }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setUsageDay(getUsageDay()); setUsageWeek(getUsageWeek()); }, [active]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (!token) return;
     fetch(`${API_BASE}/user/2fa/status`, { headers: { Authorization: `Bearer ${token}` } })
@@ -366,6 +375,74 @@ export default function SettingsPage({ onClose }) {
         </div>
         )}
 
+
+        {/* (#61) Cá nhân hoá bằng quiz + (#83) Chủ đề theo mùa */}
+        {active === 'appearance' && (
+        <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 shadow-xl shadow-black/30 space-y-4">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2"><Sparkles className="w-4 h-4 text-[#ff9a3d]" /> {t('p48.quiz_title')} & {lang === 'vi' ? 'chủ đề mùa' : 'seasonal theme'}</h3>
+          <div className="space-y-3">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1.5">{t('p48.quiz_q1')}</p>
+              <div className="flex flex-wrap gap-1.5">
+                {[['movies', '🎬 Phim & Series'], ['sports', '⚽ Thể thao'], ['shorts', '📱 Shorts & Creator'], ['news', '📰 Tin & Thời sự']].map(([v, l]) => (
+                  <button key={v} onClick={() => {
+                    const next = { ...quizPrefs, focus: v, favGenres: v === 'movies' ? [28, 18, 10749, 35, 53] : v === 'sports' ? [] : v === 'shorts' ? [] : [] };
+                    setQuizPrefs(next); saveHomePrefs(next); addToast(t('p48.quiz_done'), 'success');
+                  }} className={`px-3 py-1.5 rounded-full text-[11px] font-black border transition ${quizPrefs.focus === v ? 'grad-brand text-white border-transparent' : 'bg-white/[0.05] border-white/10 text-stone-400 hover:text-white'}`}>{l}</button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1.5">{t('p48.quiz_q2')}</p>
+              <div className="flex flex-wrap gap-1.5">
+                {['VTV', 'TH -', 'SPORT', 'Phim', 'Giải trí', 'Thiếu nhi'].map(g => {
+                  const on = (quizPrefs.favGroups || []).includes(g);
+                  return (
+                    <button key={g} onClick={() => {
+                      const cur = quizPrefs.favGroups || [];
+                      const next = { ...quizPrefs, favGroups: on ? cur.filter(x => x !== g) : [...cur, g] };
+                      setQuizPrefs(next); saveHomePrefs(next);
+                    }} className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition ${on ? 'bg-[#f36f21]/20 text-[#ffb37a] border-[#f36f21]/40' : 'bg-white/[0.05] border-white/10 text-stone-400 hover:text-white'}`}>{g}</button>
+                  );
+                })}
+              </div>
+            </div>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1.5">{t('p48.quiz_q3')}</p>
+              <div className="flex flex-wrap gap-1.5">
+                {[['quality', '📺 Nét nhất'], ['new', '🆕 Phim mới'], ['community', '💬 Cộng đồng']].map(([v, l]) => (
+                  <button key={v} onClick={() => { const next = { ...quizPrefs, value: v }; setQuizPrefs(next); saveHomePrefs(next); addToast(t('p48.quiz_done'), 'success'); }}
+                    className={`px-3 py-1.5 rounded-full text-[11px] font-black border transition ${quizPrefs.value === v ? 'grad-brand text-white border-transparent' : 'bg-white/[0.05] border-white/10 text-stone-400 hover:text-white'}`}>{l}</button>
+                ))}
+              </div>
+            </div>
+            <p className="text-[10px] text-slate-600 italic">{t('p48.quiz_hint')}</p>
+          </div>
+          <div className="flex items-center justify-between border-t border-slate-800/40 pt-3">
+            <div>
+              <p className="text-xs font-medium text-slate-200">{lang === 'vi' ? 'Chủ đề theo mùa' : 'Seasonal theme'}</p>
+              <p className="text-[10px] text-slate-500">Tự đổi sắc thái giao diện theo mùa trong năm</p>
+            </div>
+            <Toggle on={seasonTheme} onClick={() => { const nv = !seasonTheme; setSeasonTheme(nv); setSeasonalTheme(nv); addToast(nv ? '🎨 Đã bật chủ đề mùa' : 'Đã tắt chủ đề mùa', 'info'); }} label="Seasonal" />
+          </div>
+          {seasonTheme && (
+            <div className="flex gap-1.5">
+              {Object.entries(SEASON_META).map(([k, m]) => {
+                const now = seasonOf() === k;
+                const chosen = quizPrefs.season === k;
+                return (
+                  <button key={k} onClick={() => { const next = { ...quizPrefs, season: k }; setQuizPrefs(next); saveHomePrefs(next); addToast(`${m.emoji} ${lang === 'vi' ? m.vi : m.en}`, 'info'); }}
+                    className={`flex-1 py-2 rounded-xl text-[11px] font-black border transition ${now ? 'ring-2 ring-white/30' : ''} ${chosen ? 'border-white/60' : 'border-white/10'}`}
+                    style={{ background: `linear-gradient(135deg, ${m.grad[0]}33, ${m.grad[1]}33)` }}>
+                    {m.emoji} {lang === 'vi' ? m.vi : m.en}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        )}
+
         {/* ===== VIDEO ===== */}
         {active === 'video' && (
         <div className="bg-[#14151c] border border-white/[0.07] rounded-2xl p-5 shadow-xl shadow-black/30 space-y-4">
@@ -434,6 +511,27 @@ export default function SettingsPage({ onClose }) {
               <p className="text-[10px] text-slate-500">{t('settings.spoiler_desc')}</p>
             </div>
             <Toggle on={!!settings.spoilerMask} onClick={() => updateSetting('spoilerMask', !settings.spoilerMask)} label="Spoiler mask" />
+          </div>
+          {/* (#17) Dữ liệu đã dùng — ước lượng từ giây xem + cảnh báo khi vượt cap */}
+          <div className="pt-3 border-t border-slate-800/40 space-y-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium text-slate-200 flex items-center gap-1.5"><Database className="w-3.5 h-3.5 text-sky-400" /> {lang === 'vi' ? 'Dữ liệu đã dùng' : 'Data used'}</p>
+                <p className="text-[10px] text-slate-500">Ước lượng từ thời lượng xem phim/shorts (không tính Wi-Fi tĩnh)</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[13px] font-black text-white">{usageDay} MB <span className="text-[9px] text-slate-500">hôm nay</span></p>
+                <p className="text-[11px] font-bold text-sky-300">{usageWeek} MB <span className="text-[9px] text-slate-500">7 ngày</span></p>
+              </div>
+            </div>
+            <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
+              <div className="h-full rounded-full bg-gradient-to-r from-emerald-400 via-amber-400 to-rose-500" style={{ width: `${Math.min(100, (usageWeek / 2500) * 100)}%` }} />
+            </div>
+            {(settings.dataSaver || usageWeek > 1200) && (
+              <p className="text-[10px] text-amber-300/90 flex items-center gap-1">
+                {settings.dataSaver ? '🟢 Tiết kiệm dữ liệu đang bật — ưu tiên chất lượng thấp hơn.' : `⚠️ Tuần này đã dùng ${usageWeek} MB — cân nhắc bật Data saver phía trên.`}
+              </p>
+            )}
           </div>
         </div>
         )}
@@ -598,11 +696,27 @@ export default function SettingsPage({ onClose }) {
           ) : sessions.length === 0 ? (
             <p className="text-[11px] text-slate-500">{t('settings.sess_empty')}</p>
           ) : (
-            <div className="space-y-2 max-h-56 overflow-y-auto">
+            <div className="space-y-2">
+              <div className="flex justify-end">
+                <button
+                  onClick={async () => {
+                    try {
+                      const r = await fetch(`${API_BASE}/auth/sessions`, { method: 'DELETE', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ id: 'others' }) });
+                      const d = await r.json().catch(() => ({}));
+                      loadSessions();
+                      if ((d.revoked || 0) > 0) addToast(`${d.revoked} thiết bị khác đã bị đăng xuất`, 'success');
+                    } catch {}
+                  }}
+                  className="px-2.5 py-1 rounded-lg border border-red-500/30 text-red-300 hover:bg-red-950/40 text-[10px] font-bold transition-all"
+                >
+                  {t('settings.sess_kick_others')}
+                </button>
+              </div>
+              <div className="space-y-2 max-h-52 overflow-y-auto">
               {sessions.map(s => {
                 const ua = s.user_agent || t('settings.sess_unknown');
                 const isCur = s.id === currentSessId;
-                const dev = /mobile|android|iphone/i.test(ua) ? '📱' : /tv|smarttv|tizen|webos/i.test(ua) ? '📺' : '💻';
+                const dev = /mobile|android|iphone/i.test(ua) ? '📱' : /tv|smarttv|tizen|webos|crkey/i.test(ua) ? '📺' : '💻';
                 return (
                   <div key={s.id} className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border ${isCur ? 'border-emerald-600/50 bg-emerald-950/20' : 'border-slate-800/60 bg-black/20'}`}>
                     <span className="text-lg">{dev}</span>
@@ -610,6 +724,7 @@ export default function SettingsPage({ onClose }) {
                       <p className="text-[11px] text-slate-200 truncate">{ua}</p>
                       <p className="text-[9px] text-slate-500">
                         {isCur ? <span className="text-emerald-400 font-bold">● {t('settings.sess_this')} · </span> : null}
+                        {s.ip ? `🌐 ${s.ip} · ` : ''}
                         {t('settings.sess_exp')} {new Date(s.expires_at).toLocaleDateString(lang === 'vi' ? 'vi-VN' : 'en-US')}
                       </p>
                     </div>
@@ -621,6 +736,7 @@ export default function SettingsPage({ onClose }) {
                   </div>
                 );
               })}
+              </div>
             </div>
           )}
         </div>

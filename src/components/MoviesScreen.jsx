@@ -1,14 +1,17 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Search, Star, Play, X, Info, Calendar, Clock, Tv, Film, SlidersHorizontal, TrendingUp, Heart, History, Plus, Check, Crown, Mic, Share2, CalendarClock, Users, Layers, MessageCircle, Sparkles, Clapperboard, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Star, Play, X, Info, Calendar, Clock, Tv, Film, SlidersHorizontal, TrendingUp, Heart, History, Plus, Check, Crown, Mic, Share2, CalendarClock, Users, Layers, MessageCircle, Sparkles, Clapperboard, ChevronLeft, ChevronRight, Ticket } from 'lucide-react';
 import { MovieAPI, imgPath, bgPath, COUNTRY_INFO, countryInfoOf, REGION_LIST, setTMDBRegion, getUpcoming, getMovieGenres, getCredits, getPerson, getPersonCredits, getRecommendations, getCollection, getMovieDetails, getTvDetails, discoverMovies } from '../services/tmdb';
 import { getMovieHistory, recordMovieWatch, recordMovieProgress, fmtWatchSec, isWatched, toggleWatchlistLocal, fetchWatchlist } from '../services/movieList';
 import { listenOnce, voiceSupported } from '../services/voice';
 import ShareMovieModal, { movieDeepId } from './ShareMovieModal';
+import { CodesModal, ResumeModal } from './Pack48Ui';
+import { WatchStatusBar, FollowSeriesBtn, useSeriesFollows, watchPlanOf, RouletteModal, WrappedModal, AdvancedFilters, AffiliateChips, HotCountryRow, AgeBadge } from './MoviesPack';
 import UpcomingModal from './UpcomingModal';
 import CommentsBox from './CommentsBox';
 import FanGroupBox from './FanGroupBox';
 import AdSlot from './AdSlot';
 import { resolveCountry, currentCountry, setManualCountry } from '../services/geo';
+import { getHomePrefs } from '../services/prefs';
 import MoviePlayerModal from './MoviePlayerModal';
 import { hasPlayableSources } from '../services/embeds';
 import { releaseState } from '../utils/release';
@@ -109,12 +112,40 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
   const [myList, setMyList] = useState([]);
   const [heroTrailer, setHeroTrailer] = useState(null);
   const [shareMovie, setShareMovie] = useState(null);
+  const [codesOpen, setCodesOpen] = useState(false);
+  const [resumeOpen, setResumeOpen] = useState(false);
   const [upcomingOpen, setUpcomingOpen] = useState(false);
+  const [rouletteOpen, setRouletteOpen] = useState(false);
+  const [wrappedOpen, setWrappedOpen] = useState(false);
+  const [filtOpen, setFiltOpen] = useState(false);
+  const [advFilter, setAdvFilter] = useState(null);
+  const [homePrefs, setHomePrefs] = useState(() => getHomePrefs());
+  const advOn = !!(advFilter && (advFilter.year || advFilter.rating || advFilter.sort));
   const [forYou, setForYou] = useState({ base: null, items: [] });
   const [cartoons, setCartoons] = useState([]);
   const [listening, setListening] = useState(false);
 
   useEffect(() => { fetchWatchlist().then((l) => setMyList(l)).catch(() => {}); }, []);
+
+  // (#8) Theo dõi series: cảnh báo "TẬP MỚI" 1 lần/session khi TMDB có tập mới
+  const rootSf = useSeriesFollows();
+  useEffect(() => {
+    const ids = Object.keys(rootSf.fresh);
+    if (!ids.length) return;
+    try {
+      const seen = JSON.parse(localStorage.getItem('chrtv_fresh_toast') || '[]');
+      let changed = false;
+      ids.forEach((id) => {
+        if (!seen.includes(id)) {
+          const f = rootSf.fresh[id];
+          addToast(`🔔 Series #${id} có TẬP MỚI — S${f.season}E${f.episode}!`, 'info');
+          seen.push(id); changed = true;
+        }
+      });
+      if (changed) localStorage.setItem('chrtv_fresh_toast', JSON.stringify(seen));
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rootSf.fresh]);
 
   const refreshMovieLists = useCallback(() => {
     setMovieHistory(getMovieHistory());
@@ -291,6 +322,38 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
     setPlayMovie(m);
   }, [addToast, t, ensureAuthed, openDetail, hasSource]);
 
+  /** Nhập mã chia sẻ (#A) — mở thẳng đúng phim/tập từ mã 6 ký tự. */
+  const openMovieFromCode = useCallback(async (it) => {
+    if (!it || !it.tmdb_id) return;
+    if (!ensureAuthed()) return;
+    setCodesOpen(false);
+    setSelected(null);
+    const isTv = it.media_type === 'tv';
+    setPlayMovie({
+      id: Number(it.tmdb_id),
+      media_type: isTv ? 'tv' : 'movie',
+      title: it.title || '',
+      season: isTv ? (Number(it.season) || 1) : 1,
+      episode: isTv ? (Number(it.episode) || 1) : 1,
+    });
+  }, [ensureAuthed]);
+
+  /** Resume đa thiết bị (#7): TV mở đúng tập/phim đang dở. */
+  const resumeFromCode = useCallback(async (item) => {
+    if (!item || !item.tmdb_id) return;
+    if (!ensureAuthed()) return;
+    setResumeOpen(false);
+    const isTv = item.media_type === 'tv';
+    setSelected(null);
+    setPlayMovie({
+      id: Number(item.tmdb_id),
+      media_type: isTv ? 'tv' : 'movie',
+      title: item.title || '',
+      season: isTv ? (Number(item.season) || 1) : 1,
+      episode: isTv ? (Number(item.episode) || 1) : 1,
+    });
+  }, [ensureAuthed]);
+
   const isKid = !!currentProfile?.is_child;
   const kidSafe = useMemo(() => {
     if (!isKid) return catalog;
@@ -302,11 +365,28 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
   }, [catalog, isKid]);
 
   const filteredCatalog = useMemo(() => {
-    const base = isKid ? kidSafe : catalog;
-    if (selectedGenre === 'all') return base;
-    const gid = Number(selectedGenre);
-    return base.filter(m => (m.genre_ids || []).includes(gid));
-  }, [catalog, kidSafe, isKid, selectedGenre]);
+    let base = isKid ? kidSafe : catalog;
+    if (selectedGenre !== 'all') {
+      const gid = Number(selectedGenre);
+      base = base.filter(m => (m.genre_ids || []).includes(gid));
+    }
+    // (#28) Lọc nâng cao: năm + điểm tối thiểu
+    if (advOn) {
+      if (advFilter.year) base = base.filter(m => String((m.release_date || m.first_air_date || '')).slice(0, 4) === advFilter.year);
+      if (advFilter.rating) base = base.filter(m => (m.vote_average || 0) >= advFilter.rating);
+    }
+    // (#61) Cá nhân hoá: ưu tiên phim thuộc thể loại người dùng chọn trong quiz
+    const fav = homePrefs.favGenres || [];
+    if (fav.length > 1 && !isKid) {
+      const score = (m) => (m.genre_ids || []).reduce((s, g) => s + (fav.includes(g) ? 1 : 0), 0);
+      base = [...base].sort((a, b) => score(b) - score(a) || ((b.vote_average || 0) - (a.vote_average || 0)));
+    } else if (advFilter?.sort === 'rating') {
+      base = [...base].sort((a, b) => (b.vote_average || 0) - (a.vote_average || 0));
+    } else if (advFilter?.sort === 'year') {
+      base = [...base].sort((a, b) => String(b.release_date || b.first_air_date || '').localeCompare(String(a.release_date || a.first_air_date || '')));
+    }
+    return base;
+  }, [catalog, kidSafe, isKid, selectedGenre, advFilter, advOn, homePrefs]);
 
   const visibleCatalog = filteredCatalog.slice(0, visibleCount);
   const gridCls = device.isMobile ? 'grid-cols-2' : device.isTablet ? 'grid-cols-3' : 'lg:grid-cols-6 grid-cols-3';
@@ -457,6 +537,8 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
         )}
       </div>
 
+      {/* (#5) Đang hot tại 🇻🇳 — top kênh theo quốc gia của người xem */}
+      {!search.trim() && <HotCountryRow onOpenChannel={() => { addToast('Mở kênh này ở tab Truyền hình nhé 📺', 'info'); }} />}
       {search.trim() ? (
         <div className="px-6 md:px-8 py-6 max-w-7xl mx-auto">
           <h3 className="text-sm font-semibold text-stone-400 mb-4">{t('movies.results')}: "{search}" ({searchResults.length})</h3>
@@ -480,6 +562,11 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
           <section className="px-6 md:px-8">
             <div className="flex items-end justify-between mb-4">
               <div><p className="text-[10px] text-[#ff9a3d] font-bold uppercase tracking-widest mb-1">{t('mv.library')}</p><h3 className="text-xl md:text-2xl font-black tracking-tight">{selectedGenre === 'all' ? t('mv.all_titles') : genres.find(g => String(g.id) === selectedGenre)?.name || t('nav.movies')}</h3><p className="text-xs text-stone-500 mt-1">{t('mv.n_titles2', { n: filteredCatalog.length.toLocaleString(lang === 'vi' ? 'vi-VN' : 'en-US') })}</p></div>
+            <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+              <button onClick={() => setFiltOpen(true)} className={`flex items-center gap-1.5 px-3 py-2 rounded-full border text-[11px] font-black transition active:scale-95 ${advOn ? 'bg-sky-500/20 border-sky-500/40 text-sky-300' : 'bg-white/[0.05] border-white/10 text-stone-400 hover:text-white'}`} title="Lọc năm/điểm"><SlidersHorizontal className="w-3.5 h-3.5" />Lọc{advOn ? ' ✓' : ''}</button>
+              <button onClick={() => setRouletteOpen(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-white/[0.05] border border-white/10 text-stone-300 hover:border-[#ff9a3d]/50 hover:text-white text-[11px] font-black transition active:scale-95" title="Quay số chọn phim theo tâm trạng">🎲 Quay số</button>
+              {isAuthenticated && <button onClick={() => setWrappedOpen(true)} className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-gradient-to-r from-amber-500/20 to-[#f36f21]/20 border border-amber-500/30 text-amber-300 text-[11px] font-black transition active:scale-95" title="Tổng kết năm xem phim">✨ {t('p48.wrapped_btn')}</button>}
+            </div>
             </div>
             {catalogLoading && filteredCatalog.length === 0 ? (<div className={`grid gap-2.5 ${gridCls}`}>{Array.from({ length: 18 }).map((_, i) => <MovieSkeleton key={i} />)}</div>) : filteredCatalog.length === 0 ? (<div className="text-center py-16"><Tv className="w-12 h-12 text-stone-700 mx-auto mb-3" /><p className="text-stone-500 text-sm">{t('movies.no_results')}</p></div>) : (
               <><div className={`grid gap-2.5 ${gridCls}`}>{visibleCatalog.map(m => <MovieCard key={`${m.media_type}-${m.id}`} movie={m} onClick={() => openDetail(m)} />)}</div>{visibleCount < filteredCatalog.length && (<div className="flex justify-center mt-8"><button onClick={() => setVisibleCount(c => c + CATALOG_PAGE)} className="px-8 py-3 bg-white/5 hover:bg-white/10 border border-white/10 text-white text-sm font-bold rounded-xl transition flex items-center gap-2"><Play className="w-4 h-4 rotate-90" /> {t('movies.load_more')} ({filteredCatalog.length - visibleCount})</button></div>)}</>
@@ -492,6 +579,32 @@ export default function MoviesScreen({ openMovie = null, onOpenMovieHandled, onR
       {shareMovie && <ShareMovieModal movie={shareMovie} onClose={() => setShareMovie(null)} />}
       {upcomingOpen && <UpcomingModal items={rows.upcoming} onClose={() => setUpcomingOpen(false)} onSelect={(m) => { setUpcomingOpen(false); openDetail(m); }} />}
       {playMovie && <MoviePlayerModal movie={playMovie} onClose={() => { setPlayMovie(null); refreshMovieLists(); }} />}
+
+      {/* (A) Nhập mã chia sẻ + (#7) Đồng bộ TV — vào nhanh từ tab Phim */}
+      <div className="fixed bottom-24 right-3 md:right-5 z-[130] flex flex-col gap-2 items-end pointer-events-none">
+        <button onClick={() => setResumeOpen(true)} className="pointer-events-auto flex items-center gap-2 pl-3.5 pr-4 py-2.5 rounded-full bg-black/70 border border-white/15 backdrop-blur text-white text-[11px] font-black hover:border-[#f36f21]/60 transition active:scale-95 shadow-xl shadow-black/40" title={t('p48.resume_code_title')}>
+          <Tv className="w-4 h-4 text-[#ff9a3d]" /> {t('p48.resume_code_title')}
+        </button>
+        <button onClick={() => setCodesOpen(true)} className="pointer-events-auto flex items-center gap-2 pl-3.5 pr-4 py-2.5 rounded-full grad-brand text-white text-[11px] font-black hover:brightness-110 transition active:scale-95 shadow-xl shadow-black/40" title={t('p48.enter_code')}>
+          <Ticket className="w-4 h-4" /> {t('p48.enter_code')}
+        </button>
+      </div>
+      {codesOpen && (
+        <CodesModal
+          open
+          mode="redeem"
+          onClose={() => setCodesOpen(false)}
+          onOpenMovie={openMovieFromCode}
+          onPartyCode={() => addToast('Vào tab Truyền hình → bấm "👥 Xem chung" → dán mã phòng', 'info')}
+          onOpenPlaylist={() => addToast('Playlist bạn bè sẽ mở tại đây — đang hoàn thiện', 'info')}
+        />
+      )}
+      {resumeOpen && <ResumeModal open onClose={() => setResumeOpen(false)} onResumeMovie={resumeFromCode} />}
+
+      {/* (#66) Quay số theo tâm trạng + (#84) Wrapped + (#28) lọc nâng cao */}
+      {rouletteOpen && <RouletteModal open pool={isKid ? kidSafe : catalog} onClose={() => setRouletteOpen(false)} onPick={(m) => { setRouletteOpen(false); openDetail(m); }} />}
+      {wrappedOpen && <WrappedModal open onClose={() => setWrappedOpen(false)} />}
+      {filtOpen && <AdvancedFilters open current={advFilter} onClose={() => setFiltOpen(false)} onApply={(f) => setAdvFilter(f)} onClear={() => setAdvFilter(null)} />}
     </div>
   );
 }
@@ -558,6 +671,8 @@ function MovieCard({ movie, onClick, showProgress }) {
 
 function MovieDetailModal({ movie, trailer, trailerLoading, genres = [], hasSource, onClose, onPlay, onMovieChange, onListChanged, onShare }) {
   const { t } = useI18n();
+  const sf = useSeriesFollows(); // (#8) follow series → fresh map "TẬP MỚI"
+  const [watchSt, setWatchSt] = useState(() => watchPlanOf(movie)?.s || null);
   const rs = releaseState(movie);
   // Nhãn CTA nói đúng cái user sẽ nhận được, không phải lời hứa "Xem phim" chung chung
   const ctaLabel = !rs.released || hasSource === false ? t('movies.btn.trailer') : t('movies.btn.play');
@@ -599,6 +714,7 @@ function MovieDetailModal({ movie, trailer, trailerLoading, genres = [], hasSour
               <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
                 {movie.vote_average > 0 && (<span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-400/15 border border-amber-400/30 text-amber-300 text-[11px] font-black"><Star className="w-3 h-3 fill-current" />{movie.vote_average.toFixed(1)}</span>)}
                 {year && (<span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/[0.07] border border-white/10 text-stone-200 text-[11px] font-bold"><Calendar className="w-3 h-3" />{year}</span>)}
+                <AgeBadge movie={movie} />
                 {movie.runtime > 0 && (<span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/[0.07] border border-white/10 text-stone-200 text-[11px] font-bold"><Clock className="w-3 h-3" />{t('mv.n_min', { n: movie.runtime })}</span>)}
                 {gnames.slice(0, 3).map((g) => (<span key={g} className="px-2.5 py-1 rounded-full bg-[#f36f21]/12 border border-[#f36f21]/30 text-[#ffb37a] text-[11px] font-bold">#{g}</span>))}
               </div>
@@ -614,7 +730,18 @@ function MovieDetailModal({ movie, trailer, trailerLoading, genres = [], hasSour
               <Info className="w-3.5 h-3.5 shrink-0" />{statusChip}
             </p>
           )}
+          {/* (#27) Kế hoạch xem + (#8) Follow series + (#85) affiliate */}
+          <div className="mt-3.5 flex flex-wrap items-center gap-2">
+            <WatchStatusBar movie={movie} onChange={setWatchSt} />
+            {movie.media_type === 'tv' && (
+              <FollowSeriesBtn movie={movie} follows={sf.follows} fresh={sf.fresh} onToggle={sf.toggle} />
+            )}
+            <div className="ml-auto"><AffiliateChips movie={movie} /></div>
+          </div>
           {movie.overview && (<p className="text-[13px] md:text-sm text-stone-300 leading-relaxed mt-4">{movie.overview}</p>)}
+          {watchSt && (
+            <p className="mt-1 text-[10px] text-stone-500 font-bold">{watchSt === 'want' ? '🎬 Trong "Muốn xem" của bạn' : watchSt === 'watching' ? '▶️ Bạn đang xem bộ này' : '✅ Bạn đã xem xong bộ này'}</p>
+          )}
         </div>
         <div className="px-5 md:px-8 pb-7">
           {cast.length > 0 && (

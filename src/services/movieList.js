@@ -96,3 +96,62 @@ export function fmtWatchSec(sec) {
 export function clearMovieHistory() {
   try { localStorage.removeItem(HIST_KEY); } catch {}
 }
+
+// ---------- (#7) Resume đa thiết bị: đồng bộ progress lên server ----------
+export function syncMovieProgressServer(movie, { season = 0, episode = 0, position_sec = 0, duration_sec = 0 } = {}) {
+  if (!movie?.id) return Promise.resolve();
+  const h = authHeaders();
+  if (!h) return Promise.resolve();
+  const media_type = movie.media_type === 'tv' ? 'tv' : 'movie';
+  const dur = Math.max(0, Number(duration_sec) || 0);
+  const pos = Math.max(0, Number(position_sec) || 0);
+  return fetch(`${API_BASE}/api/movie/progress`, {
+    method: 'POST',
+    headers: h,
+    body: JSON.stringify({
+      media_type,
+      tmdb_id: movie.id,
+      season: media_type === 'tv' ? (season || 0) : 0,
+      episode: media_type === 'tv' ? (episode || 0) : 0,
+      position_sec: dur > 0 ? pos : 0,
+      duration_sec: dur,
+      percent: dur > 0 ? Math.min(100, (pos / dur) * 100) : 0,
+      title: movie.title || movie.name || '',
+      poster_path: movie.poster_path || '',
+    }),
+  }).catch(() => {});
+}
+// Lấy progress server (mọi thiết bị) — gộp vào history local khi đăng nhập
+export async function fetchMovieProgressServer() {
+  const h = authHeaders();
+  if (!h) return [];
+  try {
+    const r = await fetch(`${API_BASE}/api/movie/progress`, { headers: h });
+    const d = await r.json();
+    return (d.items || []).map((x) => ({
+      media_type: x.media_type, id: x.tmdb_id, title: x.title, poster_path: x.poster_path,
+      season: x.season, episode: x.episode, position_sec: x.position_sec, duration_sec: x.duration_sec,
+      percent: x.percent, updated_at: x.updated_at, server: true,
+    }));
+  } catch { return []; }
+}
+// Merge server progress vào history local: ưu tiên mới hơn
+export function mergeServerProgress(items) {
+  if (!items || !items.length) return;
+  const hist = getMovieHistory();
+  const byKey = new Map(hist.map((h) => [mkey(h), h]));
+  for (const it of items) {
+    const k = mkey(it);
+    const prev = byKey.get(k);
+    const itAt = it.updated_at ? it.updated_at * 1000 : Date.now();
+    if (!prev || (prev.at || 0) < itAt) {
+      byKey.set(k, {
+        media_type: it.media_type, id: it.id, title: it.title || prev?.title || '', poster_path: it.poster_path || prev?.poster_path || '',
+        season: it.season || prev?.season || 0, episode: it.episode || prev?.episode || 0,
+        watchSec: prev?.watchSec || 0, at: itAt, serverPos: it.position_sec, serverDur: it.duration_sec, serverPercent: it.percent,
+      });
+    }
+  }
+  const merged = Array.from(byKey.values()).sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 30);
+  try { localStorage.setItem(HIST_KEY, JSON.stringify(merged)); } catch {}
+}

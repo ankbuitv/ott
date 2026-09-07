@@ -1,13 +1,17 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { X, RefreshCw, AlertTriangle, ChevronLeft, ChevronRight, Play, Shield, ShieldOff, SkipForward, Sparkles } from 'lucide-react';
+import { X, RefreshCw, AlertTriangle, ChevronLeft, ChevronRight, Play, Shield, ShieldOff, SkipForward, Sparkles, MessageCircle } from 'lucide-react';
 import { fetchMovieSources } from '../services/embeds';
 import Hls from 'hls.js';
 import { imgPath, MovieAPI } from '../services/tmdb';
 import { useI18n } from '../contexts/I18nContext';
-import { recordMovieProgress, getMovieProgress, fmtWatchSec } from '../services/movieList';
+import { recordMovieProgress, getMovieProgress, fmtWatchSec, syncMovieProgressServer } from '../services/movieList';
+import { addUsage } from '../services/prefs';
 import { sendBeat } from '../services/social';
 import { useProfile } from '../contexts/ProfileContext';
 import { recordProfileWatch } from '../services/kids';
+import CommentsBox from './CommentsBox';
+import { movieDeepId } from './ShareMovieModal';
+import { fmtTstamp } from './Pack48Ui';
 
 /**
  * CHRTV - Trình phát phim (nhiều nguồn, chọn server được)
@@ -19,9 +23,9 @@ import { recordProfileWatch } from '../services/kids';
  * Chống quảng cáo:
  * - Nút "Chặn QC" bật sandbox cho iframe (không allow-popups / allow-top-navigation*
  *   / allow-modals / allow-downloads) => chặn pop-up, pop-under, redirect cướp trang.
- *   NHƯNG mặc định TẮT (sandbox để trống): nhiều server phát hiện iframe bị sandbox
- *   là hiện thông báo "please disable sandbox" và từ chối phát. Chỉ bật sandbox khi
- *   người xem chủ động bật "Chặn QC". Trạng thái lưu localStorage ('1' = bật).
+ *   MẶC ĐỊNH BẬT. Nếu server báo "please disable sandbox" / không phát, người xem
+ *   bấm "Tắt Chặn QC & thử lại" ngay trên màn lỗi. Trạng thái lưu localStorage
+ *   ('1' = bật — mặc định; '0' = tắt).
  * - referrerPolicy="no-referrer" để không lộ trang cha cho script quảng cáo.
  * - Chặn luôn window.open ở trang cha trong lúc modal đang mở (khôi phục khi đóng).
  */
@@ -35,9 +39,10 @@ const SANDBOX_PERMS = 'allow-scripts allow-same-origin allow-forms allow-present
 export default function MoviePlayerModal({ movie, onClose }) {
   const { t } = useI18n();
   const isTV = movie?.media_type === 'tv';
-  // Tiếp tục xem: nhớ đúng mùa/tập lần trước
-  const [season, setSeason] = useState(() => getMovieProgress(movie)?.season || 1);
-  const [episode, setEpisode] = useState(() => getMovieProgress(movie)?.episode || 1);
+  // Tiếp tục xem: nhớ đúng mùa/tập lần trước. Khi mở bằng mã (#A/#7/#1) mà có
+  // season/episode truyền thẳng trong movie thì ưu tiên giá trị đó hơn progress local.
+  const [season, setSeason] = useState(() => (movie?.season && movie.season > 0 ? movie.season : (getMovieProgress(movie)?.season || 1)));
+  const [episode, setEpisode] = useState(() => (movie?.episode && movie.episode > 0 ? movie.episode : (getMovieProgress(movie)?.episode || 1)));
   const [resumed] = useState(() => getMovieProgress(movie));
   const { currentProfile } = useProfile();
   const [sourceIdx, setSourceIdx] = useState(0);
@@ -47,7 +52,7 @@ export default function MoviePlayerModal({ movie, onClose }) {
   // Chặn quảng cáo (sandbox iframe) — mặc định TẮT vì nhiều server báo
   // "please disable sandbox" và không phát khi iframe bị sandbox.
   const [adBlock, setAdBlock] = useState(() => {
-    try { return localStorage.getItem(ADBLOCK_KEY) === '1'; } catch { return false; }
+    try { return localStorage.getItem(ADBLOCK_KEY) !== '0'; } catch { return true; }
   });
 
   // Nguồn phát lấy từ server (bảng movie_sources + allowlist CSP). Đổi mùa/tập thì
@@ -55,6 +60,18 @@ export default function MoviePlayerModal({ movie, onClose }) {
   const [sources, setSources] = useState([]);
   const [sourcesLoading, setSourcesLoading] = useState(true);
   const [srcKey, setSrcKey] = useState(0); // bấm Reload ở màn "chưa có nguồn"
+  // (#9/#68) Bình luận gắn phút: mở khay chat; với nguồn HLS tự phát ta theo dõi
+  // posRef để auto-ghim phút đang xem mỗi 4 giây.
+  const [chatOpen, setChatOpen] = useState(false);
+  const [liveMin, setLiveMin] = useState(null);
+  useEffect(() => {
+    if (!chatOpen) { setLiveMin(null); return undefined; }
+    const iv = setInterval(() => {
+      const p = posRef.current;
+      if (p && Number.isFinite(p) && p > 0) setLiveMin(Math.floor(p));
+    }, 4000);
+    return () => clearInterval(iv);
+  }, [chatOpen]);
 
   useEffect(() => {
     let on = true;
@@ -126,7 +143,13 @@ export default function MoviePlayerModal({ movie, onClose }) {
   // nếu không BXH/fan time sẽ phồ lên vì những phim chưa có nguồn.
   const watchRef = useRef({ season, episode });
   watchRef.current = { season, episode };
+  const posRef = useRef(0);   // (#7) vị trí phim đang xem (giây) — hls.js báo lên
+  const durRef = useRef(0);
   const hasSource = !!current;
+  const pushServerProgress = useCallback(() => {
+    const { season: se, episode: ep } = watchRef.current;
+    syncMovieProgressServer(movie, { season: isTV ? se : 0, episode: isTV ? ep : 0, position_sec: posRef.current || 0, duration_sec: durRef.current || 0 });
+  }, [movie, isTV]);
   useEffect(() => {
     if (!movie?.id || !hasSource) return undefined;
     sendBeat({ kind: 'movie', ref_id: `${movie.media_type === 'tv' ? 'tv' : 'movie'}-${movie.id}`, ref_name: movie.title || movie.name || '', seconds: 0, viewed: true });
@@ -135,14 +158,20 @@ export default function MoviePlayerModal({ movie, onClose }) {
       recordMovieProgress(movie, { sec: 30, season: isTV ? se : 0, episode: isTV ? ep : 0 });
       sendBeat({ kind: 'movie', ref_id: `${movie.media_type === 'tv' ? 'tv' : 'movie'}-${movie.id}`, ref_name: movie.title || movie.name || '', seconds: 30 });
       recordProfileWatch(currentProfile?.id || 'guest', 30, movie.title || movie.name || '');
+      pushServerProgress();
+      try {
+        const st = JSON.parse(localStorage.getItem('chrtv_settings') || '{}');
+        addUsage(30, st.dataSaver ? '480' : 'other');
+      } catch {}
     }, 30000);
     return () => {
       clearInterval(iv);
       const { season: se, episode: ep } = watchRef.current;
       recordMovieProgress(movie, { sec: 15, season: isTV ? se : 0, episode: isTV ? ep : 0 });
+      pushServerProgress();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [movie?.id, hasSource]);
+  }, [movie?.id, hasSource, pushServerProgress]);
 
   // ESC đóng
   useEffect(() => {
@@ -161,6 +190,17 @@ export default function MoviePlayerModal({ movie, onClose }) {
     };
     return () => { window.open = originalOpen; };
   }, []);
+
+  // Lá chắn click chống QC: vài giây đầu sau khi nguồn phát lên, một lớp trong suốt
+  // nuốt mọi cú click vào vùng player — script quảng cáo hay chờ "người dùng click
+  // đầu tiên" để mở pop-up/redirect. Hết giờ là thả tay điều khiển bình thường.
+  const [shieldSec, setShieldSec] = useState(0);
+  useEffect(() => {
+    if (!current || current.kind === 'hls' || error || adBlock === false) { setShieldSec(0); return undefined; }
+    setShieldSec(5);
+    const iv = setInterval(() => setShieldSec((v) => (v <= 1 ? 0 : v - 1)), 1000);
+    return () => { clearInterval(iv); setShieldSec(0); };
+  }, [current, sourceIdx, season, episode, reloadKey, error, adBlock]);
 
   // Timeout ~20s: nếu iframe chưa load xong thì coi như server lỗi
   // (chỉ đếm khi ĐÃ có nguồn — lúc còn gọi /api/movie/sources thì chưa tính)
@@ -212,10 +252,22 @@ export default function MoviePlayerModal({ movie, onClose }) {
               <SkipForward className="w-3.5 h-3.5" /><span className="hidden md:inline">Tập tiếp</span>
             </button>
           )}
+          {/* Bình luận phút + voice-note (#9/#68) */}
+          <button
+            onClick={() => setChatOpen(v => !v)}
+            title="Bình luận gắn phút — kể cả ghi chú thoại"
+            className={`shrink-0 px-3 py-2 rounded-xl text-[11px] font-black flex items-center gap-1.5 transition-all border active:scale-95 ${
+              chatOpen ? 'bg-[#ff9a3d]/20 text-[#ffb37a] border-[#ff9a3d]/50' : 'bg-white/[0.07] text-stone-200 border-white/10 hover:text-white'
+            }`}
+          >
+            <MessageCircle className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Bình luận</span>
+            {liveMin !== null && <span className="px-1.5 py-px rounded-md bg-[#ff9a3d]/25 font-mono text-[9px]">@{fmtTstamp(liveMin)}</span>}
+          </button>
           {/* Chặn QC */}
           <button
             onClick={toggleAdBlock}
-            title={adBlock ? 'Đang bật sandbox chặn QC — nếu server báo "disable sandbox" hoặc không phát, hãy tắt.' : 'Bật sandbox để chặn pop-up quảng cáo. Mặc định tắt vì nhiều server yêu cầu tắt sandbox.'}
+            title={adBlock ? 'Sandbox chặn QC đang BẬT — server báo "disable sandbox" hoặc không phát thì tắt và thử lại.' : 'Bật sandbox chặn pop-up quảng cáo (server phải chạy trong sandbox).'}
             className={`shrink-0 px-3 py-2 rounded-xl text-[11px] font-black flex items-center gap-1.5 transition-all border active:scale-95 ${
               adBlock
                 ? 'bg-emerald-600/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-600/30'
@@ -296,7 +348,12 @@ export default function MoviePlayerModal({ movie, onClose }) {
           </div>
         )}
         {current && current.kind === 'hls' && (
-          <HlsPlayer src={current.url} onLoad={() => setLoading(false)} onError={() => { setLoading(false); setError(true); }} />
+          <HlsPlayer
+            src={current.url}
+            onLoad={() => setLoading(false)}
+            onError={() => { setLoading(false); setError(true); }}
+            onProgress={(pos, dur) => { try { posRef.current = pos; durRef.current = dur; } catch {} }}
+          />
         )}
         {current && current.kind !== 'hls' && (
           <iframe
@@ -342,6 +399,11 @@ export default function MoviePlayerModal({ movie, onClose }) {
                   : ' Thử chuyển server khác bên dưới — phim chỉ phát trong CHRTV PLAY.'}
               </p>
               <div className="grid grid-cols-2 gap-2">
+                {adBlock && (
+                  <button onClick={toggleAdBlock} className="col-span-2 py-2.5 bg-amber-500/90 hover:bg-amber-400 text-black text-[13px] font-black rounded-2xl flex items-center justify-center gap-1.5 active:scale-[0.98]">
+                    <ShieldOff className="w-4 h-4" /> Tắt Chặn QC & thử lại
+                  </button>
+                )}
                 <button onClick={nextSource} className="col-span-2 py-2.5 grad-brand text-white text-[13px] font-black rounded-2xl flex items-center justify-center gap-1.5 active:scale-[0.98]">
                   <SkipForward className="w-4 h-4" /> Server kế tiếp
                 </button>
@@ -349,6 +411,34 @@ export default function MoviePlayerModal({ movie, onClose }) {
                   <RefreshCw className="w-3.5 h-3.5" /> Tải lại trong app
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+        {/* Lá chắn click (chống QC) — nuốt click trong giây đầu sau khi nguồn lên */}
+        {current && current.kind !== 'hls' && !error && !loading && shieldSec > 0 && adBlock && (
+          <div
+            className="absolute inset-0 z-30 flex items-center justify-center cursor-not-allowed select-none"
+            onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); setShieldSec((v) => (v <= 1 ? 0 : v - 1)); }}
+            title="Lá chắn QC: bấm để tắt sớm"
+          >
+            <span className="pointer-events-none px-3 py-1.5 rounded-full bg-black/80 border border-amber-400/40 text-amber-300 text-[11px] font-black tracking-wide flex items-center gap-1.5 shadow-xl">
+              <Shield className="w-3.5 h-3.5" /> Lá chắn QC · {shieldSec}s
+            </span>
+          </div>
+        )}
+        {/* (#9/#68) Khay bình luận gắn phút — ghim phút đang phát (nguồn HLS) hoặc phút đã tua */}
+        {chatOpen && current && (
+          <div className="absolute inset-0 z-40 flex justify-end items-stretch">
+            <div className="absolute inset-0 bg-black/70 backdrop-blur-[2px]" onClick={() => setChatOpen(false)} />
+            <div className="relative w-full sm:w-[420px] bg-[#0b0c10]/95 border-l border-white/10 overflow-y-auto p-4 anim-slide-left">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-[12px] font-black text-white flex items-center gap-1.5">
+                  <MessageCircle className="w-4 h-4 text-[#ff9a3d]" />Bình luận gắn phút
+                  {liveMin !== null && <span className="px-1.5 py-0.5 rounded bg-[#ff9a3d]/20 font-mono text-[10px] text-[#ffb37a]">đang @{fmtTstamp(liveMin)}</span>}
+                </p>
+                <button onClick={() => setChatOpen(false)} className="p-1 rounded-full hover:bg-white/10"><X className="w-4 h-4 text-slate-400" /></button>
+              </div>
+              <CommentsBox target={movieDeepId(movie)} initialTstamp={liveMin} />
             </div>
           </div>
         )}
@@ -395,12 +485,22 @@ export default function MoviePlayerModal({ movie, onClose }) {
  * Đây là kiểu nên dùng cho nguồn có bản quyền (không pop-up, không CSP frame-src,
  * không dính sandbox "Chặn QC").
  */
-function HlsPlayer({ src, onLoad, onError }) {
+function HlsPlayer({ src, onLoad, onError, onProgress }) {
   const videoRef = useRef(null);
   useEffect(() => {
     const v = videoRef.current;
     if (!v || !src) return undefined;
     let hls = null;
+    let lastT = -1;
+    const report = () => {
+      try {
+        if (v && Number.isFinite(v.currentTime)) {
+          const t = Math.floor(v.currentTime);
+          if (t !== lastT) { lastT = t; onProgress?.(t, v.duration && Number.isFinite(v.duration) ? v.duration : 0); }
+        }
+      } catch {}
+    };
+    const tick = setInterval(report, 5000);
     const isHls = /\.m3u8($|\?)/i.test(src);
     if (isHls && Hls.isSupported()) {
       hls = new Hls({ maxBufferLength: 30, enableWorker: true });
@@ -415,7 +515,8 @@ function HlsPlayer({ src, onLoad, onError }) {
       v.addEventListener('error', () => onError?.(), { once: true });
       v.play().catch(() => {});
     }
-    return () => { try { hls?.destroy(); } catch { /* bỏ qua */ } };
+    v.addEventListener('timeupdate', report);
+    return () => { clearInterval(tick); try { v.removeEventListener('timeupdate', report); } catch {} try { hls?.destroy(); } catch { /* bỏ qua */ } };
   }, [src]); // eslint-disable-line react-hooks/exhaustive-deps
   return <video ref={videoRef} className="absolute inset-0 w-full h-full bg-black" controls playsInline autoPlay />;
 }

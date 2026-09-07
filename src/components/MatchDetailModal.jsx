@@ -82,8 +82,14 @@ export default function MatchDetailModal({ ev, leagueName = '', onClose, onTeam 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const d = await fetchEventDetail(ev.idEvent);
-      if (d) setDetail(d);
+      // Trận từ nguồn ESPN có id ảo (espn_...) — TheSportsDB không có, đừng gọi.
+      if (!String(ev.idEvent || '').startsWith('espn_')) {
+        const d = await fetchEventDetail(ev.idEvent);
+        // CHỐNG ghi đè rác: chỉ thay detail khi kết quả thực sự có thông tin trận
+        // (vài API trả {} hoặc event rỗng cho id không tồn tại → nếu set lên sẽ
+        // xoá sạch tên đội/tỉ số đang hiện từ card → modal "rỗng").
+        if (d && (d.strHomeTeam || d.strAwayTeam || d.strEvent || d.strVideo)) setDetail(d);
+      }
     } catch {} finally { setLoading(false); }
   }, [ev.idEvent]);
 
@@ -192,7 +198,7 @@ export default function MatchDetailModal({ ev, leagueName = '', onClose, onTeam 
           </div>
           <div className="flex items-center justify-between gap-3 mt-2">
             <div className="flex-1 text-center min-w-0">
-              <button type="button" onClick={() => onTeam && onTeam(detail.strHomeTeam)} className="text-[13px] font-extrabold text-white leading-tight break-words hover:text-[#ffb37a]">{detail.strHomeTeam}</button>
+              <button type="button" onClick={() => onTeam && onTeam(detail.strHomeTeam)} className="text-[13px] font-extrabold text-white leading-tight break-words hover:text-[#ffb37a]">{detail.strHomeTeam || '—'}</button>
             </div>
             <div className="text-center shrink-0">
               <p className="text-[28px] font-black tabular-nums leading-none">{detail.intHomeScore ?? '-'}<span className="text-stone-600 mx-1.5">:</span>{detail.intAwayScore ?? '-'}</p>
@@ -201,7 +207,7 @@ export default function MatchDetailModal({ ev, leagueName = '', onClose, onTeam 
                 : <p className="text-[10px] text-stone-500 font-bold mt-1.5">{detail.strStatus === 'FT' || detail.intHomeScore != null ? 'FT' : (detail.dateEvent || '')}</p>}
             </div>
             <div className="flex-1 text-center">
-              <p className="text-[13px] font-extrabold text-white leading-tight">{detail.strAwayTeam}</p>
+              <p className="text-[13px] font-extrabold text-white leading-tight">{detail.strAwayTeam || '—'}</p>
             </div>
           </div>
           {/* (#32) Follow từng đội — fan-out khi trận live/có bàn thắng */}

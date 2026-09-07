@@ -11,10 +11,11 @@
  *   - thêm/bớt nguồn không cần build lại app;
  *   - nguồn ở domain chưa được duyệt bị lọc ngay ở server, nên không thể "nhét"
  *     qua DB rồi mong chạy;
- *   - không có nguồn nào = modal hiện "Chưa có nguồn phát hợp lệ" như cũ.
+ *   - không có nguồn nào = card/modal tự chuyển sang chế độ TRAILER (không còn
+ *     nút "Xem phim" hứa hão).
  *
  * Quy trình đúng: chỉ thêm nguồn mình CÓ HỢP ĐỒNG/QUYỀN PHÂN PHỐI, và ghi rõ
- * điều đó vào ô licence_note khi thêm (admin bắt buộc điền).
+ * điều đó vào ô license_note khi thêm (admin bắt buộc điền).
  */
 
 import { API_BASE } from './config';
@@ -43,3 +44,29 @@ export async function fetchMovieSources(movie, season, episode) {
     return []; // offline / worker chưa deploy: coi như không có nguồn
   }
 }
+
+/**
+ * Đã có nguồn phát cho phim này chưa? Dùng để đổi nút "Xem phim" thành
+ * "Xem trailer" NGAY trên card/modal, khỏi bắt user bấm vào rồi gặp màn trống.
+ * Cache 3 phút/film — trên remote người dùng bấm đi bấm lại rất nhiều, và
+ * `/api/movie/sources` là query DB.
+ *
+ * @returns {Promise<boolean>}
+ */
+const availCache = new Map(); // 'movie-123' -> { ok, ts }
+const AVAIL_TTL = 180_000;
+
+export async function hasPlayableSources(movie, season = 1, episode = 1) {
+  if (!movie?.id) return false;
+  const isTV = movie.media_type === 'tv';
+  const key = `${isTV ? 'tv' : 'movie'}-${movie.id}`;
+  const hit = availCache.get(key);
+  if (hit && Date.now() - hit.ts < AVAIL_TTL) return hit.ok;
+  const list = await fetchMovieSources(movie, isTV ? season : null, isTV ? episode : null);
+  const ok = Array.isArray(list) && list.length > 0;
+  availCache.set(key, { ok, ts: Date.now() });
+  return ok;
+}
+
+/** Admin vừa thêm/bớt nguồn, hoặc user bấm "Thử lại" -> quên cache để hỏi lại server */
+export function clearMovieSourceCache() { availCache.clear(); }

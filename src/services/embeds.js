@@ -1,43 +1,45 @@
 /**
- * CHRTV - Nguồn phát phim thứ 3 (embed APIs)
+ * CHRTV — danh sách nguồn phát cho mục Phim/TV show.
  *
- * Vidbox và các site tương tự không có API công khai — chúng nhúng nguồn
- * phát từ các embed API kiểu "vidsrc" nhận IMDb/TMDB ID và trả về player
- * HLS trực tiếp. App dùng chính các nguồn đó: chỉ cần TMDB ID là phát được
- * phim thật (nhiều server để dự phòng khi 1 server sập).
+ * LỊCH SỬ: trước đây file này hard-code ~50 domain embed kiểu "vidsrc".
+ * Ngày 2026-09-05 (P3, xem SECURITY_FIX_RUNBOOK.md Phụ lục B) toàn bộ bị tắt vì
+ * đó là nguồn KHÔNG có bản quyền và là vector bảo mật (iframe bên thứ 3).
  *
- * Bộ nguồn này được đồng bộ theo danh sách nguồn mà CinemaOS (cinemaos.live)
- * đang dùng (lấy từ bundle JS watch page của họ) — gồm các nguồn "sạch"
- * ít/không quảng cáo xếp đầu (Videasy, VidFast, Vidzee, Rive, Ember,
- * Sapphire, Vertex, Nexus, Horizon, NontonGo, 7xtream, Uira, Spencer,
- * VidsrcMulti...) và các nguồn dự phòng phía dưới.
+ * GIỜ danh sách lấy từ server (bảng `movie_sources`, admin quản lý ở
+ * Admin Panel → Nguồn phim) và server CHỈ trả về nguồn mà domain của nó có trong
+ * allowlist CSP `MOVIE_FRAME_SRC`. Nghĩa là:
+ *   - thêm/bớt nguồn không cần build lại app;
+ *   - nguồn ở domain chưa được duyệt bị lọc ngay ở server, nên không thể "nhét"
+ *     qua DB rồi mong chạy;
+ *   - không có nguồn nào = modal hiện "Chưa có nguồn phát hợp lệ" như cũ.
  *
- * Lưu ý: các domain này có thể đổi/rotating. Nếu hết server hoạt động, thêm
- * domain mới vào đây — app tự hiển thị danh sách server để người xem chọn.
+ * Quy trình đúng: chỉ thêm nguồn mình CÓ HỢP ĐỒNG/QUYỀN PHÂN PHỐI, và ghi rõ
+ * điều đó vào ô licence_note khi thêm (admin bắt buộc điền).
  */
+
+import { API_BASE } from './config';
 
 /**
- * Xây danh sách nguồn phát cho một phim/TV show.
- *
- * Thứ tự ưu tiên: nguồn "sạch" (adFree=true) xếp LÊN ĐẦU — ít/không QC,
- * chịu được sandbox. Nguồn dự phòng nhiều QC để cuối danh sách.
- *
- * @param {Object} movie - object TMDB (id, media_type, title/name)
- * @param {number} [season] - chỉ dùng cho TV show
- * @param {number} [episode] - chỉ dùng cho TV show
- * @returns {Array<{name:string, url:string, adFree?:boolean}>}
+ * @param {Object} movie  object TMDB (id, media_type)
+ * @param {number} [season]
+ * @param {number} [episode]
+ * @returns {Promise<Array<{id:number,name:string,kind:'embed'|'hls',url:string}>>}
  */
-export function buildEmbedSources(movie, season, episode) {
-  // BẢO MẬT 2026-09-05 (P3): tắt toàn bộ nguồn embed API bên thứ 3
-  // (vidsrc/cinemaos group) — KHÔNG có bản quyền, là vector pháp lý +
-  // vector bảo mật (third-party iframe). Chỉ bật lại nguồn ĐÃ CÓ HỢP ĐỒNG
-  // BẢN QUYỀN ở đây; UI tự hiển thị thông báo khi danh sách rỗng.
-  return [];
-}
-
-
-/** Link tìm phim đó trên các nguồn mở (dự phòng cuối cùng) */
-export function openExternalSearch(movie) {
-  const q = encodeURIComponent((movie.title || movie.name || '') + ' full movie');
-  window.open(`https://www.google.com/search?q=${q}`, '_blank', 'noopener');
+export async function fetchMovieSources(movie, season, episode) {
+  const id = movie?.id;
+  if (!id) return [];
+  const type = movie.media_type === 'tv' ? 'tv' : 'movie';
+  const q = new URLSearchParams({ tmdb: String(id), type });
+  if (type === 'tv') {
+    q.set('season', String(season || 1));
+    q.set('episode', String(episode || 1));
+  }
+  try {
+    const res = await fetch(`${API_BASE}/api/movie/sources?${q}`, { headers: { Accept: 'application/json' } });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data?.sources) ? data.sources : [];
+  } catch {
+    return []; // offline / worker chưa deploy: coi như không có nguồn
+  }
 }

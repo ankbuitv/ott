@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { X, RefreshCw, AlertTriangle, ChevronLeft, ChevronRight, Play, Shield, ShieldOff, SkipForward, Sparkles } from 'lucide-react';
-import { buildEmbedSources } from '../services/embeds';
+import { fetchMovieSources } from '../services/embeds';
+import Hls from 'hls.js';
 import { imgPath } from '../services/tmdb';
 import { recordMovieProgress, getMovieProgress, fmtWatchSec } from '../services/movieList';
 import { sendBeat } from '../services/social';
@@ -8,9 +9,11 @@ import { useProfile } from '../contexts/ProfileContext';
 import { recordProfileWatch } from '../services/kids';
 
 /**
- * CHRTV - Trình phát phim (multi-server embed)
- * Nhúng player từ các embed API — tất cả chỉ cần TMDB ID. Có selector để
- * chuyển server nếu 1 server lỗi.
+ * CHRTV - Trình phát phim (nhiều nguồn, chọn server được)
+ * Danh sách nguồn do admin quản lý (Admin Panel → Nguồn phim, API
+ * /api/movie/sources) và chỉ gồm nguồn có domain nằm trong allowlist CSP
+ * MOVIE_FRAME_SRC — xem src/services/embeds.js. kind 'embed' → iframe player
+ * đối tác; kind 'hls' → app tự phát trực tiếp bằng hls.js (không iframe).
  *
  * Chống quảng cáo:
  * - Nút "Chặn QC" bật sandbox cho iframe (không allow-popups / allow-top-navigation*
@@ -45,7 +48,30 @@ export default function MoviePlayerModal({ movie, onClose }) {
     try { return localStorage.getItem(ADBLOCK_KEY) === '1'; } catch { return false; }
   });
 
-  const sources = useMemo(() => buildEmbedSources(movie, isTV ? season : null, isTV ? episode : null), [movie, isTV, season, episode]);
+  // Nguồn phát lấy từ server (bảng movie_sources + allowlist CSP). Đổi mùa/tập thì
+  // hỏi lại, vì với TV show URL phụ thuộc season/episode.
+  const [sources, setSources] = useState([]);
+  const [sourcesLoading, setSourcesLoading] = useState(true);
+  const [srcKey, setSrcKey] = useState(0); // bấm Reload ở màn "chưa có nguồn"
+
+  useEffect(() => {
+    let on = true;
+    setSourcesLoading(true);
+    setLoading(true);
+    setError(false);
+    setSourceIdx(0);
+    fetchMovieSources(movie, isTV ? season : null, isTV ? episode : null)
+      .then((list) => {
+        if (!on) return;
+        const arr = list || [];
+        setSources(arr);
+        // Có nguồn -> giữ spinner tới khi iframe onLoad; rỗng -> dừng xoay để hiện hướng dẫn
+        setLoading(arr.length > 0);
+      })
+      .finally(() => { if (on) setSourcesLoading(false); });
+    return () => { on = false; };
+  }, [movie, isTV, season, episode, srcKey]);
+
   const current = sources[sourceIdx] || null;
 
   const switchSource = useCallback((i) => {
@@ -61,12 +87,16 @@ export default function MoviePlayerModal({ movie, onClose }) {
     setError(false);
   }, [sources.length]);
 
-  // Tải lại player hiện tại: tăng reloadKey để key iframe đổi => mount lại thật sự
+  // Tải lại player hiện tại: tăng reloadKey để key iframe đổi => mount lại thật sự.
   const reload = useCallback(() => {
     setLoading(true);
     setError(false);
     setReloadKey(k => k + 1);
   }, []);
+
+  // Màn "chưa có nguồn": hỏi lại /api/movie/sources (admin vừa thêm nguồn trong lúc
+  // user đang mở modal thì khỏi reload cả trang).
+  const retrySources = useCallback(() => { setSrcKey(k => k + 1); }, []);
 
   // Bật/tắt chặn quảng cáo (sandbox iframe) — lưu localStorage, mount lại iframe
   const toggleAdBlock = useCallback(() => {
@@ -119,15 +149,16 @@ export default function MoviePlayerModal({ movie, onClose }) {
   }, []);
 
   // Timeout ~20s: nếu iframe chưa load xong thì coi như server lỗi
+  // (chỉ đếm khi ĐÃ có nguồn — lúc còn gọi /api/movie/sources thì chưa tính)
   const loadTimerRef = useRef(null);
   useEffect(() => {
-    if (!loading || error) return undefined;
+    if (!loading || error || sourcesLoading || !current) return undefined;
     loadTimerRef.current = setTimeout(() => {
       setLoading(false);
       setError(true);
     }, 20000);
     return () => clearTimeout(loadTimerRef.current);
-  }, [loading, error, sourceIdx, season, episode, reloadKey, adBlock]);
+  }, [loading, error, sourcesLoading, current, sourceIdx, season, episode, reloadKey, adBlock]);
 
   if (!movie) return null;
 
@@ -206,14 +237,26 @@ export default function MoviePlayerModal({ movie, onClose }) {
 
       {/* ===== Player area ===== */}
       <div className="flex-1 relative bg-black flex items-center justify-center min-h-0">
-        {!current && (
+        {sourcesLoading && (
+          <div className="z-10 flex flex-col items-center gap-3">
+            <div className="w-16 h-16 border-4 border-[#f36f21]/25 border-t-[#f36f21] rounded-full animate-spin"></div>
+            <p className="text-[12px] font-bold text-stone-300">Đang tìm nguồn phát…</p>
+          </div>
+        )}
+        {!current && !sourcesLoading && (
           <div className="z-10 max-w-sm text-center px-6">
             <div className="w-16 h-16 mx-auto rounded-2xl bg-white/[0.06] border border-white/10 flex items-center justify-center text-3xl mb-3">🎬</div>
             <h3 className="text-sm font-bold text-white mb-1">Chưa có nguồn phát hợp lệ</h3>
-            <p className="text-xs text-stone-500">Nội dung này sẽ phát trực tiếp khi CHRTV PLAY có nguồn bản quyền. Theo dõi mục Tin tức để biết thêm.</p>
+            <p className="text-xs text-stone-500">Mục Phim chỉ phát được nguồn có bản quyền đã duyệt. Admin mở <b className="text-stone-300">Admin Panel → Nguồn phim</b> để thêm, và domain đó phải có trong secret <code className="text-stone-300">MOVIE_FRAME_SRC</code>.</p>
+            <button onClick={retrySources} className="mt-4 px-4 py-2 rounded-2xl bg-white/[0.07] hover:bg-white/[0.14] border border-white/10 text-white text-[12px] font-bold flex items-center gap-1.5 mx-auto transition active:scale-95">
+              <RefreshCw className="w-3.5 h-3.5" /> Thử lại
+            </button>
           </div>
         )}
-        {current && (
+        {current && current.kind === 'hls' && (
+          <HlsPlayer src={current.url} onLoad={() => setLoading(false)} onError={() => { setLoading(false); setError(true); }} />
+        )}
+        {current && current.kind !== 'hls' && (
           <iframe
             // key chứa cả reloadKey + adBlock: đổi trạng thái là iframe mount lại
             key={`${sourceIdx}-${season}-${episode}-${reloadKey}-${adBlock ? 'ab1' : 'ab0'}`}
@@ -303,4 +346,34 @@ export default function MoviePlayerModal({ movie, onClose }) {
       </div>
     </div>
   );
+}
+
+/**
+ * Nguồn kind='hls': app tự phát bằng <video> + hls.js, KHÔNG qua iframe bên thứ 3.
+ * Đây là kiểu nên dùng cho nguồn có bản quyền (không pop-up, không CSP frame-src,
+ * không dính sandbox "Chặn QC").
+ */
+function HlsPlayer({ src, onLoad, onError }) {
+  const videoRef = useRef(null);
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !src) return undefined;
+    let hls = null;
+    const isHls = /\.m3u8($|\?)/i.test(src);
+    if (isHls && Hls.isSupported()) {
+      hls = new Hls({ maxBufferLength: 30, enableWorker: true });
+      hls.loadSource(src);
+      hls.attachMedia(v);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => { onLoad?.(); v.play().catch(() => {}); });
+      hls.on(Hls.Events.ERROR, (_e, d) => { if (d?.fatal) onError?.(); });
+    } else {
+      // Safari/TV có HLS sẵn, hoặc link mp4 trực tiếp
+      v.src = src;
+      v.addEventListener('loadeddata', () => onLoad?.(), { once: true });
+      v.addEventListener('error', () => onError?.(), { once: true });
+      v.play().catch(() => {});
+    }
+    return () => { try { hls?.destroy(); } catch { /* bỏ qua */ } };
+  }, [src]); // eslint-disable-line react-hooks/exhaustive-deps
+  return <video ref={videoRef} className="absolute inset-0 w-full h-full bg-black" controls playsInline autoPlay />;
 }

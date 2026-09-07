@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Eye, Gift, CreditCard, Megaphone, Clock, MessageCircle, Target, FileSpreadsheet, Trash2, Check, X, Plus, Activity, Flag, RefreshCw, Bug } from 'lucide-react';
+import { Film, Eye, Gift, CreditCard, Megaphone, Clock, MessageCircle, Target, FileSpreadsheet, Trash2, Check, X, Plus, Activity, Flag, RefreshCw, Bug } from 'lucide-react';
 
 // Các tab admin mới: trực tiếp, gift, thanh toán, QC, lịch đăng, bình luận, dự đoán, báo cáo.
 const inp = 'w-full bg-slate-900/60 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-[#f36f21]/50';
@@ -448,12 +448,87 @@ export function HealthTab({ BASE, headers, addToast }) {
   );
 }
 
+// ---- Nguồn phát phim ----
+// Danh sách này KHÁC với embed cũ: server chỉ trả nguồn cho client nếu domain của nó
+// nằm trong secret MOVIE_FRAME_SRC (allowlist CSP). Nên thêm nguồn ở đây mà chưa khai
+// domain thì app vẫn hiện "Chưa có nguồn phát hợp lệ" — tab này báo rõ trạng thái đó.
+export function MovieSourcesTab({ BASE, headers, addToast }) {
+  const [rows, setRows] = useState([]);
+  const [allow, setAllow] = useState([]);
+  const [allowSet, setAllowSet] = useState(false);
+  const [form, setForm] = useState({ name: '', kind: 'embed', url_template: '', license_note: '', sort_order: 0 });
+  const [editing, setEditing] = useState(null);
+  const [testing, setTesting] = useState(null);
+  const load = () => api(BASE, headers, '/admin/movie_sources').then(d => { setRows(d.sources || []); setAllow(d.frame_allowlist || []); setAllowSet(!!d.frame_allowlist_set); }).catch(() => {});
+  useEffect(() => { load(); }, []); // eslint-disable-line
+  const save = async (e) => {
+    e.preventDefault();
+    const d = editing
+      ? await api(BASE, headers, '/admin/movie_sources', { method: 'PUT', body: JSON.stringify({ ...form, id: editing }) })
+      : await api(BASE, headers, '/admin/movie_sources', { method: 'POST', body: JSON.stringify(form) });
+    if (d.success) { addToast('Đã lưu nguồn.', 'success'); setEditing(null); setForm({ name: '', kind: 'embed', url_template: '', license_note: '', sort_order: 0 }); load(); }
+    else addToast(d.error || 'Không lưu được', 'error');
+  };
+  const test = async () => {
+    setTesting('…');
+    const d = await api(BASE, headers, '/admin/movie_sources/test', { method: 'POST', body: JSON.stringify({ url_template: form.url_template }) });
+    setTesting(d.success ? { ok: true, url: d.url } : { ok: false, error: d.error });
+  };
+  return (
+    <div className="p-4 space-y-3">
+      <div className={`rounded-xl border px-3 py-2 text-[11px] leading-relaxed ${allowSet ? 'border-emerald-600/40 bg-emerald-600/10 text-emerald-200' : 'border-amber-600/40 bg-amber-600/10 text-amber-200'}`}>
+        <b>Allowlist CSP (MOVIE_FRAME_SRC):</b> {allowSet ? allow.join(' · ') : 'CHƯA SET — mọi nguồn đều bị chặn, app sẽ vẫn báo "Chưa có nguồn phát hợp lệ".'}
+        <div className="text-slate-400 mt-1 font-mono text-[10px]">wrangler secret put MOVIE_FRAME_SRC   # nội dung: https://domain-cua-nguồn</div>
+      </div>
+      {rows.map(s => (
+        <div key={s.id} className="flex items-center gap-2 rounded-xl bg-black/30 border border-white/[0.06] px-3 py-2">
+          <span className="text-[10px] font-black uppercase text-sky-300 shrink-0 w-12">{s.kind}</span>
+          <span className="flex-1 min-w-0">
+            <span className="block text-[12px] font-bold text-white truncate">{s.name}</span>
+            <span className="block text-[10px] text-slate-500 truncate font-mono">{s.url_template}</span>
+            {s.license_note && <span className="block text-[10px] text-emerald-400/80 truncate">quyền: {s.license_note}</span>}
+          </span>
+          <span className="text-[10px] text-slate-500 shrink-0">{allow.includes((s.url_template.match(/^https:\/\/[^/]+/) || [''])[0]) ? 'OK' : 'NGOÀI ALLOWLIST'}</span>
+          <button onClick={async () => { await api(BASE, headers, '/admin/movie_sources', { method: 'PUT', body: JSON.stringify({ ...s, is_active: s.is_active ? 0 : 1 }) }); load(); }} className="text-[10px] font-bold px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 shrink-0">{s.is_active ? 'ĐANG BẬT' : 'ĐANG TẮT'}</button>
+          <button onClick={() => { setEditing(s.id); setForm({ name: s.name, kind: s.kind, url_template: s.url_template, license_note: s.license_note || '', sort_order: s.sort_order || 0 }); }} className="text-[10px] font-bold text-slate-400 hover:text-white px-2 py-1 shrink-0">Sửa</button>
+          <button onClick={async () => { if (!confirm('Xoá nguồn này?')) return; await api(BASE, headers, '/admin/movie_sources', { method: 'DELETE', body: JSON.stringify({ id: s.id }) }); load(); }} className="text-slate-600 hover:text-red-400 shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
+        </div>
+      ))}
+      <form onSubmit={save} className="space-y-2 pt-2 border-t border-slate-800/40">
+        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{editing ? `Sửa nguồn #${editing}` : 'Thêm nguồn mới'}</p>
+        <div className="grid grid-cols-2 gap-2">
+          <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Tên hiển thị (vd: Partner X)" className={inp} />
+          <select value={form.kind} onChange={e => setForm({ ...form, kind: e.target.value })} className={inp}>
+            <option value="embed">embed — nhúng iframe player</option>
+            <option value="hls">hls — link .m3u8, app tự phát</option>
+          </select>
+          <input value={form.url_template} onChange={e => setForm({ ...form, url_template: e.target.value })} placeholder="https://player.partner.vn/movie/{tmdb}  ({{tmdb}} {{type}} {{season}} {{episode}})" className={inp + ' col-span-2 font-mono'} />
+          <input value={form.license_note} onChange={e => setForm({ ...form, license_note: e.target.value })} placeholder="Nguồn này có bản quyền từ đâu? (bắt buộc)" className={inp + ' col-span-2'} />
+          <input value={form.sort_order} type="number" onChange={e => setForm({ ...form, sort_order: e.target.value })} placeholder="Thứ tự" className={inp} />
+          <button type="button" onClick={test} className={btnG + ' justify-center'}>Test URL {testing && <span className="ml-1 text-[10px]">{typeof testing === 'string' ? testing : testing.ok ? '→ hợp lệ' : ''}</span>}</button>
+        </div>
+        {typeof testing === 'object' && (
+          <p className={`text-[10px] ${testing.ok ? 'text-emerald-400' : 'text-red-400'} break-all`}>{testing.ok ? `URL khi gửi lên player: ${testing.url}` : testing.error}</p>
+        )}
+        <div className="flex gap-2">
+          <button type="submit" className={btnP + ' flex-1 justify-center'}>{editing ? 'Cập nhật' : 'Thêm'}</button>
+          {editing && <button type="button" onClick={() => { setEditing(null); setForm({ name: '', kind: 'embed', url_template: '', license_note: '', sort_order: 0 }); }} className={btnG}>Huỷ</button>}
+        </div>
+        <p className="text-[10px] text-slate-500 leading-relaxed">
+          Chỉ thêm nguồn bạn CÓ QUYỀN phân phối. Tên nguồn và url_template được ghi vào audit_log khi lưu.
+        </p>
+      </form>
+    </div>
+  );
+}
+
 export const EXTRA_TABS = [
   { id: 'health', label: 'Sức khoẻ kênh', icon: Activity },
   { id: 'live', label: 'Trực tiếp', icon: Eye },
   { id: 'gifts', label: 'Gift code', icon: Gift },
   { id: 'payments', label: 'Thanh toán', icon: CreditCard },
   { id: 'ads', label: 'Quảng cáo', icon: Megaphone },
+  { id: 'moviesrc', label: 'Nguồn phim', icon: Film },
   { id: 'sched', label: 'Lịch đăng', icon: Clock },
   { id: 'comments', label: 'Bình luận', icon: MessageCircle },
   { id: 'predict', label: 'Dự đoán', icon: Target },

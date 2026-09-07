@@ -12,6 +12,10 @@ compatibility_date = "2024-01-01"
 JWT_SECRET = "dev-only-jwt-secret-local-1234567890"
 STREAM_TOKEN_SECRET = "dev-only-stream-secret-local-1234567890"
 ADMIN_MASTER_TOKEN = "dev-only-admin-master-token-local"
+# Allowlist domain được nhúng làm player phim (frame-src của CSP) + điều kiện để
+# /api/movie/sources trả nguồn. Production đặt bằng: wrangler secret put MOVIE_FRAME_SRC
+# Ở local chỉ cần domain giả để test plumbing — không phải nguồn thật.
+MOVIE_FRAME_SRC = "https://player.example-partner.test"
 
 [[d1_databases]]
 binding = "DB"

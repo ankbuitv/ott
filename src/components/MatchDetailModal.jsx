@@ -55,10 +55,12 @@ export default function MatchDetailModal({ ev, leagueName = '', onClose, onTeam 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const d = await fetchEventDetail(ev.idEvent);
+      // Truyền cả object event: trận ESPN (id 'espn_*') cần slug giải để
+      // gọi summary; fallback vẫn dùng được dữ liệu scoreboard đang có.
+      const d = await fetchEventDetail(ev);
       if (d) setDetail(d);
     } catch {} finally { setLoading(false); }
-  }, [ev.idEvent]);
+  }, [ev]);
 
   useEffect(() => {
     setReminded(hasReminder(`match-${ev.idEvent}`));
@@ -70,9 +72,9 @@ export default function MatchDetailModal({ ev, leagueName = '', onClose, onTeam 
   // Tường thuật trực tiếp: tự refresh mỗi 60s khi đang đá
   useEffect(() => {
     if (!isLive(detail)) return undefined;
-    const iv = setInterval(() => { bustEventDetail(ev.idEvent); load(); }, 60000);
+    const iv = setInterval(() => { bustEventDetail(ev); load(); }, 60000);
     return () => clearInterval(iv);
-  }, [detail.strStatus, ev.idEvent, load]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [detail.strStatus, ev, load]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const timeline = buildTimeline(detail);
 

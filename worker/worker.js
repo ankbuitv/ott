@@ -124,7 +124,7 @@ const CSP_DIRECTIVES = [
   "font-src 'self' https://fonts.gstatic.com data:",
   "img-src 'self' https: data: blob: media:",
   "media-src 'self' blob: data: media:",
-  "connect-src 'self' blob: data: https://epg.io.vn https://lichphatsong.io.vn https://epg.pm https://www.thesportsdb.com https://r2.thesportsdb.com https://site.api.espn.com https://a.espncdn.com",
+  "connect-src 'self' blob: data: https://epg.io.vn https://lichphatsong.io.vn https://epg.pm https://www.thesportsdb.com https://r2.thesportsdb.com https://site.api.espn.com https://a.espncdn.com https://api.jolpi.ca https://api.openligadb.de",
   "worker-src 'self' blob:",
   "manifest-src 'self'",
   "form-action 'self'",
@@ -695,10 +695,9 @@ const TSDB_FILES = new Set([
   "searchevents.php", "eventslast.php", "eventsday.php", "lookupteam.php",
   "searchteams.php", "lookupevent.php", "lookupleague.php",
 ]);
-const ESPN_SOCCER_SLUGS = new Set([
-  "aff.championship", "afc.u20", "afc.u20.championship", "afc.u20asiancup",
-  "fifa.worldu20", "fifa.u20worldcup",
-]);
+// Slug giải ESPN hợp lệ (vd eng.1, esp.laliga, aff.championship, nba...).
+// Chỉ cho phép chữ/số/chấm/gạch để chặn path traversal & injection.
+const ESPN_SLUG_RE = /^[a-z0-9]+(\.[a-z0-9_-]+)*$/i;
 
 async function handleSportsTsdb(request, env) {
   const url = new URL(request.url);
@@ -725,14 +724,23 @@ async function handleSportsTsdb(request, env) {
   }
 }
 
+// Proxy ESPN: scoreboard (lịch/kq) + summary (chi tiết 1 trận: diễn biến, thống kê).
+//   /api/sports/espn?league=eng.1[&dates=20260901-20260908]
+//   /api/sports/espn?sport=basketball&league=nba
+//   /api/sports/espn?summary=<eventId>&league=eng.1   (chi tiết trận)
 async function handleSportsEspn(request, env) {
   const url = new URL(request.url);
   const league = String(url.searchParams.get("league") || "").trim().toLowerCase();
-  if (!ESPN_SOCCER_SLUGS.has(league)) return json({ error: "Invalid league" }, 400, request, env);
+  const sport = String(url.searchParams.get("sport") || "soccer").trim().toLowerCase();
+  const summary = String(url.searchParams.get("summary") || "").replace(/[^0-9]/g, "").slice(0, 12);
+  if (!ESPN_SLUG_RE.test(league)) return json({ error: "Invalid league" }, 400, request, env);
+  if (!/^[a-z]{3,15}$/.test(sport)) return json({ error: "Invalid sport" }, 400, request, env);
   const dates = String(url.searchParams.get("dates") || "").replace(/[^0-9-]/g, "").slice(0, 17);
-  const qs = dates ? `?dates=${dates}` : "";
+  const upstream = summary
+    ? `https://site.api.espn.com/apis/site/v2/sports/${sport}/${league}/summary?event=${summary}`
+    : `https://site.api.espn.com/apis/site/v2/sports/${sport}/${league}/scoreboard${dates ? `?dates=${dates}` : ""}`;
   try {
-    const resp = await fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/${league}/scoreboard${qs}`, {
+    const resp = await fetch(upstream, {
       headers: { "User-Agent": "CHRTV-OTT/2.0", accept: "application/json" },
       signal: AbortSignal.timeout(12000),
     });
@@ -740,6 +748,52 @@ async function handleSportsEspn(request, env) {
     return new Response(text, {
       status: resp.status,
       headers: { ...corsHeadersFor(request, env), ...SECURITY_HEADERS, "Content-Type": "application/json", "Cache-Control": "public, max-age=45" },
+    });
+  } catch (e) {
+    return json({ error: "Sports fetch failed" }, 502, request, env);
+  }
+}
+
+// Proxy Jolpica/Ergast (F1 schedule/standings/results) — domain này CSP không cho sẵn.
+//   /api/sports/ergast?path=2026.json | 2026/driverStandings.json | 2026/12/results.json
+async function handleSportsErgast(request, env) {
+  const url = new URL(request.url);
+  const path = String(url.searchParams.get("path") || "").trim().replace(/^\/+/, "");
+  if (!/^[0-9a-z/._-]+$/i.test(path) || path.includes("..")) {
+    return json({ error: "Invalid path" }, 400, request, env);
+  }
+  try {
+    const resp = await fetch(`https://api.jolpi.ca/ergast/f1/${path}`, {
+      headers: { "User-Agent": "CHRTV-OTT/2.0", accept: "application/json" },
+      signal: AbortSignal.timeout(12000),
+    });
+    const text = await resp.text();
+    return new Response(text, {
+      status: resp.status,
+      headers: { ...corsHeadersFor(request, env), ...SECURITY_HEADERS, "Content-Type": "application/json", "Cache-Control": "public, max-age=300" },
+    });
+  } catch (e) {
+    return json({ error: "Sports fetch failed" }, 502, request, env);
+  }
+}
+
+// Proxy OpenLigaDB (BXH Bundesliga, vd getbltable/bl1/2025) — domain CSP không cho sẵn.
+//   /api/sports/olb?path=getbltable/bl1/2025
+async function handleSportsOlb(request, env) {
+  const url = new URL(request.url);
+  const path = String(url.searchParams.get("path") || "").trim().replace(/^\/+/, "");
+  if (!/^[0-9a-z/_-]+$/i.test(path) || path.includes("..") || !path.startsWith("get")) {
+    return json({ error: "Invalid path" }, 400, request, env);
+  }
+  try {
+    const resp = await fetch(`https://api.openligadb.de/${path}`, {
+      headers: { "User-Agent": "CHRTV-OTT/2.0", accept: "application/json" },
+      signal: AbortSignal.timeout(12000),
+    });
+    const text = await resp.text();
+    return new Response(text, {
+      status: resp.status,
+      headers: { ...corsHeadersFor(request, env), ...SECURITY_HEADERS, "Content-Type": "application/json", "Cache-Control": "public, max-age=300" },
     });
   } catch (e) {
     return json({ error: "Sports fetch failed" }, 502, request, env);
@@ -1160,6 +1214,13 @@ async function handleAPI(path, request, env, ctx) {
   if (path.startsWith("/api/push/")) return await handlePush(path, request, env);
   if (path.startsWith("/api/party/")) return await handleParty(path, request, env);
   if (path === "/api/tmdb") return await handleTMDBProxy(request, env);
+  // SPORTS: proxy cùng-origin cho TheSportsDB / ESPN / Jolpica(F1) / OpenLigaDB
+  // (client fetch /api/sports/* -> worker đi server-to-server, không dính CORS/CSP;
+  // trước đây handler viết rồi nhưng QUÊN gắn route nên tất cả 404 -> sports chết).
+  if (path === "/api/sports/tsdb") return await handleSportsTsdb(request, env);
+  if (path === "/api/sports/espn") return await handleSportsEspn(request, env);
+  if (path === "/api/sports/ergast") return await handleSportsErgast(request, env);
+  if (path === "/api/sports/olb") return await handleSportsOlb(request, env);
   if (path === "/api/reminders") return await handleReminders(request, env);
   if (path === "/api/feedback") return await handleFeedback(request, env);
   if (path === "/api/shorts") return await handleShorts(request, env);

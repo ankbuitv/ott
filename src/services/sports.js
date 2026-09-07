@@ -84,8 +84,9 @@ async function espnScoreboard(slug, dates) {
   return null;
 }
 
-function espnEventsToTsdb(board) {
+function espnEventsToTsdb(board, slug) {
   if (!board || !Array.isArray(board.events)) return [];
+  const leagueSlug = slug || board?.leagues?.[0]?.slug || '';
   return board.events.map((ev) => {
     const c = (ev.competitions && ev.competitions[0]) || {};
     const home = (c.competitors || []).find((x) => x.homeAway === 'home') || {};
@@ -96,6 +97,9 @@ function espnEventsToTsdb(board) {
     const date = String(ev.date || '');
     return {
       idEvent: `espn_${ev.id}`,
+      // slug giải để fetchEventDetail gọi ESPN summary (trận này không có trong TSDB)
+      _league: leagueSlug,
+      _sport: 'soccer',
       strHomeTeam: home.team?.displayName || home.team?.shortDisplayName || '',
       strAwayTeam: away.team?.displayName || away.team?.shortDisplayName || '',
       intHomeScore: home.score ?? '',
@@ -126,7 +130,7 @@ async function fetchEspnLeague(league) {
       espnScoreboard(slug, ''),
       espnScoreboard(slug, range),
     ]);
-    out.push(...espnEventsToTsdb(cur), ...espnEventsToTsdb(ranged));
+    out.push(...espnEventsToTsdb(cur, slug), ...espnEventsToTsdb(ranged, slug));
     if (out.length) break;
   }
   return out;
@@ -263,7 +267,11 @@ async function loadLeagueData(league, season) {
     }
     if (league.olb) {
       try {
-        const rows = await getJSON(`${OLB}/getbltable/${league.olb}/${currentSeasonShort()}`);
+        const olbPath = `getbltable/${league.olb}/${currentSeasonShort()}`;
+        // Proxy worker trước (CSP không có api.openligadb.de); fallback dev proxy/direct.
+        const rows = await getJSON(`/api/sports/olb?path=${encodeURIComponent(olbPath)}`)
+          .catch(() => getJSON(`/olb/${olbPath}`))
+          .catch(() => getJSON(`${OLB}/${olbPath}`));
         if (Array.isArray(rows) && rows.length) {
           return rows.map(r => ({
             name: r.teamName, badge: r.teamIconUrl,
@@ -421,7 +429,9 @@ export function pickBestTeam(teams, query) {
     return { tm, s };
   }).filter((x) => x.s > 0);
   scored.sort((a, b) => b.s - a.s);
-  return (scored[0] || (teams || [])[0]) || null;
+  // Chỉ nhận team có điểm khớp (tên/aliases/quốc gia) — tránh hiển thị bừa
+  // team đầu tiên trong mảng khi truy vấn không khớp cái nào.
+  return scored[0]?.tm || null;
 }
 
 export function slimTeam(tm, lang = 'vi') {
@@ -452,12 +462,43 @@ export function slimTeam(tm, lang = 'vi') {
   };
 }
 
+// ESPN hay trả tên dài kiểu "Vietnam National Team", "Australia FC U20"...
+// TSDB search cần đúng dạng "Vietnam"/"Australia" -> sinh các biến thể ngắn dần.
+function teamQueryVariants(qRaw) {
+  const q = String(qRaw || '').trim();
+  const out = [];
+  const push = (s) => { s = (s || '').trim(); if (s && !out.includes(s)) out.push(s); };
+  push(q);
+  // Bỏ hậu tố phổ biến: "National Team", "FC", "U20/U23", "Women"...
+  const stripped = q
+    .replace(/\bnational\s+team\b/i, '')
+    .replace(/\b(fc|afc|sc|cf|wfc|women|u-?\d{2}|under-?\d{2})\b/gi, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  push(stripped);
+  // Tên nhiều từ -> thử cụm từ đầu (vd "Ho Chi Minh City FC" -> "Ho Chi Minh City")
+  const words = stripped.split(/\s+/).filter(Boolean);
+  if (words.length > 2) push(words.slice(0, Math.ceil(words.length / 2) + 1).join(' '));
+  if (words.length > 1) push(words[0]);
+  return out.slice(0, 4);
+}
+
 export async function fetchTeam(query, lang = 'vi') {
   const q = String(query || '').trim();
   if (!q) return null;
   return cached(`team_${q.toLowerCase()}_${lang}`, async () => {
-    const d = await tsdbGet('searchteams.php', { t: q });
-    const tm = pickBestTeam(d.teams || [], q);
+    // Gộp kết quả các biến thể tên rồi chọn team khớp nhất (không lụi đại team đầu).
+    const pool = [];
+    for (const variant of teamQueryVariants(q)) {
+      const d = await tsdbGet('searchteams.php', { t: variant });
+      const teams = Array.isArray(d?.teams) ? d.teams : [];
+      for (const tm of teams) if (!pool.some(p => p.idTeam === tm.idTeam)) pool.push(tm);
+      // Đã có team khớp điểm cao thì dừng, đỡ gọi thừa
+      const best = pickBestTeam(pool, q);
+      const name = String(best?.strTeam || '').toLowerCase();
+      if (best && (name === q.toLowerCase() || name === variant.toLowerCase())) break;
+    }
+    const tm = pickBestTeam(pool, q);
     return slimTeam(tm, lang);
   }, 30 * 60 * 1000);
 }

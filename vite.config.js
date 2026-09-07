@@ -32,6 +32,20 @@ proxy['/espn'] = {
   secure: false,
   rewrite: (p) => p.replace(/^\/espn/, '/apis/site/v2'),
 };
+// F1 (Jolpica/Ergast) + BXH Bundesliga (OpenLigaDB): không có trong CSP connect-src
+// nên dev cũng proxy cho khỏi dính CORS, giống /tsdb và /espn.
+proxy['/ergast'] = {
+  target: 'https://api.jolpi.ca',
+  changeOrigin: true,
+  secure: false,
+  rewrite: (p) => p.replace(/^\/ergast/, '/ergast/f1'),
+};
+proxy['/olb'] = {
+  target: 'https://api.openligadb.de',
+  changeOrigin: true,
+  secure: false,
+  rewrite: (p) => p.replace(/^\/olb/, ''),
+};
 
 export default defineConfig({
   plugins: [react()],

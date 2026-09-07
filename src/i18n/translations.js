@@ -482,6 +482,16 @@ const T = {
   'team.leagues': { vi: 'Giải đấu', en: 'Competitions' },
   'team.last': { vi: 'Trận gần đây', en: 'Recent matches' },
   'team.web': { vi: 'Trang CLB', en: 'Website' },
+  'team.next': { vi: 'Trận sắp đá', en: 'Upcoming matches' },
+  'team.alias': { vi: 'Tên gọi khác', en: 'Also known as' },
+  'team.tab_info': { vi: 'Hồ sơ', en: 'Profile' },
+  'team.tab_matches': { vi: 'Trận đấu', en: 'Matches' },
+  'team.tab_squad': { vi: 'Đội hình', en: 'Squad' },
+  'team.err': { vi: 'Không tải được dữ liệu đội bóng (mạng hoặc máy chủ bận). Thử lại nhé!', en: 'Could not load team data (network or server busy). Please try again.' },
+  'team.retry': { vi: 'Thử lại', en: 'Try again' },
+  'team.not_found': { vi: 'Chưa có dữ liệu cho “{{name}}” trên TheSportsDB', en: 'No TheSportsDB data for “{{name}}” yet' },
+  'team.no_desc': { vi: 'Đội này chưa có phần giới thiệu', en: 'No description available for this team' },
+  'team.no_squad': { vi: 'Chưa có danh sách cầu thủ cho đội này', en: 'No squad list available for this team' },
 
   // ============== CHANNEL INFO ==============
   'chinfo.need_login': { vi: 'Đăng nhập để đánh giá kênh nhé — miễn phí!', en: 'Sign in to rate channels — free!' },

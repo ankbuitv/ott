@@ -1,8 +1,10 @@
 import { API_BASE } from './config';
+import { tsdbSafe, tsdbBust } from './tsdb';
 
 // F1 qua Jolpica (Ergast-compatible, miễn phí, không key) + đua xe khác qua TheSportsDB.
 const JOL = 'https://api.jolpi.ca/ergast/f1';
-const TSB = 'https://www.thesportsdb.com/api/v1/json/3';
+// TheSportsDB: LUÔN đi qua client dùng chung (proxy cùng origin) — gọi thẳng
+// thesportsdb.com từ trình duyệt sẽ bị CORS chặn -> mục Đua xe trống trơn.
 
 async function getJSON(url, timeoutMs = 12000) {
   const ctl = new AbortController();
@@ -81,7 +83,7 @@ export function fetchF1Results(year, round) {
 // Các giải đua xe khác (MotoGP, WRC, NASCAR...) qua TheSportsDB: [{ league, events }]
 export function fetchMotorsport(year = f1Season()) {
   return cached(`moto_${year}`, async () => {
-    const all = await getJSON(`${TSB}/all_leagues.php`).catch(() => null);
+    const all = await tsdbSafe('all_leagues.php', {}, { ttl: 12 * 3600 * 1000 }).catch(() => null);
     const leagues = (all?.leagues || []).filter(l => /motorsport/i.test(l.strSport || ''));
     if (!leagues.length) return [];
     const prefer = /formula\s*1|motogp|moto\s*[23]|world\s*rally|\bwrc\b|nascar|indycar|formula\s*e|supercars|dtm|endurance|f2\b|f3\b/i;
@@ -92,7 +94,7 @@ export function fetchMotorsport(year = f1Season()) {
     const out = [];
     for (const l of picked) {
       try {
-        const d = await getJSON(`${TSB}/eventsseason.php?id=${l.idLeague}&s=${year}`);
+        const d = await tsdbSafe('eventsseason.php', { id: l.idLeague, s: year }, { ttl: 30 * 60 * 1000 });
         const evs = Array.isArray(d.events) ? d.events : [];
         if (evs.length) out.push({ league: l.strLeague, badge: l.strBadge || '', events: evs.slice(0, 12) });
       } catch {}
@@ -104,13 +106,14 @@ export function fetchMotorsport(year = f1Season()) {
 // Chi tiết trận (TheSportsDB lookupevent): bàn thắng/thẻ/highlight
 export function fetchEventDetail(idEvent) {
   return cached(`evdetail_${idEvent}`, async () => {
-    const d = await getJSON(`${TSB}/lookupevent.php?id=${idEvent}`);
+    const d = await tsdbSafe('lookupevent.php', { id: idEvent }, { ttl: 45 * 1000 });
     return d?.events?.[0] || null;
   });
 }
 
 export function bustEventDetail(idEvent) {
   mem.delete(`evdetail_${idEvent}`);
+  tsdbBust(`tsdb:lookupevent.php?id=${idEvent}`);
 }
 
 function youtubeIdFrom(str) {

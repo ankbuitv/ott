@@ -71,14 +71,14 @@ function MatchCard({ ev, showScore, onClick, onTeam }) {
       </div>
       <div className="space-y-2">
         {[
-          { name: ev.strHomeTeam, badge: ev.strHomeTeamBadge, score: ev.intHomeScore },
-          { name: ev.strAwayTeam, badge: ev.strAwayTeamBadge, score: ev.intAwayScore },
+          { name: ev.strHomeTeam, id: ev.idHomeTeam, badge: ev.strHomeTeamBadge, score: ev.intHomeScore },
+          { name: ev.strAwayTeam, id: ev.idAwayTeam, badge: ev.strAwayTeamBadge, score: ev.intAwayScore },
         ].map((tm, i) => (
           <div key={i} className="flex items-center gap-2.5">
             <TeamBadge src={tm.badge} name={tm.name} />
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); onTeam && onTeam(tm.name); }}
+              onClick={(e) => { e.stopPropagation(); onTeam && onTeam({ name: tm.name, id: tm.id }); }}
               className="flex-1 min-w-0 text-left text-[13px] font-bold text-slate-200 truncate hover:text-[#ffb37a]"
             >{tm.name}</button>
             {showScore && (
@@ -102,7 +102,7 @@ export default function SportsScreen({ channels = [], onSelectChannel }) {
   const [playing, setPlaying] = useState(null);
   const [sportTab, setSportTab] = useState('football'); // football | racing
   const [selMatch, setSelMatch] = useState(null);
-  const [selTeam, setSelTeam] = useState('');
+  const [selTeam, setSelTeam] = useState(null); // { name, id } — đội đang xem chi tiết
   // Explorer "Môn khác": Esports, cầu lông, bóng chày, bơi, Olympic... (TSDB có gì hiện nấy)
   const [custom, setCustom] = useState(null); // league object tự chọn từ explorer
   const [showExplorer, setShowExplorer] = useState(false);
@@ -512,10 +512,14 @@ export default function SportsScreen({ channels = [], onSelectChannel }) {
                           <span className={`inline-flex w-6 h-6 items-center justify-center rounded-lg ${i === 0 ? 'bg-amber-500/20 text-amber-300' : i < 4 ? 'bg-emerald-500/15 text-emerald-300' : 'text-stone-500'}`}>{i + 1}</span>
                         </td>
                         <td className="px-2 py-2.5">
-                          <span className="flex items-center gap-2 min-w-0">
+                          <button
+                            type="button"
+                            onClick={() => setSelTeam({ name: row.name, id: row.id })}
+                            className="flex items-center gap-2 min-w-0 w-full text-left hover:text-[#ffb37a]"
+                          >
                             <TeamBadge src={row.badge} name={row.name} size="w-6 h-6" />
                             <span className="font-bold text-slate-200 truncate">{row.name}</span>
-                          </span>
+                          </button>
                         </td>
                         <td className="px-2 py-2.5 text-center text-stone-400 tabular-nums">{row.played}</td>
                         <td className="px-2 py-2.5 text-center text-stone-400 tabular-nums hidden sm:table-cell">{row.won}</td>
@@ -589,9 +593,9 @@ export default function SportsScreen({ channels = [], onSelectChannel }) {
       )}
       {selTeam && (
         <TeamDetailModal
-          name={selTeam}
-          onClose={() => setSelTeam('')}
-          onOpenMatch={(ev) => { setSelTeam(''); setSelMatch(ev); }}
+          team={selTeam}
+          onClose={() => setSelTeam(null)}
+          onOpenMatch={(ev) => { setSelTeam(null); setSelMatch(ev); }}
         />
       )}
     </div>

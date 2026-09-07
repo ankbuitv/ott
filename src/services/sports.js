@@ -1,6 +1,6 @@
 import { API_BASE } from './config';
+import { tsdbGet as tsdbRequest, tsdbSafe, espnScoreboard, tsdbBust } from './tsdb';
 
-const TSB_ABS = 'https://www.thesportsdb.com/api/v1/json/3';
 const OLB = 'https://api.openligadb.de';
 
 export const LEAGUES = [
@@ -45,43 +45,14 @@ async function getJSON(url, timeoutMs = 12000) {
   }
 }
 
-async function tsdbGet(file, params = {}) {
-  const qs = new URLSearchParams(params).toString();
-  const tries = [
-    `/api/sports/tsdb?file=${encodeURIComponent(file)}${qs ? `&${qs}` : ''}`,
-    `/tsdb/${file}${qs ? `?${qs}` : ''}`,
-    `${TSB_ABS}/${file}${qs ? `?${qs}` : ''}`,
-  ];
-  const settled = await Promise.all(tries.map((u) => getJSON(u, 8000).catch(() => null)));
-  const ok = settled.filter((d) => d && typeof d === 'object' && !d.error);
-  ok.sort((a, b) => payloadScore(b) - payloadScore(a));
-  return ok[0] || {};
-}
-
-function payloadScore(d) {
-  return (d.events?.length || 0) + (d.seasons?.length || 0) + (d.table?.length || 0)
-    + (d.leagues?.length || 0) + (d.teams?.length || 0) + (d.results?.length || 0);
+// Mọi lời gọi TheSportsDB đi qua client dùng chung (proxy cùng origin + cache).
+async function tsdbGet(file, params = {}, opts = {}) {
+  return tsdbSafe(file, params, opts);
 }
 
 function ymd(d) {
   const p = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`;
-}
-
-async function espnScoreboard(slug, dates) {
-  const q = dates ? `dates=${dates}` : '';
-  const tries = [
-    `/espn/sports/soccer/${slug}/scoreboard${q ? `?${q}` : ''}`,
-    `/api/sports/espn?league=${encodeURIComponent(slug)}${dates ? `&dates=${dates}` : ''}`,
-    `https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard${q ? `?${q}` : ''}`,
-  ];
-  for (const u of tries) {
-    try {
-      const d = await getJSON(u);
-      if (d && Array.isArray(d.events)) return d;
-    } catch { /* thử nguồn kế */ }
-  }
-  return null;
 }
 
 function espnEventsToTsdb(board) {
@@ -180,7 +151,7 @@ export function fetchLeague(league, { fresh = false } = {}) {
     const key = `league_${league.id}_${season}`;
     if (fresh) {
       try {
-        const d = await loadLeagueData(league, season);
+        const d = await loadLeagueData(league, season, true);
         memCache.set(key, { at: Date.now(), data: d });
         return d;
       } catch {
@@ -219,7 +190,7 @@ function splitNextPast(events, { pastLimit = 40 } = {}) {
   return { next, past };
 }
 
-async function tsdbSeasonEvents(league, season) {
+async function tsdbSeasonEvents(league, season, fresh = false) {
   if (!league?.tsdb) return [];
   const seasons = [season];
   if (league.cup || league.latestSeason) {
@@ -230,18 +201,19 @@ async function tsdbSeasonEvents(league, season) {
   }
   for (const s of seasons) {
     try {
-      const d = await tsdbGet('eventsseason.php', { id: league.tsdb, s });
+      const d = await tsdbGet('eventsseason.php', { id: league.tsdb, s }, { ttl: 5 * 60 * 1000, fresh });
       if (Array.isArray(d.events) && d.events.length) return d.events;
     } catch {}
   }
   return [];
 }
 
-async function loadLeagueData(league, season) {
+async function loadLeagueData(league, season, fresh = false) {
+  const evOpts = { ttl: 45 * 1000, fresh };
   const [seasonEvts, pastLeague, nextLeague, espnEvts] = await Promise.all([
-    tsdbSeasonEvents(league, season),
-    league?.tsdb ? tsdbGet('eventspastleague.php', { id: league.tsdb }).then(d => d.events || []).catch(() => []) : Promise.resolve([]),
-    league?.tsdb ? tsdbGet('eventsnextleague.php', { id: league.tsdb }).then(d => d.events || []).catch(() => []) : Promise.resolve([]),
+    tsdbSeasonEvents(league, season, fresh),
+    league?.tsdb ? tsdbGet('eventspastleague.php', { id: league.tsdb }, evOpts).then(d => d.events || []).catch(() => []) : Promise.resolve([]),
+    league?.tsdb ? tsdbGet('eventsnextleague.php', { id: league.tsdb }, evOpts).then(d => d.events || []).catch(() => []) : Promise.resolve([]),
     fetchEspnLeague(league).catch(() => []),
   ]);
   const merged = mergeEvents([seasonEvts, pastLeague, nextLeague, espnEvts]);
@@ -250,10 +222,10 @@ async function loadLeagueData(league, season) {
   const table = await (async () => {
     if (!league.cup && league.tsdb) {
       try {
-        const d = await tsdbGet('lookuptable.php', { id: league.tsdb, s: season });
+        const d = await tsdbGet('lookuptable.php', { id: league.tsdb, s: season }, { ttl: 5 * 60 * 1000, fresh });
         if (d && Array.isArray(d.table) && d.table.length) {
           return d.table.map(r => ({
-            name: r.strTeam, badge: r.strTeamBadge,
+            id: r.idTeam || '', name: r.strTeam, badge: r.strTeamBadge,
             played: +r.intPlayed || 0, won: +r.intWin || 0, draw: +r.intDraw || 0, lost: +r.intLoss || 0,
             gf: +r.intGoalsFor || 0, ga: +r.intGoalsAgainst || 0, gd: (+r.intGoalsFor || 0) - (+r.intGoalsAgainst || 0),
             points: +r.intPoints || 0,
@@ -426,13 +398,14 @@ export function pickBestTeam(teams, query) {
 
 export function slimTeam(tm, lang = 'vi') {
   if (!tm) return null;
-  const leagues = [tm.strLeague, tm.strLeague2, tm.strLeague3, tm.strLeague4, tm.strLeague5]
+  const leagues = [tm.strLeague, tm.strLeague2, tm.strLeague3, tm.strLeague4, tm.strLeague5, tm.strLeague6, tm.strLeague7]
     .map((x) => String(x || '').trim()).filter(Boolean);
   const aliases = String(tm.strTeamAlternate || '').split(',').map((x) => x.trim()).filter(Boolean).slice(0, 4);
   const desc = descForLang(tm, lang);
   return {
     id: tm.idTeam,
     name: tm.strTeam,
+    short: tm.strTeamShort || '',
     aliases,
     formed: tm.intFormedYear || '',
     sport: tm.strSport || '',
@@ -441,34 +414,122 @@ export function slimTeam(tm, lang = 'vi') {
     location: tm.strLocation || '',
     capacity: tm.intStadiumCapacity || '',
     nick: tm.strKeywords || '',
-    badge: tm.strBadge || '',
+    badge: tm.strBadge || tm.strTeamBadge || '',
     logo: tm.strLogo || '',
+    banner: tm.strBanner || tm.strFanart1 || '',
     kit: tm.strEquipment || '',
     website: tm.strWebsite || '',
     facebook: tm.strFacebook || '',
+    instagram: tm.strInstagram || '',
+    twitter: tm.strTwitter || '',
     youtube: tm.strYoutube || '',
     leagues,
-    desc: desc.length > 900 ? desc.slice(0, 900).trim() + '…' : desc,
+    desc: desc.length > 1200 ? desc.slice(0, 1200).trim() + '…' : desc,
   };
 }
 
-export async function fetchTeam(query, lang = 'vi') {
-  const q = String(query || '').trim();
-  if (!q) return null;
-  return cached(`team_${q.toLowerCase()}_${lang}`, async () => {
-    const d = await tsdbGet('searchteams.php', { t: q });
-    const tm = pickBestTeam(d.teams || [], q);
-    return slimTeam(tm, lang);
-  }, 30 * 60 * 1000);
+// Bỏ dấu + bỏ hậu tố CLB để tìm được cả "CLB Hà Nội", "Hà Nội FC"...
+function normTeamQuery(q) {
+  return String(q || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\b(fc|cf|afc|sc|ac|clb|club|city|team)\b/gi, ' ')
+    .replace(/[^\w\s-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
+/**
+ * Hồ sơ đội bóng.
+ * @param {string|{name?:string,id?:string|number}} query tên đội hoặc { id, name }
+ * Ưu tiên tra theo idTeam (chính xác 100%, lấy thẳng từ trận đấu của TheSportsDB),
+ * nếu không có mới tìm theo tên (thử cả tên đã bỏ dấu / bỏ hậu tố FC).
+ * Ném lỗi TEAM_FETCH_FAILED khi không gọi được API để UI hiện nút "Thử lại".
+ */
+export async function fetchTeam(query, lang = 'vi') {
+  const id = typeof query === 'object' && query ? String(query.id || '').trim() : '';
+  const name = typeof query === 'object' && query ? String(query.name || '').trim() : String(query || '').trim();
+  if (!id && !name) return null;
+
+  const key = `team_${id || name.toLowerCase()}_${lang}`;
+  const hit = memCache.get(key);
+  if (hit && Date.now() - hit.at < 30 * 60 * 1000) return hit.data;
+
+  let team = null;
+  let failed = false;
+
+  if (id && /^\d+$/.test(id)) {
+    try {
+      const d = await tsdbRequest('lookupteam.php', { id }, { ttl: 6 * 3600 * 1000 });
+      team = slimTeam((d.teams || [])[0], lang);
+    } catch { failed = true; }
+  }
+
+  if (!team && name) {
+    const variants = [name];
+    const norm = normTeamQuery(name);
+    if (norm && norm.toLowerCase() !== name.toLowerCase()) variants.push(norm);
+    for (const q of variants) {
+      try {
+        const d = await tsdbRequest('searchteams.php', { t: q }, { ttl: 6 * 3600 * 1000 });
+        const tm = pickBestTeam(d.teams || [], q);
+        if (tm) { team = slimTeam(tm, lang); failed = false; break; }
+      } catch { failed = true; }
+    }
+  }
+
+  if (!team && failed) throw new Error('TEAM_FETCH_FAILED');
+  memCache.set(key, { at: Date.now(), data: team });
+  return team;
+}
+
+/** 5–8 trận gần nhất của đội (eventslast.php). */
 export async function fetchTeamLast(idTeam) {
   if (!idTeam) return [];
   return cached(`team_last_${idTeam}`, async () => {
-    const d = await tsdbGet('eventslast.php', { id: idTeam });
+    const d = await tsdbGet('eventslast.php', { id: idTeam }, { ttl: 5 * 60 * 1000 });
     const list = d.results || d.events || [];
     return Array.isArray(list) ? list.slice(0, 8) : [];
-  }, 10 * 60 * 1000);
+  }, 5 * 60 * 1000);
+}
+
+/** Các trận sắp đá của đội (eventsnext.php). */
+export async function fetchTeamNext(idTeam) {
+  if (!idTeam) return [];
+  return cached(`team_next_${idTeam}`, async () => {
+    const d = await tsdbGet('eventsnext.php', { id: idTeam }, { ttl: 5 * 60 * 1000 });
+    const list = d.events || d.results || [];
+    return Array.isArray(list) ? list.slice(0, 6) : [];
+  }, 5 * 60 * 1000);
+}
+
+/** Đội hình (lookup_all_players.php) — có thể rỗng với giải nhỏ. */
+export async function fetchTeamPlayers(idTeam) {
+  if (!idTeam) return [];
+  return cached(`team_players_${idTeam}`, async () => {
+    const d = await tsdbGet('lookup_all_players.php', { id: idTeam }, { ttl: 12 * 3600 * 1000 });
+    const list = d.player || d.players || [];
+    if (!Array.isArray(list)) return [];
+    return list.slice(0, 30).map((p) => ({
+      id: p.idPlayer,
+      name: p.strPlayer,
+      pos: p.strPosition || '',
+      number: p.strNumber || '',
+      thumb: p.strThumb || p.strCutout || '',
+      nation: p.strNationality || '',
+    }));
+  }, 12 * 3600 * 1000);
+}
+
+/** Xoá cache 1 đội để nút "Thử lại" gọi mạng thật. */
+export function bustTeam(idOrName, lang = 'vi') {
+  const k = String(idOrName || '').toLowerCase();
+  memCache.delete(`team_${k}_${lang}`);
+  memCache.delete(`team_last_${k}`);
+  memCache.delete(`team_next_${k}`);
+  tsdbBust('tsdb:lookupteam.php');
+  tsdbBust('tsdb:searchteams.php');
+  tsdbBust('tsdb:eventslast.php');
+  tsdbBust('tsdb:eventsnext.php');
 }
 
 export function parseVideoUrl(url) {

@@ -198,7 +198,7 @@ export default function MatchDetailModal({ ev, leagueName = '', onClose, onTeam 
           </div>
           <div className="flex items-center justify-between gap-3 mt-2">
             <div className="flex-1 text-center min-w-0">
-              <button type="button" onClick={() => onTeam && onTeam(detail.strHomeTeam)} className="text-[13px] font-extrabold text-white leading-tight break-words hover:text-[#ffb37a]">{detail.strHomeTeam || '—'}</button>
+              <button type="button" onClick={() => onTeam && onTeam({ name: detail.strHomeTeam, id: detail.idHomeTeam })} className="text-[13px] font-extrabold text-white leading-tight break-words hover:text-[#ffb37a]">{detail.strHomeTeam || '—'}</button>
             </div>
             <div className="text-center shrink-0">
               <p className="text-[28px] font-black tabular-nums leading-none">{detail.intHomeScore ?? '-'}<span className="text-stone-600 mx-1.5">:</span>{detail.intAwayScore ?? '-'}</p>
@@ -206,8 +206,8 @@ export default function MatchDetailModal({ ev, leagueName = '', onClose, onTeam 
                 ? <span className="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 text-[9px] font-black rounded-full grad-brand text-white"><span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />{String(detail.strStatus || 'LIVE').toUpperCase()}</span>
                 : <p className="text-[10px] text-stone-500 font-bold mt-1.5">{detail.strStatus === 'FT' || detail.intHomeScore != null ? 'FT' : (detail.dateEvent || '')}</p>}
             </div>
-            <div className="flex-1 text-center">
-              <p className="text-[13px] font-extrabold text-white leading-tight">{detail.strAwayTeam || '—'}</p>
+            <div className="flex-1 text-center min-w-0">
+              <button type="button" onClick={() => onTeam && onTeam({ name: detail.strAwayTeam, id: detail.idAwayTeam })} className="text-[13px] font-extrabold text-white leading-tight break-words hover:text-[#ffb37a]">{detail.strAwayTeam || '—'}</button>
             </div>
           </div>
           {/* (#32) Follow từng đội — fan-out khi trận live/có bàn thắng */}
@@ -318,32 +318,85 @@ function MatchChat({ room, myName, token, isAuthed, matchTitle }) {
   const [text, setText] = useState('');
   const [polls, setPolls] = useState([]);
   const [joined, setJoined] = useState(false);
+  const [joining, setJoining] = useState(false);
+  const [chatErr, setChatErr] = useState('');
   const [pollOpen, setPollOpen] = useState(false);
   const [pq, setPq] = useState('');
   const [po, setPo] = useState('Đội nhà | Đội khách');
   const feedRef = useRef(0);
-  const pollRef = useRef(0);
+  const pollRef = useRef('');
+  const boxRef = useRef(null);
+  const joinedRef = useRef(false);
 
-  const join = async () => {
-    if (joined) return;
-    try {
-      await fetch(`${API_BASE}/api/party/join`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ room, name: myName, channelId: room, channelName: matchTitle }) });
-      setJoined(true);
-    } catch {}
+  // Đọc JSON an toàn: Worker lỗi có thể trả HTML (Cloudflare 1101/1102) -> đừng để
+  // r.json() ném lỗi rồi nuốt mất, phải báo cho người dùng biết.
+  const readJson = async (r) => {
+    const txt = await r.text();
+    try { return JSON.parse(txt); } catch { return { error: r.ok ? 'Máy chủ trả dữ liệu lạ' : `Máy chủ lỗi (${r.status})` }; }
   };
+
+  const post = async (endpoint, payload) => {
+    const r = await fetch(`${API_BASE}/api/party/${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify(payload),
+    });
+    const d = await readJson(r);
+    if (!r.ok || !d.success) throw new Error(d.error || `Lỗi ${r.status}`);
+    return d;
+  };
+
+  // Vào phòng — trước đây lỗi bị nuốt sạch nên bấm "Vào chat" không thấy gì xảy ra.
+  const join = useCallback(async ({ silent = false } = {}) => {
+    if (joinedRef.current || joining) return joinedRef.current;
+    setJoining(true);
+    setChatErr('');
+    try {
+      await post('join', { room, name: myName, channelId: room, channelName: matchTitle });
+      joinedRef.current = true;
+      setJoined(true);
+      if (!silent) addToast('💬 Đã vào phòng chat trận đấu', 'success');
+      return true;
+    } catch (e) {
+      setChatErr(e.message || 'Không vào được phòng chat');
+      if (!silent) addToast(e.message || 'Không vào được phòng chat', 'error');
+      return false;
+    } finally {
+      setJoining(false);
+    }
+  }, [room, myName, matchTitle, joining, addToast]);
+
+  // Mở tab Chat là tự vào phòng luôn (không bắt bấm thêm nút).
+  useEffect(() => {
+    joinedRef.current = false;
+    setJoined(false);
+    setMsgs([]);
+    feedRef.current = 0;
+    join({ silent: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [room]);
 
   const say = async (msg) => {
     const body = String(msg ?? text).trim();
-    if (!body || !joined) return;
+    if (!body) return;
+    if (!joinedRef.current) {
+      const ok = await join();
+      if (!ok) return;
+    }
+    const prevText = text;
+    if (msg == null) setText('');
     try {
-      await fetch(`${API_BASE}/api/party/say`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ room, name: myName, text: body }) });
-      if (msg == null) setText('');
-    } catch { addToast('Gửi thất bại', 'error'); }
+      await post('say', { room, name: myName, text: body });
+      pullFeed();
+    } catch (e) {
+      if (msg == null) setText(prevText);
+      addToast(e.message || 'Gửi thất bại', 'error');
+    }
   };
 
   const react = async (em) => {
-    if (!joined) return;
-    try { await fetch(`${API_BASE}/api/party/react`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ room, name: myName, emoji: em }) }); } catch {}
+    if (!joinedRef.current) { const ok = await join(); if (!ok) return; }
+    try { await post('react', { room, name: myName, emoji: em }); pullFeed(); } catch { /* im lặng */ }
   };
 
   const createPoll = async () => {
@@ -351,47 +404,62 @@ function MatchChat({ room, myName, token, isAuthed, matchTitle }) {
     const options = po.split('|').map(o => o.trim()).filter(Boolean).slice(0, 4);
     if (options.length < 2) { addToast('Poll cần ≥2 lựa chọn, cách nhau bởi "|"', 'error'); return; }
     try {
-      const r = await fetch(`${API_BASE}/api/party/poll`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ room, question: pq.trim(), options }) });
-      const d = await r.json();
-      if (d.success) { setPq(''); setPollOpen(false); addToast('📊 Đã tạo poll — mọi người vote nhé!', 'success'); }
-      else addToast(d.error || 'Lỗi tạo poll', 'error');
-    } catch { addToast('Lỗi kết nối', 'error'); }
+      await post('poll', { room, question: pq.trim(), options });
+      setPq(''); setPollOpen(false);
+      addToast('📊 Đã tạo poll — mọi người vote nhé!', 'success');
+      pullFeed();
+    } catch (e) { addToast(e.message || 'Lỗi tạo poll', 'error'); }
   };
 
   const vote = async (pid, opt) => {
-    try {
-      const r = await fetch(`${API_BASE}/api/party/vote`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ room, poll_id: pid, option: opt }) });
-      const d = await r.json();
-      if (!d.success) addToast(d.error || 'Chưa vote được', 'info');
-    } catch {}
+    try { await post('vote', { room, poll_id: pid, option: opt }); pullFeed(); }
+    catch (e) { addToast(e.message || 'Chưa vote được', 'info'); }
   };
 
-  // poll mỗi 2.5s: tin nhắn mới + poll đang mở
+  // Lấy tin nhắn + poll (ai cũng đọc được, kể cả chưa vào phòng)
+  const pullFeed = useCallback(() => {
+    fetch(`${API_BASE}/api/party/feed?room=${encodeURIComponent(room)}&after=${feedRef.current}`, { headers: { Accept: 'application/json' } })
+      .then(readJson).then(d => {
+        if (d.messages && d.messages.length) {
+          feedRef.current = d.messages[d.messages.length - 1].id;
+          setMsgs(prev => [...prev, ...d.messages].slice(-60));
+          setChatErr('');
+        }
+      }).catch(() => {});
+    fetch(`${API_BASE}/api/party/polls?room=${encodeURIComponent(room)}`, { headers: { Accept: 'application/json' } })
+      .then(readJson).then(d => {
+        const stamp = JSON.stringify((d.polls || []).map(x => [x.id, x.total]));
+        if (stamp !== pollRef.current) { pollRef.current = stamp; setPolls(d.polls || []); }
+      }).catch(() => {});
+  }, [room]);
+
   useEffect(() => {
-    if (!joined) return undefined;
-    const iv = setInterval(() => {
-      fetch(`${API_BASE}/api/party/feed?room=${encodeURIComponent(room)}&after=${feedRef.current}`, { headers: { Accept: 'application/json' } })
-        .then(r => r.json()).then(d => {
-          if (d.messages && d.messages.length) {
-            feedRef.current = d.messages[d.messages.length - 1].id;
-            setMsgs(prev => [...prev, ...d.messages].slice(-60));
-          }
-        }).catch(() => {});
-      fetch(`${API_BASE}/api/party/polls?room=${encodeURIComponent(room)}`, { headers: { Accept: 'application/json' } })
-        .then(r => r.json()).then(d => {
-          const stamp = JSON.stringify((d.polls || []).map(x => [x.id, x.total]));
-          if (stamp !== pollRef.current) { pollRef.current = stamp; setPolls(d.polls || []); }
-        }).catch(() => {});
-    }, 2500);
+    pullFeed();
+    const iv = setInterval(() => { if (document.visibilityState === 'visible') pullFeed(); }, 2500);
     return () => clearInterval(iv);
-  }, [joined, room]);
+  }, [pullFeed]);
+
+  // Tự cuộn xuống tin mới nhất
+  useEffect(() => {
+    const el = boxRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [msgs.length]);
 
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2 text-[10px] text-stone-500">
-        <Users className="w-3.5 h-3.5" /> Phòng trận đấu — {joined ? 'đã nối chat' : 'chat ẩn danh theo phòng'} · {matchTitle}
-        {!joined && <button onClick={join} className="px-2.5 py-1 rounded-lg grad-brand text-white text-[10px] font-black ml-auto">Vào chat</button>}
+        <Users className="w-3.5 h-3.5 shrink-0" />
+        <span className="truncate">Phòng trận đấu — {joined ? 'đã nối chat' : joining ? 'đang kết nối…' : 'chưa kết nối'} · {matchTitle}</span>
+        {!joined && (
+          <button onClick={() => join()} disabled={joining}
+            className="px-2.5 py-1 rounded-lg grad-brand text-white text-[10px] font-black ml-auto shrink-0 disabled:opacity-50 active:scale-95">
+            {joining ? '…' : chatErr ? 'Thử lại' : 'Vào chat'}
+          </button>
+        )}
       </div>
+      {chatErr && (
+        <p className="text-[10px] text-rose-300 bg-rose-500/10 border border-rose-500/25 rounded-lg px-2.5 py-1.5">⚠️ {chatErr}</p>
+      )}
       {polls.length > 0 && (
         <div className="space-y-2">
           {polls.map(p => (
@@ -399,7 +467,7 @@ function MatchChat({ room, myName, token, isAuthed, matchTitle }) {
               <p className="text-[12px] font-black text-white flex items-center gap-1.5"><BarChart3 className="w-3.5 h-3.5 text-[#ff9a3d]" />{p.question}{p.ended && <span className="text-[9px] text-stone-500 font-bold"> · đã đóng</span>}</p>
               <div className="mt-2 space-y-1">
                 {p.options.map((opt, i) => {
-                  const v = p.votes[i];
+                  const v = p.votes[i] || { pct: 0, count: 0 };
                   return (
                     <button key={i} disabled={p.ended} onClick={() => vote(p.id, i)}
                       className="w-full relative overflow-hidden rounded-lg bg-black/40 border border-white/10 px-2 py-1.5 text-left disabled:opacity-70 active:scale-[0.99]">
@@ -416,7 +484,7 @@ function MatchChat({ room, myName, token, isAuthed, matchTitle }) {
           ))}
         </div>
       )}
-      <div className="h-44 rounded-xl bg-black/30 border border-white/[0.07] p-2 overflow-y-auto space-y-1">
+      <div ref={boxRef} className="h-44 rounded-xl bg-black/30 border border-white/[0.07] p-2 overflow-y-auto space-y-1">
         {msgs.length === 0 && <p className="text-[10px] text-stone-600 italic text-center mt-16">Chưa có tin nhắn — vào chat cổ vũ đội bóng nào! 🎉</p>}
         {msgs.map((m, i) => (
           <div key={m.id || i} className={`text-[11px] ${m.kind === 'chat' ? '' : m.kind === 'reaction' ? 'text-amber-300 text-center' : 'text-stone-600 italic text-center'}`}>
@@ -430,11 +498,11 @@ function MatchChat({ room, myName, token, isAuthed, matchTitle }) {
       </div>
       {!pollOpen ? (
         <div className="flex items-center gap-1.5">
-          {['🔥', '⚽', '😱', '👏'].map(em => <button key={em} onClick={() => react(em)} className="w-8 h-8 rounded-lg bg-white/[0.06] hover:bg-white/15 text-sm">{em}</button>)}
+          {['🔥', '⚽', '😱', '👏'].map(em => <button key={em} onClick={() => react(em)} className="w-8 h-8 rounded-lg bg-white/[0.06] hover:bg-white/15 text-sm active:scale-95">{em}</button>)}
           <input value={text} onChange={e => setText(e.target.value.slice(0, 300))} onKeyDown={e => { if (e.key === 'Enter') say(); }}
-            placeholder="Nhắn trong phòng… (cần đăng nhập để gửi)" className="flex-1 px-3 py-2 bg-black/40 border border-white/10 rounded-xl text-[12px] text-white focus:outline-none focus:border-[#f36f21]" />
-          <button onClick={() => setPollOpen(true)} title="Tạo poll hỏi nhanh" className="px-2.5 h-9 rounded-xl bg-white/[0.06] border border-white/10 text-stone-300 hover:text-[#ffb37a] hover:border-[#f36f21]/50"><BarChart3 className="w-4 h-4" /></button>
-          <button onClick={() => say()} disabled={!joined || !text.trim()} className="px-3 py-2 rounded-xl grad-brand text-white disabled:opacity-35 active:scale-95"><Send className="w-4 h-4" /></button>
+            placeholder="Nhắn trong phòng…" className="flex-1 min-w-0 px-3 py-2 bg-black/40 border border-white/10 rounded-xl text-[12px] text-white focus:outline-none focus:border-[#f36f21]" />
+          <button onClick={() => setPollOpen(true)} title="Tạo poll hỏi nhanh" className="px-2.5 h-9 rounded-xl bg-white/[0.06] border border-white/10 text-stone-300 hover:text-[#ffb37a] hover:border-[#f36f21]/50 shrink-0"><BarChart3 className="w-4 h-4" /></button>
+          <button onClick={() => say()} disabled={!text.trim()} className="px-3 py-2 rounded-xl grad-brand text-white disabled:opacity-35 active:scale-95 shrink-0"><Send className="w-4 h-4" /></button>
         </div>
       ) : (
         <div className="rounded-xl border border-[#f36f21]/30 bg-[#f36f21]/[0.06] p-2.5 space-y-1.5">

@@ -690,19 +690,67 @@ async function handleTMDBProxy(request, env) {
   }
 }
 
-// ========== SPORTS PROXY (TheSportsDB + ESPN — cùng origin, tránh CSP chặn client) ==========
+// ========== SPORTS PROXY (TheSportsDB + ESPN — cùng origin, tránh CSP/CORS chặn client) ==========
+// Trình duyệt KHÔNG gọi thẳng thesportsdb.com được (không có CORS header) nên toàn
+// bộ màn Thể thao (lịch/tỉ số/BXH/chi tiết đội) đi qua 2 endpoint này.
 const TSDB_FILES = new Set([
   "eventsseason.php", "eventspastleague.php", "eventsnextleague.php",
   "search_all_seasons.php", "lookuptable.php", "all_leagues.php",
-  "searchevents.php", "eventslast.php", "eventsday.php", "lookupteam.php",
-  "searchteams.php", "lookupevent.php", "lookupleague.php",
+  "search_all_leagues.php", "searchevents.php", "eventslast.php", "eventsnext.php",
+  "eventsday.php", "eventsround.php", "lookupteam.php", "lookup_all_teams.php",
+  "searchteams.php", "searchplayers.php", "lookup_all_players.php", "lookupplayer.php",
+  "lookupevent.php", "lookupeventstats.php", "lookuplineup.php", "lookuptimeline.php",
+  "lookupleague.php", "lookupequipment.php", "lookupvenue.php",
 ]);
 const ESPN_SOCCER_SLUGS = new Set([
   "aff.championship", "afc.u20", "afc.u20.championship", "afc.u20asiancup",
-  "fifa.worldu20", "fifa.u20worldcup",
+  "fifa.worldu20", "fifa.u20worldcup", "eng.1", "esp.1", "ita.1", "ger.1", "fra.1",
+  "uefa.champions", "uefa.europa", "vie.1", "fifa.worldq.afc",
 ]);
 
-async function handleSportsTsdb(request, env) {
+// Cache biên: dữ liệu thể thao đổi chậm (30–60s là đủ) — giảm mạnh CPU/subrequest
+// của Worker (trước hay dính lỗi 1102 "exceeded resource limits" khi nhiều tab poll).
+async function cachedUpstream(request, env, ctx, cacheKeyUrl, upstreamUrl, maxAge) {
+  const cache = caches.default;
+  const cacheKey = new Request(cacheKeyUrl, { method: "GET" });
+  try {
+    const hit = await cache.match(cacheKey);
+    if (hit) {
+      const h = new Headers(hit.headers);
+      h.set("X-CHRTV-Cache", "HIT");
+      return new Response(hit.body, { status: hit.status, headers: h });
+    }
+  } catch { /* cache API không có (local dev) — bỏ qua */ }
+
+  const resp = await fetch(upstreamUrl, {
+    headers: { "User-Agent": "CHRTV-OTT/2.0", accept: "application/json" },
+    signal: AbortSignal.timeout(12000),
+  });
+  const text = await resp.text();
+  // Nguồn đôi khi trả HTML (Cloudflare challenge / bảo trì) — đừng cache rác.
+  const looksJson = /^\s*[[{]/.test(text);
+  const status = resp.ok && looksJson ? 200 : (resp.ok ? 502 : resp.status);
+  const body = looksJson ? text : JSON.stringify({ error: "Upstream không trả JSON" });
+  const out = new Response(body, {
+    status,
+    headers: {
+      ...corsHeadersFor(request, env),
+      ...SECURITY_HEADERS,
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": `public, max-age=${maxAge}`,
+    },
+  });
+  if (status === 200) {
+    try {
+      const store = out.clone();
+      if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(cache.put(cacheKey, store));
+      else await cache.put(cacheKey, store);
+    } catch { /* bỏ qua */ }
+  }
+  return out;
+}
+
+async function handleSportsTsdb(request, env, ctx) {
   const url = new URL(request.url);
   const file = String(url.searchParams.get("file") || "").trim();
   if (!TSDB_FILES.has(file)) return json({ error: "Invalid sports file" }, 400, request, env);
@@ -712,37 +760,32 @@ async function handleSportsTsdb(request, env) {
     if (!/^[a-zA-Z0-9_]+$/.test(k)) continue;
     params.set(k, String(v).slice(0, 80));
   }
+  const qs = params.toString();
+  const upstream = `https://www.thesportsdb.com/api/v1/json/${tsdbKey(env)}/${file}?${qs}`;
+  const ttl = /^(all_leagues|search_all_leagues|lookupteam|searchteams|lookupplayer|searchplayers|lookup_all_teams|lookup_all_players|lookupleague|lookupvenue)\.php$/.test(file) ? 21600 : 60;
   try {
-    const resp = await fetch(`https://www.thesportsdb.com/api/v1/json/3/${file}?${params}`, {
-      headers: { "User-Agent": "CHRTV-OTT/2.0", accept: "application/json" },
-      signal: AbortSignal.timeout(12000),
-    });
-    const text = await resp.text();
-    return new Response(text, {
-      status: resp.status,
-      headers: { ...corsHeadersFor(request, env), ...SECURITY_HEADERS, "Content-Type": "application/json", "Cache-Control": "public, max-age=60" },
-    });
+    return await cachedUpstream(request, env, ctx, `https://tsdb.cache/${file}?${qs}`, upstream, ttl);
   } catch (e) {
     return json({ error: "Sports fetch failed" }, 502, request, env);
   }
 }
 
-async function handleSportsEspn(request, env) {
+// Key TheSportsDB: mặc định key test miễn phí "3"; đặt biến môi trường
+// TSDB_KEY (Patreon key) nếu muốn hạn mức cao hơn.
+function tsdbKey(env) {
+  const k = String((env && env.TSDB_KEY) || "").trim();
+  return /^[A-Za-z0-9]{1,20}$/.test(k) ? k : "3";
+}
+
+async function handleSportsEspn(request, env, ctx) {
   const url = new URL(request.url);
   const league = String(url.searchParams.get("league") || "").trim().toLowerCase();
   if (!ESPN_SOCCER_SLUGS.has(league)) return json({ error: "Invalid league" }, 400, request, env);
   const dates = String(url.searchParams.get("dates") || "").replace(/[^0-9-]/g, "").slice(0, 17);
   const qs = dates ? `?dates=${dates}` : "";
+  const upstream = `https://site.api.espn.com/apis/site/v2/sports/soccer/${league}/scoreboard${qs}`;
   try {
-    const resp = await fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/${league}/scoreboard${qs}`, {
-      headers: { "User-Agent": "CHRTV-OTT/2.0", accept: "application/json" },
-      signal: AbortSignal.timeout(12000),
-    });
-    const text = await resp.text();
-    return new Response(text, {
-      status: resp.status,
-      headers: { ...corsHeadersFor(request, env), ...SECURITY_HEADERS, "Content-Type": "application/json", "Cache-Control": "public, max-age=45" },
-    });
+    return await cachedUpstream(request, env, ctx, `https://espn.cache/${league}${qs}`, upstream, 45);
   } catch (e) {
     return json({ error: "Sports fetch failed" }, 502, request, env);
   }
@@ -1284,6 +1327,11 @@ async function handleAPI(path, request, env, ctx) {
   if (path === "/api/stats/top-country") return await handleCountryTop(request, env);
   if (path === "/api/movie/certification") return json({ success: true, ok: true }, 200, request, env);
   if (path.startsWith("/api/sports/follow")) return await handleTeamFollowApi(path, request, env);
+  // Proxy dữ liệu thể thao (TheSportsDB / ESPN) — BẮT BUỘC phải có, nếu không màn
+  // Thể thao (lịch, tỉ số, BXH, chi tiết đội bóng) sẽ trắng trơn vì trình duyệt
+  // không gọi thẳng thesportsdb.com được (CORS/CSP).
+  if (path === "/api/sports/tsdb") return await handleSportsTsdb(request, env, ctx);
+  if (path === "/api/sports/espn") return await handleSportsEspn(request, env, ctx);
   return json({ error: "Not found" }, 404, request, env);
 }
 
@@ -4947,9 +4995,20 @@ ${s.down_list.length ? `<div class="card"><h1 style="font-size:16px">Kênh đang
 // ========== WATCH PARTY (D1 + polling — khong phu thuoc gioi han cross-request WebSocket cua workerd) ==========
 // Rooms + chat + reaction + trạng thái host lưu D1; client poll /api/party/feed mỗi ~2s.
 async function handleParty(path, request, env) {
-  if (!hasDB(env)) return json({ error: "Cần D1" }, 503, request, env);
+  // Lỗi D1 lẻ tẻ (bảng chưa có, quá tải…) trước đây ném thẳng ra ngoài -> Worker trả
+  // 500/1102 và nút "Vào chat" ở màn Thể thao im lìm. Giờ luôn trả JSON có lý do.
+  try {
+    return await handlePartyInner(path, request, env);
+  } catch (e) {
+    console.error("party error:", e?.message || e);
+    return json({ error: "Chat tạm thời không khả dụng", code: "PARTY_ERROR" }, 503, request, env);
+  }
+}
+
+async function handlePartyInner(path, request, env) {
+  if (!hasDB(env)) return json({ error: "Máy chủ chưa bật D1 nên chat chưa hoạt động", code: "NO_DB" }, 503, request, env);
   await ensureSchema(env);
-  const body = await request.json().catch(() => ({}));
+  const body = request.method === "POST" ? await request.json().catch(() => ({})) : {};
 
   const touchMember = async (room, name) => {
     await env.DB.prepare("INSERT OR REPLACE INTO party_members (room, name, last_seen) VALUES (?, ?, ?)").bind(room, name, Date.now()).run();

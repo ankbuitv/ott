@@ -32,18 +32,19 @@ https://devda.undo.it/Stream/index.php?id=vtv7&ext=.m3u8
 https://devda.undo.it/Stream/index.php?id=vtv8&ext=.m3u8
 
 #EXTINF:-1 tvg-id="vtv9" tvg-logo="https://raw.githubusercontent.com/vuminhthanh12/Logo/refs/heads/main/VTV9.png" catchup="default" catchup-days="2" catchup-source="http://sv.cvtv.xyz:3000/mytvod.m3u8?id=381&time=${start}&offset=${duration}" group-title="TH - Vietnamese Channels",VTV9 (CH 25 - 506MHz)
-https://devda.undo.it/Stream/index.php?id=vtv9&ext=.m3u8
+https://vips-livecdn.fptplay.net/live/media/vtv9/live247-hls-avc/vtv9-avc1_5600000=10000-mp4a_131600=20000.m3u8
 
 #EXTINF:-1 tvg-id="vtv10" tvg-logo="https://raw.githubusercontent.com/vuminhthanh12/vuminhthanh12/refs/heads/main/VTV10.png" group-title="TH - Vietnamese Channels",VTV10 (CH 25 - 506MHz)
-https://devda.undo.it/Stream/index.php?id=vtv10&ext=.m3u8
+https://vips-livecdn.fptplay.net/live/media/vtv10/live247-hls-avc/vtv10-avc1_5600000=10000-mp4a_131600=20000.m3u8
 
 #EXTINF:-1 tvg-id="vtv5-tay-nam-bo" tvg-logo="https://raw.githubusercontent.com/vuminhthanh12/vuminhthanh12/refs/heads/main/maxresdefault.jpg" catchup="default" catchup-days="2" catchup-source="http://sv.cvtv.xyz:3000/mytvod.m3u8?id=615&time=${start}&offset=${duration}" group-title="TH - Vietnamese Channels",VTV5 Tây Nam Bộ (CH 33 - 570MHz)
-https://devda.undo.it/Stream/index.php?id=vtv5-tay-nam-bo&ext=.m3u8
+https://vips-livecdn.fptplay.net/live/media/vtv5tnb/live-hls-avc/vtv5tnb-avc1_4000000=10000-mp4a_131600=20000.m3u8
 
 #EXTINF:-1 tvg-id="vtv5-tay-nguyen" tvg-logo="https://s7730.cdn.mytvnet.vn/vimages/d4/46/61/1c/cf/f6/d461c-pvtv5tynguynhd-channel-unkn.png" catchup="default" catchup-days="2" catchup-source="http://sv.cvtv.xyz:3000/mytvod.m3u8?id=642&time=${start}&offset=${duration}" group-title="TH - Vietnamese Channels",VTV5 Tây Nguyên (CH 25 - 506MHz)
 https://vtvgolive-vtv02.vtvdigital.vn/4_Mq8aaG6GfbEQiQcQ6TPA/1784875802/hls/vtv/live/vtv5tn__vtv720p-h264/index.m3u8
+
 #EXTINF:-1 tvg-id="qpvn" tvg-logo="https://i.ytimg.com/vi/sFLUmdwp0Z8/maxresdefault.jpg" catchup="append" catchup-days="2" catchup-source="https://tshift.fptplay.net/dvr/quocphongvnhd_1000.stream/chunks_dvr_range-${start}-${offset}.m3u8" group-title="TH - Vietnamese Channels",QPVN (CH 48 - 690MHz)
-https://devda.undo.it/Stream/index.php?id=qpvn&ext=.m3u8
+https://live.fptplay53.net/fnxhd2/quocphongvnhd_vhls.smil/chunklist_b5000000.m3u8
 
 #EXTINF:-1 tvg-id="htv1" tvg-logo="https://s7771.cdn.mytvnet.vn/vimages/8c/ce/ee/e7/79/98/8cee7-phtv1hd-channel-unkn.png" catchup="append" catchup-days="2" catchup-source="https://api.vthanhtivi.pw/v1/dvr/vieon/htv1/${start}/${offset}" group-title="TH - Vietnamese Channels",HTV1 (CH 33 - 570MHz)
 https://devda.undo.it/Stream/index.php?id=htv1&ext=.m3u8
@@ -83,42 +84,52 @@ https://devda.undo.it/Stream/index.php?id=htvc-phu-nu&ext=.m3u8
 
 #EXTINF:-1 tvg-id="htvc-plus" tvg-logo="https://vietanhtv.id.vn/logo/htvcplus.png" group-title="TH - Vietnamese Channels",HTVC Plus (CH 33 - 570MHz)
 https://devda.undo.it/Stream/index.php?id=htvc-plus&ext=.m3u8
-
-#EXTINF:-1 tvg-id="v-family" tvg-logo="https://i.ibb.co/HHfL7Dq/cocab20.webp" group-title="TH - Vietnamese Channels",V Family (CH 33 - 570MHz)
-https://devda.undo.it/Stream/index.php?id=v-family&ext=.m3u8
-
-#EXTINF:-1 tvg-id="vie-network" tvg-logo="https://static.wikia.nocookie.net/logopedia/images/a/a2/Vie_Network_logo.png" group-title="TH - Vietnamese Channels",Vie NetWork (OTT / Cable)
-https://devda.undo.it/Stream/index.php?id=vie-network&ext=.m3u8
-
-#EXTINF:-1 tvg-id="vtvcab1-vie-giai-tri" tvg-logo="https://i.ytimg.com/vi/fyT_xa-g-Pk/hq720.jpg" group-title="TH - Vietnamese Channels",VTVCab1 Vie Giải trí (11549 H 45000)
-https://devda.undo.it/Stream/index.php?id=vtvcab1-vie-giai-tri&ext=.m3u8
-
-#EXTINF:-1 tvg-id="vtvcab15" tvg-logo="https://img-zlr1.tv360.vn/image1/2023/07/20/10/1689822524259/0f3a4d1ebfaf_640_360.png" catchup="append" catchup-days="2" catchup-source="https://api.vthanhtivi.pw/v1/dvr/vieon/vtvcab15/${start}/${offset}" group-title="TH - Vietnamese Channels",VTVCab15 (11549 H 45000)
-https://devda.undo.it/Stream/index.php?id=vtvcab15&ext=.m3u8
-
-#EXTINF:-1 tvg-id="vtvcab19" tvg-logo="https://upload.wikimedia.org/wikipedia/vi/thumb/3/3d/VTVCab_19.svg/1024px-VTVCab_19.svg.png" group-title="TH - Vietnamese Channels",VTVCab19 (11549 H 45000)
-https://devda.undo.it/Stream/index.php?id=vtvcab19&ext=.m3u8
-
-#EXTINF:-1 tvg-id="vtvcab2-phim-viet" tvg-logo="https://raw.githubusercontent.com/vuminhthanh12/Logo/refs/heads/main/ONPHIMVIET.png" group-title="TH - Vietnamese Channels",VTVCab2 Phim Việt (11549 H 45000)
-https://devda.undo.it/Stream/index.php?id=vtvcab2-phim-viet&ext=.m3u8
-
-#EXTINF:-1 tvg-id="vtvcab22" tvg-logo="https://img-ali1.tv360.vn/image1/2023/07/19/09/1689732652862/f124f55c3587_640_360.png" catchup="append" catchup-days="2" catchup-source="https://api.vthanhtivi.pw/v1/dvr/vieon/vtvcab22-life-tv/${start}/${offset}" group-title="TH - Vietnamese Channels",VTVCab22 (11549 H 45000)
-https://devda.undo.it/Stream/index.php?id=vtvcab22&ext=.m3u8
-
-#EXTINF:-1 tvg-id="vtvcab4-on-movies" tvg-logo="https://raw.githubusercontent.com/vuminhthanh12/Logo/refs/heads/main/onmovies.png" group-title="TH - Vietnamese Channels",VTVcab4 On Movies (11549 H 45000)
-https://devda.undo.it/Stream/index.php?id=vtvcab4-on-movies&ext=.m3u8
-
-#EXTINF:-1 tvg-id="vtvcab5-echannel" tvg-logo="https://raw.githubusercontent.com/vuminhthanh12/Logo/refs/heads/main/onechannel.png" group-title="TH - Vietnamese Channels",VTVCab5 Echannel (11549 H 45000)
-https://devda.undo.it/Stream/index.php?id=vtvcab5-echannel&ext=.m3u8
-
-#EXTINF:-1 tvg-id="vtvcab8-bibi-tv" tvg-logo="https://raw.githubusercontent.com/vuminhthanh12/Logo/refs/heads/main/onbibi.png" catchup="default" catchup-days="2" catchup-source="http://sv.cvtv.xyz:3000/mytvod.m3u8?id=205&time=${start}&offset=${duration}" group-title="TH - Vietnamese Channels",VTVCab8 BiBi TV (11549 H 45000)
+#EXTINF:-1 tvg-id="onviegiaitri" group-title="VTVcab" tvg-logo="https://i.ytimg.com/vi/fyT_xa-g-Pk/hq720.jpg", ON Vie Giải Trí (11549 H 45000)
+#EXTVLCOPT:http-user-agent=Dalvik/2.1.0
+https://freem3u.xyz/api/live/play.m3u8?vid=180
+#EXTINF:-1 tvg-id="onphimviet" group-title="VTVcab" tvg-logo="https://raw.githubusercontent.com/vuminhthanh12/Logo/refs/heads/main/ONPHIMVIET.png", ON Phim Việt (11549 H 45000)
+#EXTVLCOPT:http-user-agent=Dalvik/2.1.0
+https://vmttv.dpdns.org/tv360/?id=vtvcab-2-phim-viet-hd
+#EXTINF:-1 tvg-id="onmovies" group-title="VTVcab" tvg-logo="https://raw.githubusercontent.com/vuminhthanh12/Logo/refs/heads/main/onmovies.png", On Movies - You TV (11549 H 45000)
+#EXTVLCOPT:http-user-agent=Dalvik/2.1.0
+https://freem3u.xyz/api/live/play.m3u8?vid=181
+#EXTINF:-1 tvg-id="onechannel" group-title="VTVcab" tvg-logo="https://raw.githubusercontent.com/vuminhthanh12/Logo/refs/heads/main/onechannel.png", ON E- Channel (11549 H 45000)
+#EXTVLCOPT:http-user-agent=Dalvik/2.1.0
+https://freem3u.xyz/api/live/play.m3u8?vid=182
+#EXTINF:-1 tvg-id="ono2tv" group-title="VTVcab" tvg-logo="https://raw.githubusercontent.com/vuminhthanh12/Logo/refs/heads/main/ono2tv.png", On O2TV (11549 H 45000)
+#EXTVLCOPT:http-user-agent=Dalvik/2.1.0
+https://freem3u.xyz/api/live/play.m3u8?vid=136
+#EXTVLCOPT:http-user-agent=Dalvik/2.1.0
+#EXTINF:-1 tvg-id="onbibi" group-title="VTVcab" tvg-logo="https://raw.githubusercontent.com/vuminhthanh12/Logo/refs/heads/main/onbibi.png" catchup="default" catchup-days="2" catchup-source="http://sv.cvtv.xyz:3000/mytvod.m3u8?id=205&time=${start}&offset=${duration}", On BiBi (11549 H 45000)
+#EXTVLCOPT:http-user-agent=Dalvik/2.1.0
 https://freem3u.xyz/api/live/play.m3u8?vid=178
-
-#EXTINF:-1 tvg-id="vtvcab9" tvg-logo="https://upload.wikimedia.org/wikipedia/vi/thumb/9/92/VTVCab_9.svg/1024px-VTVCab_9.svg.png" group-title="TH - Vietnamese Channels",VTVCab9 (11549 H 45000)
-https://devda.undo.it/Stream/index.php?id=vtvcab9&ext=.m3u8
-
-#EXTINF:-1 tvg-id="yeah1tv-vtvcab17" tvg-logo="https://i.ibb.co/k1ccQNr/vcab17.webp" group-title="TH - Vietnamese Channels",Yeah1TV VTVCab17 (11549 H 45000)
-https://devda.undo.it/Stream/index.php?id=yeah1tv-vtvcab17&ext=.m3u8
+#EXTINF:-1 tvg-id="oninfotv" group-title="VTVcab" tvg-logo="https://raw.githubusercontent.com/vuminhthanh12/Logo/refs/heads/main/oninfotv.png" catchup="default" catchup-days="2" catchup-source="http://sv.cvtv.xyz:3000/mytvod.m3u8?id=437&time=${start}&offset=${duration}", ON Info TV (11549 H 45000)
+#EXTVLCOPT:http-user-agent=Dalvik/2.1.0
+https://tpninosaga.duckdns.org/source/tv360.m3u8?id=189&token=NinoEra36
+#EXTINF:-1 tvg-id="oncine" group-title="VTVcab" tvg-logo="https://i.ytimg.com/vi/rwhsuTvSXxo/maxresdefault.jpg" catchup="append" catchup-days="2" catchup-source="https://api.vthanhtivi.pw/v1/dvr/vieon/vtvcab10-on-cine/${start}/${offset}", ON Cine (11549 H 45000)
+#EXTVLCOPT:http-user-agent=Dalvik/2.1.0
+https://freem3u.xyz/api/live/play.m3u8?vid=176
+#EXTINF:-1 tvg-id="onstyle" group-title="VTVcab" tvg-logo="https://raw.githubusercontent.com/vuminhthanh12/Logo/refs/heads/main/onstyle.png" catchup="append" catchup-days="2" catchup-source="https://api.vthanhtivi.pw/v1/dvr/vieon/vtvcab12-style-tv/${start}/${offset}", ON Style TV (11549 H 45000)
+#EXTVLCOPT:http-user-agent=Dalvik/2.1.0
+https://freem3u.xyz/api/live/play.m3u8?vid=184
+#EXTINF:-1 tvg-id="onmusic" group-title="VTVcab" tvg-logo="https://img-zlr1.tv360.vn/image1/2023/07/20/10/1689822524259/0f3a4d1ebfaf_640_360.png" catchup="append" catchup-days="2" catchup-source="https://api.vthanhtivi.pw/v1/dvr/vieon/vtvcab15/${start}/${offset}", On Music (11549 H 45000)
+#EXTVLCOPT:http-user-agent=Dalvik/2.1.0
+https://freem3u.xyz/api/live/play.m3u8?vid=185
+#EXTINF:-1 tvg-id="ontrending" group-title="VTVcab" tvg-logo="https://i.ibb.co/k1ccQNr/vcab17.webp", ON TRENDING TV (11549 H 45000)
+#EXTVLCOPT:http-user-agent=Dalvik/2.1.0
+https://tpninosaga.duckdns.org/source/tv360.m3u8?id=186&token=NinoEra36
+#EXTINF:-1 tvg-id="onviedramas" group-title="VTVcab" tvg-logo="https://i.ytimg.com/vi/4SqDlPT8oEI/maxresdefault.jpg" catchup="append" catchup-days="2" catchup-source="https://api.vthanhtivi.pw/v1/dvr/vieon/vie-dramas-hd/${start}/${offset}", ON Vie Dramas (11549 H 45000)
+#EXTVLCOPT:http-user-agent=Dalvik/2.1.0
+https://freem3u.xyz/api/live/play.m3u8?vid=177
+#EXTINF:-1 tvg-id="onvfamily" type="stream" group-title="VTVcab" tvg-logo="https://i.ibb.co/HHfL7Dq/cocab20.webp", ON V Family (11549 H 45000)
+#EXTVLCOPT:http-user-agent=Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36
+https://freem3u.xyz/api/live/play.m3u8?vid=187
+#EXTINF:-1 tvg-id="onkids" group-title="VTVcab" tvg-logo="https://assets-vtvcab.gviet.vn/images/v2/channel/20220613/2022061306/onkids5_1675158859.webp" catchup="append" catchup-days="2" catchup-source="https://api.vthanhtivi.pw/v1/dvr/vieon/vtvcab21-cartoon-kid/${start}/${offset}", On Kids (11549 H 45000)
+#EXTVLCOPT:http-user-agent=Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36
+https://freem3u.xyz/api/live/play.m3u8?vid=179
+#EXTINF:-1 tvg-id="onlife" group-title="VTVcab" tvg-logo="https://img-ali1.tv360.vn/image1/2023/07/19/09/1689732652862/f124f55c3587_640_360.png" catchup="append" catchup-days="2" catchup-source="https://api.vthanhtivi.pw/v1/dvr/vieon/vtvcab22-life-tv/${start}/${offset}", On Life (11549 H 45000)
+#EXTVLCOPT:http-user-agent=Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36
+https://freem3u.xyz/api/live/play.m3u8?vid=188
 
 #EXTINF:-1 tvg-id="thvl1-hd" tvg-logo="https://raw.githubusercontent.com/vuminhthanh12/vuminhthanh12/refs/heads/main/THVL1.webp" group-title="TH - Vietnamese Channels",THVL1 HD (CH 34 - 578MHz)
 https://devda.undo.it/Stream/index.php?id=thvl1-hd&ext=.m3u8

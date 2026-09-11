@@ -141,7 +141,8 @@ https://devda.undo.it/Stream/index.php?id=thvl2-hd&ext=.m3u8
 https://devda.undo.it/Stream/index.php?id=thvl3-hd&ext=.m3u8
 
 #EXTINF:-1 tvg-id="thvl4-hd" tvg-logo="https://raw.githubusercontent.com/vuminhthanh12/vuminhthanh12/refs/heads/main/THVL4.webp" group-title="TH - Vietnamese Channels",THVL4 HD (CH 34 - 578MHz)
-https://devda.undo.it/Stream/index.php?id=thvl4-hd&ext=.m3u8
+#EXTVLCOPT:http-user-agent=Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36
+https://live.fptplay53.net/epzhd2/vinhlong4-hd_vhls.smil/chunklist_b5000000.m3u8
 
 #EXTINF:-1 tvg-id="ha-noi-1" tvg-logo="https://raw.githubusercontent.com/vuminhthanh12/vuminhthanh12/refs/heads/main/H1.jpg" group-title="TH - Vietnamese Channels",Hà Nội 1 (CH 48 - 690MHz)
 https://devda.undo.it/Stream/index.php?id=ha-noi-1&ext=.m3u8

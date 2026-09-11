@@ -8,6 +8,7 @@ import { useToast } from '../contexts/ToastContext';
 import { useI18n } from '../contexts/I18nContext';
 import { isHlsUrl, isProxiedStreamUrl, getRotateAtMs, refreshStreamToken, makeStreamRequestFilter, applyStreamClientHeaders } from '../services/streamGuard';
 import { logPlayerError } from '../services/telemetry';
+import StreamWatermark from './StreamWatermark';
 import useNetworkQuality, { heightCapFor } from '../hooks/useNetworkQuality';
 import { useSettings } from '../contexts/SettingsContext';
 import ReportChannelModal from './ReportChannelModal';
@@ -353,6 +354,16 @@ export default function VideoPlayer({
       )}
 
       <video ref={videoRef} className="w-full h-full object-contain" playsInline autoPlay controlsList="nodownload noplaybackrate noremoteplayback" disablePictureInPicture disableRemotePlayback onContextMenu={(e) => e.preventDefault()} />
+
+      {/* Logo watermark của web đắp lên khung hình — cấu hình ở Admin → "Logo khi phát" */}
+      <StreamWatermark
+        channel={channel}
+        page={mini ? 'mini' : 'player'}
+        containerRef={containerRef}
+        buffering={buffering}
+        vod={isCatchupMode}
+        catchup={isCatchupMode}
+      />
 
       {buffering && !error && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/60">

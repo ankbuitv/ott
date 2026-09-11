@@ -11,6 +11,7 @@ CHRTV là hệ thống ứng dụng xem truyền hình IPTV chuyên nghiệp, ca
 - **TV Spatial Navigation**: `@noriginmedia/react-spatial-navigation` quản lý Focus State tự động đổi viền/nền màu đỏ rực rỡ (`#dc2626`) khi active trên Android TV.
 - **Player Core**: Shaka Player (tối ưu HLS delay thấp, tự động phát luồng dự phòng `http://bore.pub:30113/hls/index.m3u8` khi luồng chính lỗi).
 - **Phim ảnh theo vị trí địa lý**: phát hiện quốc gia người xem qua `/api/geo` (Cloudflare IP geo `request.cf.country`, fallback timezone) → TMDB gọi kèm `region` + `language` riêng (poster đang chiếu, sắp chiếu, TV show bản địa, kho phim trộn theo vùng). Đổi khu vực thủ công bằng bộ chọn cờ 🌐 trong trang Phim.
+- **Logo watermark khi phát**: đắp logo CỦA WEB lên khung hình ở trang TV / cửa sổ player / lúc xem m3u8. Admin chỉnh **vị trí theo từng kênh** bằng khung kéo 16:9 (9 điểm bám góc-cạnh, kéo tự do, cỡ/độ mờ/kiểu/màu + dòng mô tả), upload PNG là **tự chuyển sang SVG**; kênh có thể “tắt riêng”. Chi tiết: `LOGO_WATERMARK.md`.
 - **Bảo mật & cộng đồng**: rate-limit đăng nhập (sai 5 lần/tài khoản hoặc 20 lần/IP → khoá 15 phút), 2FA TOTP (Google Authenticator), audit log admin, quản lý user (ban/promote/reset password), Watch Party xem chung có chat + reaction (D1 polling), Web Push VAPID, notification center, TMDB proxy cache edge (giấu api_key), PiP/Cast/AirPlay, data saver ≤480p, EPG 7 ngày (quá khứ + tương lai), My List + Tiếp tục xem phim, trang diễn viên & đề xuất phim, share deep link `?channel=ID&party=CODE`.
 - **Mật khẩu tách khỏi `JWT_SECRET`**: hash dùng secret riêng `PASSWORD_PEPPER` (chưa set thì rơi về `JWT_SECRET`), khai báo `LEGACY_JWT_SECRETS`/`LEGACY_PASSWORD_PEPPERS` để hash theo secret cũ vẫn đăng nhập được rồi tự nâng cấp. Xoay `JWT_SECRET` chỉ thu hồi phiên, KHÔNG khoá mật khẩu user. Gõ đúng mật khẩu mà báo sai? Xem `DANG_NHAP_TROUBLESHOOT.md`.
 - **Vận hành kênh**: nút “Báo kênh lỗi” 1 chạm, player tự gửi mã lỗi về server, bộ kiểm tra sức khoẻ luồng chạy nền (không cần cron), trang trạng thái công khai `/status`, tab Admin “Sức khoẻ kênh”.
@@ -41,7 +42,9 @@ CHRTV là hệ thống ứng dụng xem truyền hình IPTV chuyên nghiệp, ca
 - **Link EPG XML gốc**: `https://epg.io.vn/epgc.xml`
 - **Link Stream Backup (Fallback)**: `http://bore.pub:30113/hls/index.m3u8`
 - **Logo CHRTV chính thức**: `https://i.ibb.co/HDmcxzMK/Gemini-Generated-Image-v7i9yav7i9yav7i9-removebg-preview.png`
+- **Logo watermark khi phát**: mặc định là `public/watermark.svg` (512×512, nền trong suốt, vẽ bằng path) — worker phục vụ qua `/api/watermark` + `/api/watermark/logo`; admin upload logo riêng (PNG/JPG/WEBP → tự bọc SVG, SVG → sanitize bỏ script/handler/link ngoài) mà không cần build lại app. Cấu hình theo kênh lưu ở bảng D1 `channel_watermark`.
 - **Bảo vệ luồng (chống rip m3u8)**: `/api/playlist` CHỈ trả metadata (không có `stream_url`), mọi file `.m3u/.m3u8/.mpd` static bị chặn 404, client phải gọi `/api/stream/token` (JWT) — server kiểm tra đăng nhập + gói cước + quota xem thử rồi mới trả URL phát. **Từ 2026-09: phát TRỰC TIẾP URL gốc (bỏ proxy làm mặc định)** vì nhiều nguồn IPTV chặn dải IP Cloudflare Workers nên phát qua proxy toàn bị 403; bật lại chế độ proxy (giấu link, token AES-GCM bind IP/UA, xoay TTL ngắn) bằng biến `STREAM_MODE=proxy`. Chi tiết: `CHONG_RIP_STREAM.md`.
+- **Chống "crash lúc có lúc không"**: `fetchChannels` có timeout 12s + cache danh sách kênh tốt cuối (`localStorage[chrtv_channels_v1]`), worker ghi kênh kiểu upsert-rồi-ẩn (không `DELETE` bảng trước khi INSERT, không có khoảnh khắc playlist rỗng) và gộp mọi request lạnh vào MỘT lần import M3U; lỗi render/JS tự gửi về **Admin → tab “Lỗi player”** (badge `APP`). Chi tiết: `CHONG_CRASH.md`.
 - **Gói cước (tạm free)**: 5 bậc Standard → Signature, kích hoạt qua `/user/plan/activate`; hỗ trợ qua email support@ankb.qzz.io (không dùng SĐT).
 
 ---
@@ -138,14 +141,21 @@ ott/
 ├── src/
 │   ├── components/
 │   │   ├── VideoPlayer.jsx         # Trình phát Shaka Player, Fallback Stream & Catchup URL
+│   │   ├── StreamWatermark.jsx     # Lớp overlay logo của web lên khung hình (pointer-events: none)
+│   │   ├── WatermarkStudio.jsx     # Khung kéo đặt vị trí logo (dùng trong Admin)
 │   │   ├── EpgGridTimeline.jsx     # Ma trận Lịch phát sóng EPG 7 ngày & Catchup Grid
 │   │   ├── ChannelCard.jsx         # Thẻ hiển thị kênh truyền hình
 │   │   ├── Sidebar.jsx             # Thanh menu điều hướng Dark Mode
 │   │   └── FocusableWrapper.jsx    # Wrapper hỗ trợ Spatial Navigation TV D-pad
 │   ├── services/
-│   │   └── api.js                  # Gọi API Cloudflare Worker & D1/KV
+│   │   ├── api.js                  # Gọi API Worker (+ timeout & cache danh sách kênh chống trắng app)
+│   │   ├── clientErrors.js         # Bắt lỗi JS/render → gửi về Admin → "Lỗi player" (xem CHONG_CRASH.md)
+│   │   └── watermark.js            # Đọc cấu hình logo + tính vị trí/kiểu cho overlay
+│   ├── hooks/
+│   │   └── useVideoContentRect.js  # Đo hộp ảnh thật của video (object-contain) để logo bám góc ảnh
 │   ├── utils/
 │   │   ├── dateUtils.js            # Xử lý thời gian EPG & phần trăm phát sóng
+│   │   └── png2svg.js              # Chuyển PNG/JPG/WEBP → file SVG (cắt viền trong suốt + nhúng raster)
 │   │   └── m3uParser.js            # Phân tích cú pháp playlist M3U
 │   ├── App.jsx                     # Layout chính & Điều phối trạng thái
 │   ├── main.jsx                    # Điểm khởi chạy React

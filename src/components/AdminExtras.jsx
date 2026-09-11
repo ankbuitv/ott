@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Film, Eye, Gift, CreditCard, Megaphone, Clock, MessageCircle, Target, FileSpreadsheet, Trash2, Check, X, Plus, Activity, Flag, RefreshCw, Bug, MapPin, ShieldAlert, Radio, HandCoins } from 'lucide-react';
+import { Film, Eye, Gift, CreditCard, Megaphone, Clock, MessageCircle, Target, FileSpreadsheet, Trash2, Check, X, Plus, Activity, Flag, RefreshCw, Bug, MapPin, ShieldAlert, Radio, HandCoins, Image } from 'lucide-react';
 
 // Các tab admin mới: trực tiếp, gift, thanh toán, QC, lịch đăng, bình luận, dự đoán, báo cáo.
 const inp = 'w-full bg-slate-900/60 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-[#f36f21]/50';
@@ -456,7 +456,9 @@ export function HealthTab({ BASE, headers, addToast }) {
               <div key={i} className="flex items-center gap-2 rounded-lg bg-black/20 px-3 py-1.5">
                 <span className="text-[10px] font-black text-amber-300 shrink-0">{g.n}×</span>
                 <span className="text-[12px] text-white truncate flex-1">{g.channel_name || g.channel_id || '(không rõ kênh)'}</span>
+                {g.engine === 'js' && <span className="text-[9px] px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 font-black shrink-0" title="Lỗi từ chính app (render/JS), do ErrorBoundary hoặc window.onerror gửi về">APP</span>}
                 <span className="text-[10px] text-slate-500 font-mono shrink-0">{g.code}</span>
+                {g.sample && <span className="text-[10px] text-slate-500 font-mono truncate max-w-[42%]" title={g.sample}>{g.sample}</span>}
               </div>
             ))}
           </div>
@@ -563,6 +565,7 @@ export const EXTRA_TABS = [
   { id: 'maint48', label: 'Bảo trì kênh', icon: Flag },
   { id: 'chal48', label: 'Challenge', icon: Target },
   { id: 'aff48', label: 'Affiliate', icon: HandCoins },
+  { id: 'wmlayer', label: 'Logo khi phát', icon: Image },
 ];
 
 // ============================================================================

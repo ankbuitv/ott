@@ -80,6 +80,25 @@ CREATE TABLE IF NOT EXISTS channels (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Cấu hình chung của hệ thống (hiện dùng cho logo watermark — xem LOGO_WATERMARK.md)
+--   key 'watermark'       -> JSON cấu hình mặc định (bật/tắt, vị trí, cỡ, kiểu, phạm vi trang)
+--   key 'watermark_logo'  -> nội dung SVG đã sanitize do admin upload (rỗng = dùng /watermark.svg)
+CREATE TABLE IF NOT EXISTS site_config (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at INTEGER DEFAULT 0
+);
+
+-- Logo watermark theo TỪNG KÊNH: JSON đè lên cấu hình chung
+-- (mode 'on'|'off', pos/x/y/size/opacity/margin/style/tint/text...).
+-- Để bảng riêng vì writeChannels() DELETE + INSERT lại `channels` mỗi lần nạp M3U —
+-- nếu nhét cột vào `channels` thì mọi tuỳ chỉnh của admin sẽ bay theo đợt refresh.
+CREATE TABLE IF NOT EXISTS channel_watermark (
+  channel_id TEXT PRIMARY KEY,
+  wm TEXT NOT NULL,
+  updated_at INTEGER DEFAULT 0
+);
+
 -- Channel ratings
 CREATE TABLE IF NOT EXISTS channel_ratings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

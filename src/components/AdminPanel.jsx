@@ -3,6 +3,7 @@ import { Settings, Users, BarChart3, Bell, Radio, Send, Eye, TrendingUp, Calenda
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { API_BASE } from '../services/config';
+import WatermarkAdminTab from './WatermarkAdminTab';
 import { LiveTab, GiftsTab, PaymentsTab, AdsTab, SchedTab, CommentsTab, PredictTab, ReportsTab, HealthTab, MovieSourcesTab, RealtimeTab, AlertsTab, RegionsTab, MaintenanceTab, ChallengesTab, AffiliatesTab, EXTRA_TABS } from './AdminExtras';
 
 const BASE = API_BASE;
@@ -1018,6 +1019,7 @@ export default function AdminPanel({ onClose, asPage = false }) {
           {tab === 'maint48' && <MaintenanceTab BASE={BASE} headers={headers} addToast={addToast} />}
           {tab === 'chal48' && <ChallengesTab BASE={BASE} headers={headers} addToast={addToast} />}
           {tab === 'aff48' && <AffiliatesTab BASE={BASE} headers={headers} addToast={addToast} />}
+          {tab === 'wmlayer' && <WatermarkAdminTab BASE={BASE} headers={headers} addToast={addToast} />}
         </div>
       </div>
     </div>

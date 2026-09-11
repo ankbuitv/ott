@@ -383,3 +383,15 @@ img { -webkit-user-drag: none; }
 
 /* Modal/overlay dùng chung hiệu ứng mờ nền cho đồng bộ */
 .backdrop-soft { background: rgba(4,5,8,.72); backdrop-filter: blur(10px); }
+
+/* ===== LOGO WATERMARK khi phát (xem LOGO_WATERMARK.md) ===== */
+/* Lớp overlay đắp lên <video>: tuyệt đối không được chặn click/scroll của player */
+.chrtv-wm-layer,
+.chrtv-wm-layer * {
+  pointer-events: none !important;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.chrtv-wm-layer img { -webkit-user-drag: none; }
+/* Lưu ý: khi bật Picture-in-Picture trình duyệt chỉ nhân bản <video>, nên logo
+   sẽ biến mất trong cửa sổ PiP — đó là hành vi chuẩn, không phải lỗi. */

@@ -15,6 +15,7 @@
 # ============================================================================
 set -u
 BASE="${BASE:-https://play.ankb.qzz.io}"
+ONLY="${ONLY:-}"   # ONLY=15 ./scripts/acceptance-test.sh  -> chỉ chạy mục [15] (logo watermark)
 UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
 PASS=0; FAIL=0
 
@@ -27,11 +28,8 @@ check_le() { # desc limit actual
   if [ "$3" -le "$2" ]; then ok "$1 (= $3 ≤ $2)"; else bad "$1 (>$2: $3)"; fi
 }
 
-echo "=============================================================="
-echo " CHRTV ACCEPTANCE TEST — target: $BASE"
-echo "=============================================================="
-
 echo ""
+if [ "$ONLY" != "15" ]; then
 echo "[1] P0-A: /api/playlist công khai KHÔNG chứa token=/stream_url"
 PL=$(curl -s --max-time 20 "$BASE/api/playlist")
 C1=$(printf '%s' "$PL" | grep -c 'token=' || true)
@@ -196,13 +194,30 @@ echo ""
 echo "[11] P0-A: stream token TTL + scope (kỹ thuật)"
 if [ -n "$GTOKEN" ] && [ -n "$CH_VN" ]; then
   ST=$(curl -s --max-time 15 -A "$UA" -H "Authorization: Bearer $GTOKEN" "$BASE/api/stream/token?channel=$CH_VN" || echo {})
+  # Hai chế độ trả về KHÁC NHAU theo thiết kế (env STREAM_MODE):
+  #   proxy  -> {"t":"<sealed token>","ttl":300,...}  (Worker tự phát manifest)
+  #   direct -> {"direct":true,"url":"https://…","exp":<epoch>}  (browser tự vào nguồn)
+  # Check ở đây nghiệm THUẬT (được phát + hạn ngắn), không nghiệm định dạng.
   T=$(printf '%s' "$ST" | sed -n 's/.*"t":"\([^"]*\)".*/\1/p' | head -1)
+  U=$(printf '%s' "$ST" | sed -n 's/.*"url":"\([^"]*\)".*/\1/p' | head -1)
   TTL=$(printf '%s' "$ST" | sed -n 's/.*"ttl":\([0-9]*\).*/\1/p' | head -1)
-  [ -n "$T" ] && ok "nhận stream token (ttl=${TTL}s)" || bad "không nhận stream token: $ST"
+  if [ -n "$T" ] || [ -n "$U" ]; then
+    MODE_LABEL="proxy"; [ -z "$T" ] && MODE_LABEL="direct"
+    ok "nhận quyền phát (mode=$MODE_LABEL)"
+  else
+    bad "không nhận được quyền phát: $ST"
+  fi
   # TTL manifest = 300s (mặc định): 60s làm player đứt giữa chừng. Token vẫn bind
   # user + IP/UA (sid) nên copy sang máy/tool khác là chết ngay -> 300s an toàn.
-  # Token xoay đúng 5 phút/lần: TTL = 300s + 30s dự phòng cho lần xoay
-  check_le "TTL token ≤ 330s (xoay 5 phút/lần)" 330 "${TTL:-999}"
+  # Token xoay đúng 5 phút/lần: TTL = 300s + 30s dự phòng cho lần xoay.
+  if [ -n "$TTL" ]; then
+    check_le "hạn token proxy ≤ 330s (xoay 5 phút/lần)" 330 "$TTL"
+  else
+    # Direct mode: Worker không ký link nên KHÔNG có TTL để xoay — phải đảm bảo đúng 2 điều:
+    # client không đi xin link lặp lại (rotate_at = 0) và link trả về không dính token/sealed path.
+    if printf '%s' "$ST" | grep -q '"rotate_at":0'; then ok "direct mode: rotate_at = 0 (client không cần xoay link)"; else bad "direct mode mà rotate_at != 0: $ST"; fi
+    if printf '%s' "$U" | grep -qE "token=|/api/proxy|sig="; then bad "link direct vẫn lộ token/đường dẫn sealed: $U"; else ok "direct mode: link sạch, không có gì để rò hay xoay"; fi
+  fi
   # scope: token của kênh này KHÔNG được dùng cho URL thư mục khác (chọn kênh khác cùng origin nếu có, không thì skip)
 fi
 
@@ -289,6 +304,52 @@ fi
 # quota xem thử chỉ đọc được khi đã đăng nhập
 C=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -A "$UA" "$BASE/api/preview/state")
 check_eq "/api/preview/state cần phiên" 401 "$C"
+
+fi  # ONLY!=15
+
+echo "[15] LOGO WATERMARK khi phát (xem LOGO_WATERMARK.md)"
+# 15a: client đọc cấu hình chung không cần đăng nhập, và không được lộ link stream
+WM=$(curl -s --max-time 15 -A "$UA" "$BASE/api/watermark")
+check_eq "/api/watermark trả JSON success" "true" "$(printf '%s' "$WM" | sed -n 's/.*"success":\([a-z]*\).*/\1/p' | head -1)"
+check_eq "/api/watermark có logo_url" "1" "$(printf '%s' "$WM" | grep -c 'logo_url' | head -1)"
+check_le "/api/watermark không lộ stream_url" 0 "$(printf '%s' "$WM" | grep -c 'stream_url' || true)"
+check_eq "mặc định có pages.tv/player" "1" "$(printf '%s' "$WM" | grep -c '"tv":1' | head -1)"
+# 15b: file logo đóng gói trong app phải phục vụ được
+CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -A "$UA" "$BASE/watermark.svg")
+CT=$(curl -s -o /dev/null -w '%{content_type}' --max-time 15 -A "$UA" "$BASE/watermark.svg")
+case "$BASE" in
+  *127.0.0.1*|*localhost*)
+    # wrangler dev (wrangler.dev.toml) không bind static assets -> soi file trong repo
+    if [ -s "$(dirname "$0")/../public/watermark.svg" ]; then ok "public/watermark.svg có trong repo (local dev không phục vụ static)"; else bad "thiếu public/watermark.svg"; fi
+    ;;
+  *)
+    check_eq "$BASE/watermark.svg tồn tại" "200" "$CODE"
+    case "$CT" in *svg*) ok "content-type image/svg+xml (= $CT)";; *) bad "content-type sai: $CT";; esac
+    ;;
+esac
+# 15c: watermark là DOM — không được biến /api/playlist thành chỗ lộ link
+PL=$(curl -s --max-time 20 -A "$UA" "$BASE/api/playlist")
+check_le "/api/playlist vẫn không có stream_url" 0 "$(printf '%s' "$PL" | grep -c 'stream_url' || true)"
+# 15d: mọi endpoint chỉnh logo đều nằm sau /admin/*
+for ep in "/admin/watermark" "/admin/watermark/channel" "/admin/watermark/group" "/admin/watermark/logo"; do
+  C=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 -A "$UA" "$BASE$ep")
+  check_eq "$ep chặn người lạ" 403 "$C"
+done
+# 15e: SVG upload phải được sanitize (cần ADMIN_TOKEN=<ADMIN_MASTER_TOKEN>)
+WM_FIXTURE=$(cd "$(dirname "$0")/.." && pwd)/scripts/fixtures/evil-logo.json
+if [ -n "${ADMIN_TOKEN:-}" ]; then
+  U=$(curl -s --max-time 15 -A "$UA" -X POST -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" --data-binary @"$WM_FIXTURE" "$BASE/admin/watermark/logo")
+  check_eq "upload SVG co script van luu duoc (response khong co error)" "0" "$(printf "%s" "$U" | grep -c error || true)"
+  SV=$(curl -s --max-time 15 -A "$UA" "$BASE/api/watermark/logo")
+  check_le "SVG phuc vu khong con <script" 0 "$(printf '%s' "$SV" | grep -ci '<script' || true)"
+  check_le "SVG phuc vu khong con onload=" 0 "$(printf '%s' "$SV" | grep -c 'onload=' || true)"
+  check_le "SVG phuc vu khong con foreignObject" 0 "$(printf '%s' "$SV" | grep -c 'foreignObject' || true)"
+  check_eq "SVG phuc vu co dung 1 xmlns" 1 "$(printf '%s' "$SV" | grep -o 'xmlns=' | wc -l | tr -d ' ')"
+  curl -s --max-time 15 -A "$UA" -X DELETE -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' -d "{}" "$BASE/admin/watermark/logo" >/dev/null
+  echo "  (da xoa logo test -> quay ve /watermark.svg)"
+else
+  echo "  ⏭  15e bỏ qua — chạy: ADMIN_TOKEN=<ADMIN_MASTER_TOKEN> ./scripts/acceptance-test.sh"
+fi
 
 echo ""
 echo "=============================================================="

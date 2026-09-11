@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="CHRTV PLAY">
+  <!--
+    LOGO MẶC ĐỊNH DÙNG LÀM WATERMARK KHI PHÁT (512×512, nền trong suốt).
+    File này được /api/watermark trỏ tới khi admin CHƯA upload logo riêng.
+    Cách thay:
+      • Upload trực tiếp ở Admin → "Logo kênh" (PNG cũng được — panel tự chuyển sang SVG), HOẶC
+      • Ghi đè đúng file này (public/watermark.svg) rồi build/deploy lại.
+    Giữ nguyên tên + nền trong suốt là mọi kênh cập nhật ngay, không cần sửa code.
+  -->
+  <defs>
+    <linearGradient id="chrtvWmGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffb37a"/>
+      <stop offset="0.45" stop-color="#f36f21"/>
+      <stop offset="1" stop-color="#d63c0f"/>
+    </linearGradient>
+  </defs>
+  <circle cx="256" cy="256" r="132" fill="none" stroke="url(#chrtvWmGrad)" stroke-width="36"/>
+  <path d="M228.8 193.6v124.8c0 9.2 10 14.88 17.76 10.08l91.2-56.4a12 12 0 0 0 0-20.16l-91.2-56.4c-7.76-4.8-17.76.88-17.76 10.08z" fill="url(#chrtvWmGrad)"/>
+  <circle cx="372" cy="140" r="20.8" fill="#f36f21"/>
+</svg>

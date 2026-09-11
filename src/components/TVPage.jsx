@@ -9,6 +9,7 @@ import { getHomePrefs } from '../services/prefs';
 import { parseEpgDate, formatTimeHHMM } from '../utils/dateUtils';
 import { maskScores } from '../utils/spoiler';
 import { isHlsUrl, isProxiedStreamUrl, getRotateAtMs, refreshStreamToken, makeStreamRequestFilter, applyStreamClientHeaders } from '../services/streamGuard';
+import StreamWatermark from './StreamWatermark';
 
 // (#22) Timeshift: tìm chương trình trong EPG đang phát tại mốc `at` (ms)
 function programAtTime(list, at) {
@@ -26,6 +27,7 @@ const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 
 function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
   const videoRef = useRef(null);
+  const stageRef = useRef(null);
   const hlsRef = useRef(null);
   const shakaRef = useRef(null);
   const [playing, setPlaying] = useState(true);
@@ -210,8 +212,10 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
   }, []);
 
   return (
-    <div className="relative w-full h-full bg-black group/video">
+    <div ref={stageRef} className="relative w-full h-full bg-black group/video">
       <video ref={videoRef} className="w-full h-full object-contain" playsInline autoPlay controls={false} controlsList="nodownload noplaybackrate noremoteplayback" disablePictureInPicture disableRemotePlayback onContextMenu={(e) => e.preventDefault()} />
+      {/* Logo watermark của web trên trang TV — Admin → "Logo khi phát" */}
+      <StreamWatermark channel={channel} page="tv" containerRef={stageRef} buffering={buffering} />
       {buffering && !error && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 z-10">
           <div className="w-12 h-12 border-[3px] border-[#f36f21] border-t-transparent rounded-full animate-spin"></div>

@@ -15,10 +15,12 @@ export const REPORT_CODES = [
 ];
 
 function post(path, body) {
+  // keepalive: bản báo cáo vẫn gửi được lúc tab vừa đóng / trang vừa reload vì lỗi
   return fetch(`${API_BASE}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...authHeaders() },
     body: JSON.stringify(body || {}),
+    keepalive: true,
   }).then(r => r.json().catch(() => ({}))).catch(() => ({}));
 }
 
@@ -35,7 +37,7 @@ export function reportChannel({ channel, code = 'other', note = '' }) {
 // Chống spam: mỗi (kênh + mã lỗi) chỉ gửi 1 lần / 2 phút, tối đa 20 lần mỗi phiên.
 const sent = new Map();
 let budget = 20;
-export function logPlayerError({ channel, engine = 'hls', code = 'unknown', detail = '', fatal = false }) {
+export function logPlayerError({ channel, engine = 'hls', code = 'unknown', detail = '', fatal = false, platform = '' }) {
   try {
     if (budget <= 0) return;
     const key = `${channel?.channel_id || '-'}|${code}`;
@@ -50,7 +52,7 @@ export function logPlayerError({ channel, engine = 'hls', code = 'unknown', deta
       code: String(code).slice(0, 60),
       detail: String(detail || '').slice(0, 300),
       fatal: !!fatal,
-      platform: `${navigator.platform || ''} ${navigator.userAgent || ''}`.slice(0, 60),
+      platform: (platform || `${navigator.platform || ''} ${navigator.userAgent || ''}`).slice(0, 60),
     });
   } catch {}
 }

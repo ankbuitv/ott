@@ -10,6 +10,7 @@ import { sendBeat } from '../services/social';
 import { useProfile } from '../contexts/ProfileContext';
 import { recordProfileWatch } from '../services/kids';
 import CommentsBox from './CommentsBox';
+import StreamWatermark from './StreamWatermark';
 import { movieDeepId } from './ShareMovieModal';
 import { fmtTstamp } from './Pack48Ui';
 
@@ -59,6 +60,7 @@ export default function MoviePlayerModal({ movie, onClose }) {
   // hỏi lại, vì với TV show URL phụ thuộc season/episode.
   const [sources, setSources] = useState([]);
   const [sourcesLoading, setSourcesLoading] = useState(true);
+  const playerAreaRef = useRef(null); // vùng player — dùng cho logo watermark
   const [srcKey, setSrcKey] = useState(0); // bấm Reload ở màn "chưa có nguồn"
   // (#9/#68) Bình luận gắn phút: mở khay chat; với nguồn HLS tự phát ta theo dõi
   // posRef để auto-ghim phút đang xem mỗi 4 giây.
@@ -302,7 +304,12 @@ export default function MoviePlayerModal({ movie, onClose }) {
       </div>
 
       {/* ===== Player area ===== */}
-      <div className="flex-1 relative bg-black flex items-center justify-center min-h-0">
+      <div ref={playerAreaRef} className="flex-1 relative bg-black flex items-center justify-center min-h-0">
+        {/* Logo watermark của web — chỉ đắp lên nguồn HLS do app tự phát (kind='hls'),
+            không đóng dấu lên player iframe của đối tác. */}
+        {current && current.kind === 'hls' && (
+          <StreamWatermark page="movie" containerRef={playerAreaRef} vod catchup />
+        )}
         {sourcesLoading && (
           <div className="z-10 flex flex-col items-center gap-3">
             <div className="w-16 h-16 border-4 border-[#f36f21]/25 border-t-[#f36f21] rounded-full animate-spin"></div>

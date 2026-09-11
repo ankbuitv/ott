@@ -6,17 +6,72 @@ const BASE_WORKER_URL = API_BASE;
 export const DEFAULT_FALLBACK_STREAM = "http://bore.pub:30113/hls/index.m3u8";
 export const CHRTV_LOGO_URL = "https://i.ibb.co/HDmcxzMK/Gemini-Generated-Image-v7i9yav7i9yav7i9-removebg-preview.png";
 
+/**
+ * Danh sách kênh là thứ duy nhất mà nếu thiếu thì app coi như "crash" (trắng màn hình),
+ * nên nó có 3 lớp phòng thủ:
+ *   1. timeout 12s — Worker đang import lại M3U (lạnh D1) có thể treo hàng chục giây,
+ *      trước đây fetch không huỷ ⇒ app ngồi chờ vô hạn, người dùng tưởng chết app;
+ *   2. cache localStorage danh sách LẦN CUỐI THÀNH CÔNG — Worker 5xx / hết quota / mất mạng
+ *      vẫn còn kênh mà xem, thay vì rớt xuống kênh dự phòng;
+ *   3. kênh dự phòng công khai — chỉ khi cả hai bước trên trắng.
+ */
+const CHANNELS_CACHE_KEY = "chrtv_channels_v1";
+const CHANNELS_CACHE_MAX_BYTES = 1_500_000; // playlist công khai không kèm stream_url nên chỉ vài trăm KB
+
+function readChannelsCache() {
+  try {
+    const o = JSON.parse(localStorage.getItem(CHANNELS_CACHE_KEY) || "null");
+    if (!o || !Array.isArray(o.data) || o.data.length === 0) return null;
+    return o;
+  } catch {
+    return null;
+  }
+}
+
+function writeChannelsCache(data) {
+  try {
+    const json = JSON.stringify({ t: Date.now(), n: data.length, data });
+    if (json.length > CHANNELS_CACHE_MAX_BYTES) return;
+    localStorage.setItem(CHANNELS_CACHE_KEY, json);
+  } catch {
+    /* hết quota localStorage — không sao, lần sau ghi tiếp */
+  }
+}
+
+/** WebView Android/TV cũ chưa có AbortSignal.timeout nên tự quản. */
+async function fetchWithTimeout(url, opts, ms) {
+  let ctrl;
+  let timer;
+  try {
+    ctrl = new AbortController();
+    timer = setTimeout(() => { try { ctrl.abort(); } catch {} }, ms);
+    return await fetch(url, { ...opts, signal: ctrl.signal });
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export async function fetchChannels() {
   try {
-    const res = await fetch(`${BASE_WORKER_URL}/api/playlist`, { headers: { Accept: "application/json", ...authHeaders() } });
+    const res = await fetchWithTimeout(`${BASE_WORKER_URL}/api/playlist`, { headers: { Accept: "application/json", ...authHeaders() } }, 12000);
     if (res.ok) {
       const json = await res.json();
       // LƯU Ý: playlist công khai KHÔNG còn `stream_url` (chống rip link gốc).
       // Kênh có cờ `protected` => phát bằng /api/stream/token (xem services/streamGuard.js).
-      if (json && json.data && json.data.length > 0) return json.data;
+      if (json && json.data && json.data.length > 0) {
+        writeChannelsCache(json.data);
+        return json.data;
+      }
     }
   } catch (err) {
     console.warn("Worker Playlist error:", err.message);
+  }
+
+  const cached = readChannelsCache();
+  if (cached) {
+    const ageMin = Math.max(0, Math.round((Date.now() - (cached.t || 0)) / 60000));
+    console.warn(`fetchChannels: dùng ${cached.data.length} kênh đã cache (${ageMin} phút trước)`);
+    return cached.data;
   }
 
   // Fallback offline: CHỈ kênh dự phòng công khai (không chứa link kênh premium).

@@ -239,10 +239,7 @@ export default {
     console.error("[cron] refreshing channels + epg cache");
     ctx.waitUntil((async () => {
       try {
-        const fromSource = await loadChannelsFromSource(env);
-        if (hasDB(env) && fromSource && fromSource.length > 0) {
-          await writeChannels(env, fromSource);
-        }
+        await importChannelsOnce(env);
       } catch (e) {
         console.error("[cron] playlist refresh error:", e?.message || e);
       }
@@ -1085,9 +1082,19 @@ const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS affiliates (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, kind TEXT DEFAULT 'cinema', url_template TEXT DEFAULT '', label TEXT DEFAULT '', enabled INTEGER DEFAULT 1, sort_order INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS user_quiz (user_id INTEGER PRIMARY KEY, answers_json TEXT DEFAULT '{}', done INTEGER DEFAULT 0, updated_at INTEGER DEFAULT 0)`,
   `CREATE TABLE IF NOT EXISTS team_follows (user_id INTEGER NOT NULL, team_name TEXT NOT NULL, updated_at INTEGER DEFAULT 0, PRIMARY KEY (user_id, team_name))`,
+  // ---- LOGO / WATERMARK khi phát (xem LOGO_WATERMARK.md) ----
+  // site_config: bảng key/value chung cho cấu hình của hệ thống (hiện dùng cho watermark).
+  //   key "watermark"      -> JSON cấu hình mặc định toàn hệ thống
+  //   key "watermark_logo" -> nội dung SVG đã sanitize (logo overlay), rỗng = dùng file gốc /watermark.svg
+  // channel_watermark: tuỳ chỉnh theo TỪNG KÊNH, để riêng 1 bảng (giống channel_health)
+  //   vì writeChannels() DELETE + INSERT lại bảng channels mỗi lần nạp M3U — để cột wm
+  //   trong channels thì mọi tuỳ chỉnh của admin sẽ bay theo đợt refresh.
+  `CREATE TABLE IF NOT EXISTS site_config (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER DEFAULT 0)`,
+  `CREATE TABLE IF NOT EXISTS channel_watermark (channel_id TEXT PRIMARY KEY, wm TEXT NOT NULL, updated_at INTEGER DEFAULT 0)`,
 ];
 
 let schemaReady = false;
+let schemaFailedAt = 0; // mốc lần chạy schema thất bại gần nhất (xem backoff ở ensureSchema)
 
 function hasDB(env) {
   return !!(env && env.DB && typeof env.DB.prepare === "function");
@@ -1096,6 +1103,9 @@ function hasDB(env) {
 async function ensureSchema(env) {
   if (!hasDB(env)) return false;
   if (schemaReady) return true;
+  // D1 đang lỗi/mất kết nối mà retry_every_request = mỗi request gánh thêm ~130 câu SQL.
+  // Thất bại thì nghỉ 30s rồi mới thử lại (isolate sẽ tự hồi phục khi D1 sehat).
+  if (schemaFailedAt && Date.now() - schemaFailedAt < 30000) return false;
   try {
     if (typeof env.DB.batch === "function") {
       try {
@@ -1201,9 +1211,11 @@ async function ensureSchema(env) {
       } catch {}
     } catch {}
     schemaReady = true;
+    schemaFailedAt = 0;
     return true;
   } catch (e) {
     console.error("ensureSchema error:", e?.message || e);
+    schemaFailedAt = Date.now();
     return false;
   }
 }
@@ -1237,6 +1249,9 @@ async function handleAPI(path, request, env, ctx) {
     if (!a) return json({ error: "LOGIN_REQUIRED" }, 401, request, env);
     return await handleEPG(env, request);
   }
+  // Logo watermark khi phát (cấu hình chung + file logo admin upload) — LOGO_WATERMARK.md
+  if (path === "/api/watermark") return await handleWatermarkPublic(request, env);
+  if (path === "/api/watermark/logo") return await handleWatermarkLogo(request, env);
   if (path === "/api/proxy") return await handleProxy(request, env);
   if (path === "/api/stream/token") return await handleStreamToken(request, env);
   if (path === "/api/stream/proxy") return await handleStreamProxy(request, env);
@@ -1439,6 +1454,10 @@ function publicChannel(ch, env) {
   if (ch.health_note) out.maintenance_note = String(ch.health_note).slice(0, 160);
   // (#86) kênh tài trợ — hiện huy hiệu "Tài trợ"
   out.sponsored = !!ch.is_sponsored;
+  // Logo watermark riêng của kênh (xem LOGO_WATERMARK.md). Không có key `wm`
+  // nghĩa là kênh đó dùng cấu hình chung của hệ thống.
+  const wmOverride = normalizeWatermark(ch.wm_json || ch.wm, { partial: true });
+  if (wmOverride) out.wm = wmOverride;
   if (streamUrlIsPublic(env)) {
     out.stream_url = ch.stream_url || "";
     out.user_agent = ch.user_agent || "";
@@ -1481,16 +1500,23 @@ async function handlePlaylist(env, request) {
   if (hasDB(env)) {
     await ensureSchema(env);
     if (!refresh) {
+      const SQL_NO_WM = "SELECT c.*, h.status AS health_status, h.maintenance_until AS maintenance_until, h.note AS health_note FROM channels c LEFT JOIN channel_health h ON h.channel_id = c.channel_id WHERE c.is_active = 1 ORDER BY c.id ASC";
+      const SQL_WM = "SELECT c.*, h.status AS health_status, h.maintenance_until AS maintenance_until, h.note AS health_note, w.wm AS wm_json FROM channels c LEFT JOIN channel_health h ON h.channel_id = c.channel_id LEFT JOIN channel_watermark w ON w.channel_id = c.channel_id WHERE c.is_active = 1 ORDER BY c.id ASC";
       try {
-        const { results } = await env.DB.prepare("SELECT c.*, h.status AS health_status, h.maintenance_until AS maintenance_until, h.note AS health_note FROM channels c LEFT JOIN channel_health h ON h.channel_id = c.channel_id WHERE c.is_active = 1 ORDER BY c.id ASC").all();
+        // Lấy kèm wm_json (tuỳ chỉnh logo theo kênh). Bảng channel_watermark chưa có
+        // (DB quá cũ) -> retry câu SQL cũ, playlist không được phép chết vì watermark.
+        let results;
+        try {
+          ({ results } = await env.DB.prepare(SQL_WM).all());
+        } catch {
+          ({ results } = await env.DB.prepare(SQL_NO_WM).all());
+        }
         if (results && results.length > 0) return json({ success: true, source: "d1", data: results.filter((c) => !regionBlocked(c, country)).map((c) => publicChannel(c, env)), d1_count: results.length }, 200, request, env);
       } catch (e) { console.error("handlePlaylist D1 error:", e?.message || e); }
     }
   }
-  const fromSource = await loadChannelsFromSource(env);
-  if (hasDB(env) && fromSource && fromSource.length > 0) {
-    d1_count = await writeChannels(env, fromSource);
-  }
+  const { list: fromSource, d1_count: imported } = await importChannelsOnce(env);
+  d1_count = imported;
   return json({ success: true, source: fromSource === DEFAULT_CHANNELS ? "default" : "m3u", data: fromSource.map((c) => publicChannel(c, env)), d1_count }, 200, request, env);
 }
 
@@ -2677,6 +2703,406 @@ async function rewriteM3U8Sealed(text, targetUrl, proxyBase, ctx, env) {
   return out.join("\n");
 }
 
+// ============================================================================
+// LOGO WATERMARK — đắp logo của web lên khung hình lúc phát (tv/trang TV/player).
+// Chi tiết thiết kế + cách đổi logo: LOGO_WATERMARK.md
+//
+// 2 lớp cấu hình:
+//   • site_config "watermark"      → mặc định toàn hệ thống (admin chỉnh)
+//   • channel_watermark(channel_id) → tuỳ chỉnh RIÊNG theo kênh (nạp JSON chồng lên
+//     mặc định: mode 'on'/'off' + vị trí/cỡ/mờ/kiểu). Để bảng riêng vì writeChannels()
+//     DELETE + INSERT lại `channels` mỗi lần nạp M3U.
+// Client đọc: global từ /api/watermark, phần riêng của kênh từ `wm` trong /api/playlist.
+// ============================================================================
+
+const WM_POS = ["tl", "tr", "bl", "br", "tc", "bc", "ml", "mr", "custom"];
+const WM_STYLE = ["plain", "shadow", "plate", "glass"];
+const WM_TINT = ["none", "white", "black"];
+const WM_TEXT_POS = ["none", "right", "bottom", "top"];
+const WM_PAGES = ["tv", "player", "mini", "movie"];
+const WM_LOGO_MAX_BYTES = 256 * 1024;
+
+function wmNum(v, min, max, dflt) {
+  const n = typeof v === "number" ? v : parseFloat(v);
+  if (!Number.isFinite(n)) return dflt;
+  return Math.min(max, Math.max(min, n));
+}
+function wmInt(v, min, max, dflt) {
+  const n = typeof v === "number" ? v : parseInt(v, 10);
+  if (!Number.isFinite(n)) return dflt;
+  return Math.round(Math.min(max, Math.max(min, n)));
+}
+function wmBool(v, dflt) {
+  if (v === undefined || v === null || v === "") return dflt;
+  return v === 1 || v === true || v === "1" || v === "on" || v === "true" ? 1 : 0;
+}
+function wmOneOf(v, list, dflt) {
+  const s = String(v || "").trim().toLowerCase();
+  return list.includes(s) ? s : dflt;
+}
+function wmText(v, max) {
+  return String(v == null ? "" : v).replace(/[\u0000-\u001f<>]/g, " ").trim().slice(0, max);
+}
+
+/** Cấu hình mặc định toàn hệ thống (khi admin chưa lưu gì). */
+function watermarkDefaults() {
+  return {
+    enabled: 1,
+    logo_url: "",            // rỗng = dùng /watermark.svg đóng gói trong app
+    pos: "tr",               // góc trên phải
+    x: 92, y: 8,             // chỉ dùng khi pos = 'custom' (% của khung hình)
+    size: 9,                 // % chiều cao khung hình
+    opacity: 82,
+    margin: 3,               // % cách mép khi bám góc
+    style: "shadow",         // plain | shadow | plate | glass
+    tint: "none",            // none | white | black (lọc màu để dễ nhìn trên nền tối)
+    text: "",                // dòng mô tả đi kèm logo
+    text_pos: "none",        // chỉ có nghĩa khi `text` khác rỗng
+    fit: "video",            // video = bám khung hình thật (bỏ letterbox) | container
+    pages: { tv: 1, player: 1, mini: 0, movie: 0 },
+    only_live: 0,            // 1 = chỉ hiện ở kênh live, không hiện trên phim/catch-up
+    hide_buffering: 1,       // 1 = ẩn lúc đang loading
+    version: 0,
+    updated_at: 0,
+  };
+}
+
+/**
+ * Chuẩn hoá 1 lớp cấu hình watermark.
+ * `partial: true` (dùng cho tuỳ chỉnh theo kênh): CHỈ giữ các key có mặt trong `raw`
+ * để client đem overlay lên trên mặc định; không có key nào hợp lệ → trả null.
+ */
+function normalizeWatermark(raw, opts = {}) {
+  const partial = !!opts.partial;
+  let src = raw;
+  if (typeof src === "string") {
+    const s = src.trim();
+    if (!s) return partial ? null : watermarkDefaults();
+    try { src = JSON.parse(s); } catch { return partial ? null : watermarkDefaults(); }
+  }
+  if (!src || typeof src !== "object") return partial ? null : watermarkDefaults();
+  const has = (k) => src[k] !== undefined && src[k] !== null && src[k] !== "";
+  const keep = (k) => (partial ? has(k) : true);
+
+  const out = {};
+  // mode: '' = theo chung | 'on' = bật cưỡng bức | 'off' = tắt riêng kênh này
+  if (partial) {
+    const mode = String(src.mode || "").trim().toLowerCase();
+    if (mode === "on" || mode === "off") out.mode = mode;
+    else if (src.enabled === 0 || src.enabled === "0" || src.enabled === false) out.mode = "off";
+  }
+  if (keep("enabled") && !partial) out.enabled = wmBool(src.enabled, 1);
+  if (keep("pos")) out.pos = wmOneOf(src.pos, WM_POS, "tr");
+  if (keep("x")) out.x = wmNum(src.x, 0, 100, 92);
+  if (keep("y")) out.y = wmNum(src.y, 0, 100, 8);
+  if (keep("size")) out.size = wmNum(src.size, 2, 40, 9);
+  if (keep("opacity")) out.opacity = wmInt(src.opacity, 5, 100, 82);
+  if (keep("margin")) out.margin = wmNum(src.margin, 0, 20, 3);
+  if (keep("style")) out.style = wmOneOf(src.style, WM_STYLE, "shadow");
+  if (keep("tint")) out.tint = wmOneOf(src.tint, WM_TINT, "none");
+  // `text`: với tuỳ chỉnh theo kênh phải phân biệt "không gửi" (theo chung) và
+  // "gửi rỗng" (kênh này không hiện dòng mô tả) → xét sự có mặt của key.
+  const textPresent = partial ? (Object.prototype.hasOwnProperty.call(src, "text") || has("text_pos")) : true;
+  if (textPresent) {
+    out.text = wmText(src.text, 48);
+    out.text_pos = out.text ? wmOneOf(src.text_pos, WM_TEXT_POS, "right") : "none";
+  }
+  if (keep("fit")) out.fit = String(src.fit) === "container" ? "container" : "video";
+  if (!partial) {
+    const p = src.pages && typeof src.pages === "object" ? src.pages : {};
+    const pages = {};
+    for (const k of WM_PAGES) pages[k] = wmBool(p[k], k === "tv" || k === "player" ? 1 : 0);
+    out.pages = pages;
+    out.only_live = wmBool(src.only_live, 0);
+    out.hide_buffering = wmBool(src.hide_buffering, 1);
+    const u = String(src.logo_url || "").trim();
+    out.logo_url = /^\/api\/watermark\/logo(\?|$)/.test(u) || /^\/watermark\.(svg|png)(\?|$)/i.test(u) ? u.slice(0, 160)
+      : /^https?:\/\/[^\s"'<>\\]{1,140}$/i.test(u) ? u : "";
+  }
+  // `mode` một mình vẫn hợp lệ (bật/tắt riêng kênh); không có key nào khác -> trả null
+  if (partial && Object.keys(out).length === 0) return null;
+  return out;
+}
+
+// ---- SVG tự vệ: admin upload logo → mình phải cất & phát lại đúng markup đó ----
+// Ảnh chỉ được render bằng <img src>, nhưng vẫnstrip script/handler/external-ref
+// để nếu có ai mở trực tiếp link .svg thì cũng không chạy được gì.
+function sanitizeSvg(input) {
+  let svg = String(input || "").trim();
+  if (!svg || svg.length > WM_LOGO_MAX_BYTES) return { ok: false, error: svg ? "SVG_QUÁ_LỚN" : "RỖNG" };
+  if (!/<svg[\s>]/i.test(svg)) return { ok: false, error: "KHONG_PHAI_SVG" };
+  const drop = (re) => { svg = svg.replace(re, ""); };
+  drop(/<script[\s\S]*?<\/script\s*>/gi);
+  drop(/<\s*foreignObject[\s\S]*?<\s*\/\s*foreignObject\s*>/gi);
+  drop(/<\s*(iframe|embed|object|animate|set|handler)\b[\s\S]*?(<\/\s*\1\s*>|\/>)/gi);
+  drop(/<!DOCTYPE[^>]*>/gi);
+  drop(/<!ENTITY[\s\S]*?>/gi);
+  drop(/<\?xml-stylesheet[\s\S]*?\?>/gi);
+  svg = svg.replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, "").replace(/\son[a-z]+\s*=\s*'[^']*'/gi, "");
+  svg = svg.replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, "");
+  // Bỏ tham chiếu ngoài (href/xlink:href/src trỏ http, data: khác loại, javascript:)
+  const kill = (attr) => new RegExp(`(\\s${attr}\\s*=\\s*)("([^"]*)"|'([^']*)')`, "gi");
+  for (const attr of ["href", "src", "xlink:href"]) {
+    svg = svg.replace(kill(attr), (m, pre, _q, d, s) => {
+      const v = String(d || s || "").trim();
+      const safe = /^#[-\w:.]+$/.test(v) || /^data:image\/(png|jpeg|jpg|webp|gif);base64,/i.test(v);
+      return safe ? m : "";
+    });
+  }
+  svg = svg.replace(/(url\s*\(\s*)['"]?(?:https?:|\/\/|javascript:)/gi, "$1'");
+  // Chỉ chèn xmlns khi thiếu (trùng thuộc tính là lỗi XML → trình duyệt từ chối render)
+  if (!/xmlns\s*=\s*["']http:\/\/www\.w3\.org\/2000\/svg["']/i.test(svg)) {
+    svg = svg.replace(/<svg/i, '<svg xmlns="http://www.w3.org/2000/svg"');
+  } else {
+    svg = svg.replace(/(xmlns\s*=\s*["']http:\/\/www\.w3\.org\/2000\/svg["']\s*)\1+/gi, "$1");
+  }
+  svg = svg.replace(/<svg\b/i, '<svg role="img" aria-hidden="true"');
+  if (svg.length > WM_LOGO_MAX_BYTES) return { ok: false, error: "SVG_QUÁ_LỚN" };
+  return { ok: true, svg };
+}
+
+/** Đọc kích thước PNG từ base64 (IHDR) — không cần thư viện. */
+function pngSizeFromBase64(b64) {
+  try {
+    const bin = atob(b64.slice(0, 64));
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const sig = [137, 80, 78, 71, 13, 10, 26, 10];
+    for (let i = 0; i < 8; i++) if (bytes[i] !== sig[i]) return null;
+    const dv = new DataView(bytes.buffer);
+    return { w: dv.getUint32(16), h: dv.getUint32(20) };
+  } catch { return null; }
+}
+
+/**
+ * PNG (hoặc ảnh raster bất kỳ) → file SVG.
+ * Cách làm: giữ nguyên dữ liệu ảnh gốc, nhúng vào <image> trong một SVG có
+ * viewBox đúng kích thước. Kết quả là .svg thật, trong suốt, không vỡ hạt ở
+ * bất kỳ cỡ nào (vì trình duyệt render raster bên trong SVG), và KHÔNG cần
+ * thư viện trace trên server.
+ */
+function rasterToSvg(dataUrl, mime) {
+  const m = /^data:([a-z]+\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/=\s]+)$/i.exec(String(dataUrl || "").trim());
+  if (!m) return { ok: false, error: "DATA_URL_KHONG_HOP_LE" };
+  const type = (mime || m[1]).toLowerCase();
+  const b64 = m[2].replace(/\s+/g, "");
+  if (b64.length * 0.75 > WM_LOGO_MAX_BYTES) return { ok: false, error: "ANH_QUA_LON" };
+  let size = null;
+  if (type.includes("png")) size = pngSizeFromBase64(b64);
+  const w = (size && size.w) || 512;
+  const h = (size && size.h) || 512;
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">` +
+    `<title>CHRTV logo</title>` +
+    `<image href="data:${type};base64,${b64}" x="0" y="0" width="${w}" height="${h}" preserveAspectRatio="xMidYMid meet"/>` +
+    `</svg>`;
+  return { ok: true, svg };
+}
+
+// ---- Đọc/ghi cấu hình (D1) + cache in-memory 30s ----
+let _wmCache = null; // { at, cfg, hasLogo, version }
+async function readWatermarkState(env) {
+  const now = Date.now();
+  if (_wmCache && now - _wmCache.at < 30000) return _wmCache;
+  const cfg = watermarkDefaults();
+  let hasLogo = false, updatedAt = 0, logoBytes = 0;
+  if (hasDB(env)) {
+    try {
+      const { results } = await env.DB.prepare(
+        "SELECT key, value, updated_at FROM site_config WHERE key IN ('watermark','watermark_logo','watermark_meta')"
+      ).all();
+      for (const row of results || []) {
+        if (row.key === "watermark") {
+          const merged = normalizeWatermark(row.value);
+          Object.assign(cfg, merged);
+          updatedAt = Math.max(updatedAt, Number(row.updated_at) || 0);
+        } else if (row.key === "watermark_logo") {
+          hasLogo = !!(row.value && row.value.length);
+          logoBytes = (row.value || "").length;
+          updatedAt = Math.max(updatedAt, Number(row.updated_at) || 0);
+        }
+      }
+    } catch (e) { console.error("[watermark] read lỗi:", e?.message || e); }
+  }
+  cfg.version = updatedAt || 1;
+  cfg.updated_at = updatedAt;
+  const out = { at: now, cfg, hasLogo, logoBytes };
+  _wmCache = out;
+  return out;
+}
+async function writeWatermarkState(env, cfg) {
+  const now = Math.floor(Date.now() / 1000);
+  await env.DB.prepare("INSERT OR REPLACE INTO site_config (key, value, updated_at) VALUES (?, ?, ?)")
+    .bind("watermark", JSON.stringify(cfg), now).run();
+  _wmCache = null;
+  return now;
+}
+
+/** GET /api/watermark — client dùng để lấy cấu hình chung + đường dẫn logo. */
+async function handleWatermarkPublic(request, env) {
+  const st = await readWatermarkState(env);
+  const cfg = { ...st.cfg };
+  cfg.logo_url = cfg.logo_url || (st.hasLogo ? `/api/watermark/logo?v=${cfg.version}` : "/watermark.svg");
+  return new Response(JSON.stringify({ success: true, config: cfg, has_custom_logo: st.hasLogo }), {
+    status: 200,
+    headers: jsonHeaders(request, env, { "Cache-Control": "public, max-age=20, s-maxage=120, stale-while-revalidate=600" }),
+  });
+}
+
+/** GET /api/watermark/logo — phát nội dung SVG admin đã upload (đã sanitize khi lưu). */
+async function handleWatermarkLogo(request, env) {
+  if (!hasDB(env)) return new Response("Not found", { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+  let row = null;
+  try {
+    row = await env.DB.prepare("SELECT value FROM site_config WHERE key = 'watermark_logo'").first();
+  } catch { row = null; }
+  if (!row || !row.value) {
+    // Chưa upload gì → trỏ về file đóng gói trong app (admin thay file đó cũng được)
+    return new Response(null, { status: 302, headers: { Location: "/watermark.svg" } });
+  }
+  return new Response(row.value, {
+    status: 200,
+    headers: {
+      "Content-Type": "image/svg+xml; charset=utf-8",
+      "Cache-Control": "public, max-age=604800, immutable",
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+      "Cross-Origin-Resource-Policy": "same-origin",
+    },
+  });
+}
+
+/**
+ * Admin: /admin/watermark*
+ *   GET    /admin/watermark            → cấu hình + danh sách kênh có tuỳ chỉnh
+ *   POST   /admin/watermark            → lưu cấu hình chung
+ *   POST   /admin/watermark/logo       → { svg } hoặc { image: "data:image/png;base64,." } (PNG tự đổi sang SVG)
+ *   DELETE /admin/watermark/logo       → xoá logo upload, quay về /watermark.svg
+ *   POST   /admin/watermark/channel    → { channel_id, wm }  (wm = null/'' để xoá tuỳ chỉnh)
+ *   DELETE /admin/watermark/channel    → { channel_id }
+ *   POST   /admin/watermark/group      → { group_title, wm }  áp hàng loạt cho 1 nhóm kênh
+ *   POST   /admin/watermark/clear-all  → xoá mọi tuỳ chỉnh theo kênh
+ */
+async function handleAdminWatermark(path, request, env, adminCtx) {
+  const adminUser = adminCtx && adminCtx.adminUser;
+  const aid = (adminUser && adminUser.id) || 0;
+  const method = request.method;
+  const body = method === "GET" ? {} : await request.json().catch(() => ({}));
+
+  if (path === "/admin/watermark" && method === "GET") {
+    const st = await readWatermarkState(env);
+    const over = await env.DB.prepare(
+      "SELECT w.channel_id, w.wm, w.updated_at, c.name, c.group_title FROM channel_watermark w LEFT JOIN channels c ON c.channel_id = w.channel_id ORDER BY c.name ASC LIMIT 400"
+    ).all().catch(() => ({ results: [] }));
+    const total = await env.DB.prepare("SELECT COUNT(*) AS c FROM channels WHERE is_active = 1").first().catch(() => ({ c: 0 }));
+    const groups = await env.DB.prepare("SELECT DISTINCT group_title FROM channels WHERE is_active = 1 AND group_title <> '' ORDER BY group_title LIMIT 300").all().catch(() => ({ results: [] }));
+    return json({
+      success: true,
+      config: st.cfg,
+      logo: { has_custom: st.hasLogo, bytes: st.logoBytes || 0 },
+      channels: (over.results || []).map((r) => ({ channel_id: r.channel_id, name: r.name || r.channel_id, group_title: r.group_title || "", wm: r.wm, updated_at: r.updated_at })),
+      groups: (groups.results || []).map((g) => g.group_title),
+      total_channels: (total && total.c) || 0,
+    }, 200, request, env);
+  }
+
+  if (path === "/admin/watermark" && method === "POST") {
+    const cur = (await readWatermarkState(env)).cfg;
+    const next = normalizeWatermark({ ...cur, ...body, version: undefined, updated_at: undefined });
+    const now = await writeWatermarkState(env, next);
+    next.version = now;
+    try { await logAudit(env, aid, "watermark.save", { enabled: next.enabled, pos: next.pos, size: next.size, style: next.style }); } catch {}
+    return json({ success: true, config: next }, 200, request, env);
+  }
+
+  if (path === "/admin/watermark/logo") {
+    if (method === "DELETE") {
+      await env.DB.prepare("DELETE FROM site_config WHERE key = 'watermark_logo'").run();
+      await writeWatermarkState(env, { ...(await readWatermarkState(env)).cfg, logo_url: "" });
+      try { await logAudit(env, aid, "watermark.logo.delete", {}); } catch {}
+      return json({ success: true, message: "Đã quay về logo đóng gói trong app (/watermark.svg)" }, 200, request, env);
+    }
+    if (method !== "POST") return json({ error: "Method không hỗ trợ" }, 405, request, env);
+    let svg = "";
+    let converted = false;
+    if (body.svg) {
+      const s = sanitizeSvg(body.svg);
+      if (!s.ok) return json({ error: "SVG không hợp lệ" + (s.error ? ` (${s.error})` : ""), code: s.error }, 400, request, env);
+      svg = s.svg;
+    } else if (body.image) {
+      const mime = String(body.mime || "").toLowerCase();
+      const c = rasterToSvg(body.image, mime);
+      if (!c.ok) return json({ error: "Không chuyển được ảnh sang SVG", code: c.error }, 400, request, env);
+      const s = sanitizeSvg(c.svg);
+      if (!s.ok) return json({ error: `SVG sau khi chuyển không hợp lệ (${s.error})`, code: s.error }, 400, request, env);
+      svg = s.svg;
+      converted = true;
+    } else {
+      return json({ error: "Thiếu `svg` hoặc `image`" }, 400, request, env);
+    }
+    const now = Math.floor(Date.now() / 1000);
+    await env.DB.prepare("INSERT OR REPLACE INTO site_config (key, value, updated_at) VALUES ('watermark_logo', ?, ?)").bind(svg, now).run();
+    const cur = (await readWatermarkState(env)).cfg;
+    await writeWatermarkState(env, { ...cur, logo_url: `/api/watermark/logo?v=${now}` });
+    try { await logAudit(env, aid, "watermark.logo.set", { bytes: svg.length, converted }); } catch {}
+    return json({
+      success: true, bytes: svg.length, converted,
+      logo_url: `/api/watermark/logo?v=${now}`,
+      message: converted ? "Đã chuyển ảnh thành SVG và lưu xong." : "Đã lưu SVG.",
+    }, 200, request, env);
+  }
+
+  if (path === "/admin/watermark/channel") {
+    const cid = String(body.channel_id || "").trim().slice(0, 80);
+    if (method === "DELETE") {
+      if (!cid) return json({ error: "Thiếu channel_id" }, 400, request, env);
+      await env.DB.prepare("DELETE FROM channel_watermark WHERE channel_id = ?").bind(cid).run();
+      try { await logAudit(env, aid, "watermark.channel.clear", { channel_id: cid }); } catch {}
+      return json({ success: true }, 200, request, env);
+    }
+    if (method !== "POST") return json({ error: "Method không hỗ trợ" }, 405, request, env);
+    if (!cid) return json({ error: "Thiếu channel_id" }, 400, request, env);
+    const wm = normalizeWatermark(body.wm, { partial: true });
+    if (!wm) {
+      await env.DB.prepare("DELETE FROM channel_watermark WHERE channel_id = ?").bind(cid).run();
+      return json({ success: true, cleared: true, message: "Kênh này trở lại dùng cấu hình chung." }, 200, request, env);
+    }
+    await env.DB.prepare("INSERT OR REPLACE INTO channel_watermark (channel_id, wm, updated_at) VALUES (?, ?, ?)")
+      .bind(cid, JSON.stringify(wm), Math.floor(Date.now() / 1000)).run();
+    try { await logAudit(env, aid, "watermark.channel.set", { channel_id: cid, wm }); } catch {}
+    return json({ success: true, wm }, 200, request, env);
+  }
+
+  if (path === "/admin/watermark/group" && method === "POST") {
+    const group = String(body.group_title || "").trim().slice(0, 120);
+    if (!group) return json({ error: "Thiếu group_title" }, 400, request, env);
+    const { results } = await env.DB.prepare("SELECT channel_id FROM channels WHERE is_active = 1 AND group_title = ? LIMIT 500").bind(group).all();
+    const ids = (results || []).map((r) => r.channel_id);
+    if (!ids.length) return json({ error: "Nhóm không có kênh nào", code: "EMPTY_GROUP" }, 404, request, env);
+    const wm = normalizeWatermark(body.wm, { partial: true });
+    const now = Math.floor(Date.now() / 1000);
+    const wmStr = wm ? JSON.stringify(wm) : "";
+    const stmts = ids.map((cid) => wmStr
+      ? env.DB.prepare("INSERT OR REPLACE INTO channel_watermark (channel_id, wm, updated_at) VALUES (?, ?, ?)").bind(cid, wmStr, now)
+      : env.DB.prepare("DELETE FROM channel_watermark WHERE channel_id = ?").bind(cid));
+    if (typeof env.DB.batch === "function") {
+      for (let i = 0; i < stmts.length; i += 50) await env.DB.batch(stmts.slice(i, i + 50));
+    } else {
+      for (const s of stmts) await s.run();
+    }
+    try { await logAudit(env, aid, "watermark.group.apply", { group, count: ids.length, cleared: !wmStr }); } catch {}
+    return json({ success: true, affected: ids.length, cleared: !wmStr }, 200, request, env);
+  }
+
+  if (path === "/admin/watermark/clear-all" && method === "POST") {
+    await env.DB.prepare("DELETE FROM channel_watermark").run();
+    try { await logAudit(env, aid, "watermark.clear_all", {}); } catch {}
+    return json({ success: true, message: "Đã xoá tuỳ chỉnh của mọi kênh." }, 200, request, env);
+  }
+
+  return json({ error: "Not found" }, 404, request, env);
+}
+
 // ========== AUTH ==========
 async function handleAuth(path, request, env, ctx) {
   if (!hasDB(env)) return dbUnavailable();
@@ -3308,6 +3734,9 @@ async function handleAdmin(path, request, env, ctx) {
       path.startsWith("/admin/wrapped") || path === "/admin/scheduled/preview") {
     return await handleAdminPack48(path, request, env, { adminUser, isMaster });
   }
+
+  // ---- Logo watermark khi phát (cấu hình chung + theo kênh) — LOGO_WATERMARK.md ----
+  if (path.startsWith("/admin/watermark")) return await handleAdminWatermark(path, request, env, { adminUser, isMaster });
 
   // Gói cước do admin quản lý
   if (path === "/admin/plans" && request.method === "GET") {
@@ -3954,7 +4383,9 @@ async function handleAdmin(path, request, env, ctx) {
   }
   if (path === "/admin/player-errors" && request.method === "GET") {
     const { results } = await env.DB.prepare(
-      `SELECT channel_id, MAX(channel_name) AS channel_name, code, COUNT(*) AS n, SUM(fatal) AS fatal_n, MAX(created_at) AS last_at
+      `SELECT channel_id, MAX(channel_name) AS channel_name, code, MAX(engine) AS engine,
+              COUNT(*) AS n, SUM(fatal) AS fatal_n, MAX(created_at) AS last_at,
+              MAX(substr(detail, 1, 180)) AS sample
        FROM player_errors WHERE created_at > datetime('now', '-3 days')
        GROUP BY channel_id, code ORDER BY n DESC LIMIT 100`
     ).all();
@@ -4550,69 +4981,88 @@ async function handleChannels(env, request) {
       if (results && results.length > 0 && !refresh) return json({ success: true, channels: results.filter((c) => !regionBlocked(c, country)).map((c) => publicChannel(c, env)) }, 200, request, env);
     } catch (e) { console.error("handleChannels D1 error:", e?.message || e); }
   }
-  // Bảng rỗng hoặc yêu cầu refresh → nạp từ nguồn M3U và lưu vào D1
-  const fromSource = await loadChannelsFromSource(env);
-  if (hasDB(env) && fromSource && fromSource.length > 0) {
-    await writeChannels(env, fromSource);
-  }
+  // Bảng rỗng hoặc yêu cầu refresh → nạp từ nguồn M3U và lưu vào D1 (một lần dùng chung)
+  const { list: fromSource } = await importChannelsOnce(env);
   return json({ success: true, channels: fromSource.filter((c) => !regionBlocked(c, country)).map((c) => publicChannel(c, env)) }, 200, request, env);
 }
 
-// Ghi danh sách kênh vào D1 (thay toàn bộ, dùng batch). Trả số kênh đã ghi (0 nếu không có DB).
+// Ghi danh sách kênh vào D1. Trả số kênh đã ghi (0 nếu không có DB).
+//
+// TRƯỚC: `DELETE FROM channels` rồi mới INSERT từng batch 50 hàng. Lỗi giữa chừng
+// (Worker Free hết 10ms CPU / hết 50 subrequest / D1 5xx) để lại bảng RỖNG hoặc
+// cụt -> /api/playlist trả `data: []` -> app trắng màn hình, người dùng tưởng crash.
+// Giờ: upsert trước (không có khoảnh khắc nào bảng trống), rồi mới hạ is_active=0 những
+// hàng không nằm trong đợt import này. INSERT OR REPLACE ghi đè nên created_at của hàng
+// vừa ghi luôn là lúc chạy -> "created_at cũ hơn mốc bắt đầu" = kênh đã bị gỡ khỏi M3U.
 async function writeChannels(env, list) {
   if (!hasDB(env) || !list || list.length === 0) return 0;
   try {
     await ensureSchema(env);
+    // Trừ 2 phút làm dung sai lệch đồng hồ + khỏi ẩn oan kênh vừa thêm
+    const startedAt = new Date(Date.now() - 120000).toISOString().replace("T", " ").slice(0, 19);
+    const hasBatch = typeof env.DB.batch === "function";
+    const runAll = async (rows) => {
+      if (hasBatch) {
+        for (let i = 0; i < rows.length; i += 50) await env.DB.batch(rows.slice(i, i + 50));
+      } else {
+        for (const row of rows) await row.run();
+      }
+    };
     const fullValues = list.map(ch => [ch.channel_id, ch.name, ch.logo || "", ch.group_title || "Khác", ch.stream_url, ch.catchup_type || "append", ch.catchup_days || 7, ch.user_agent || "", ch.referer || "", ch.manifest_type || "", ch.license_type || "", ch.clear_key_id || ch.clearKeyId || "", ch.clear_key || ch.clearKey || ""]);
     const baseValues = list.map(ch => [ch.channel_id, ch.name, ch.logo || "", ch.group_title || "Khác", ch.stream_url, ch.catchup_type || "append", ch.catchup_days || 7]);
     let ok = false;
     // Schema mới: kèm UA + DRM
     try {
       const stmt = env.DB.prepare("INSERT OR REPLACE INTO channels (channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days, is_active, user_agent, referer, manifest_type, license_type, clear_key_id, clear_key) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)");
-      const rows = fullValues.map(v => stmt.bind(...v));
-      if (typeof env.DB.batch === "function") {
-        await env.DB.batch([env.DB.prepare("DELETE FROM channels")]);
-        for (let i = 0; i < rows.length; i += 50) await env.DB.batch(rows.slice(i, i + 50));
-      } else {
-        await env.DB.prepare("DELETE FROM channels").run();
-        for (const row of rows) await row.run();
-      }
-      ok = true;
+      await runAll(fullValues.map(v => stmt.bind(...v)));
+      ok = "full";
     } catch (e) {
       console.error("[channels] INSERT full failed, retry base:", e?.message || e);
     }
     if (!ok) {
       try {
         const stmt = env.DB.prepare("INSERT OR REPLACE INTO channels (channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, 1)");
-        const rows = baseValues.map(v => stmt.bind(...v));
-        if (typeof env.DB.batch === "function") {
-          await env.DB.batch([env.DB.prepare("DELETE FROM channels")]);
-          for (let i = 0; i < rows.length; i += 50) await env.DB.batch(rows.slice(i, i + 50));
-        } else {
-          await env.DB.prepare("DELETE FROM channels").run();
-          for (const row of rows) await row.run();
-        }
-        ok = true;
+        await runAll(baseValues.map(v => stmt.bind(...v)));
+        ok = "base";
       } catch (e2) {
         console.error("[channels] INSERT with is_active failed, retry without:", e2?.message || e2);
       }
     }
-    // DB quá cũ → fallback INSERT không có cột mới
+    // DB quá cũ (không có cột is_active) -> fallback kiểu cũ: thay sạch rồi ghi.
     if (!ok) {
       const stmt = env.DB.prepare("INSERT OR REPLACE INTO channels (channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days) VALUES (?, ?, ?, ?, ?, ?, ?)");
-      const rows = baseValues.map(v => stmt.bind(...v));
-      if (typeof env.DB.batch === "function") {
-        await env.DB.batch([env.DB.prepare("DELETE FROM channels")]);
-        for (let i = 0; i < rows.length; i += 50) await env.DB.batch(rows.slice(i, i + 50));
-      } else {
-        await env.DB.prepare("DELETE FROM channels").run();
-        for (const row of rows) await row.run();
-      }
+      await runAll(baseValues.map(v => stmt.bind(...v)));
+      ok = "legacy";
+    }
+    if (ok !== "legacy") {
+      // Kênh đã bị gỡ khỏi M3U: ẩn khỏi playlist (vẫn còn trong DB, đợt sau có lại là tự bật).
+      try { await env.DB.prepare("UPDATE channels SET is_active = 0 WHERE created_at < ?").bind(startedAt).run(); } catch (e) { console.error("[channels] mark stale:", e?.message || e); }
+      // Rác ẩn quá 30 ngày -> xoá cho gọn bảng
+      try { await env.DB.prepare("DELETE FROM channels WHERE is_active = 0 AND created_at < datetime('now', '-30 days')").run(); } catch {}
     }
     try { _chanCache = null; } catch {}
-    console.error(`[channels] wrote ${list.length} channels to D1`);
+    console.error(`[channels] wrote ${list.length} channels to D1 (${ok}, không còn truncate)`);
     return list.length;
   } catch (e) { console.error("writeChannels error:", e?.message || e); return 0; }
+}
+
+// ---------- Import kênh: chống Giẫm Chân Nhau ----------
+// Vài request đầu tiên sau khi isolate tỉnh dậy đều thấy bảng chưa có gì và cùng
+// lao đi fetch M3U + ghi D1. Trên Workers Free (50 subrequest/invocation, 10ms CPU)
+// là tự giết mình. Gộp tất cả về MỘT lần import dùng chung trong 1 isolate.
+let _importInFlight = null;
+async function importChannelsOnce(env) {
+  if (_importInFlight) return _importInFlight;
+  _importInFlight = (async () => {
+    const fromSource = await loadChannelsFromSource(env);
+    const n = hasDB(env) && fromSource && fromSource.length > 0 ? await writeChannels(env, fromSource) : 0;
+    return { list: fromSource, d1_count: n };
+  })();
+  try {
+    return await _importInFlight;
+  } finally {
+    _importInFlight = null;
+  }
 }
 
 // Tải danh sách kênh từ playlist M3U gốc, fallback danh sách mặc định

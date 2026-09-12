@@ -13,10 +13,12 @@ import { useVoiceComment, fmtTstamp } from './Pack48Ui';
  *  - (#68) Voice-note: ghi âm tối đa ~30s, gửi kèm dataURL nhỏ (client nén/giới hạn 500KB).
  *  - (#39) Bình luận được admin ghim (pinned) hiện trước.
  */
-export default function CommentsBox({ target, initialTstamp = null, onJump = null, title = null }) {
+export default function CommentsBox({ target, initialTstamp = null, onJump = null, title = null, variant = 'full', onCount = null }) {
   const { t } = useI18n();
   const { addToast } = useToast();
   const { isAuthenticated, user } = useAuth();
+  // variant="short": bảng bình luận trong Shorts — bỏ ghim phút & voice-note cho gọn
+  const isShort = variant === 'short';
   const [list, setList] = useState([]);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
@@ -37,6 +39,9 @@ export default function CommentsBox({ target, initialTstamp = null, onJump = nul
     if (target) fetchComments(target).then(c => { if (on) setList(c); }).catch(() => {});
     return () => { on = false; };
   }, [target]);
+
+  // Báo số lượng bình luận ra ngoài (vd: đếm trên nút 💬 của short)
+  useEffect(() => { if (onCount) onCount(list.length); }, [list.length, onCount]);
 
   const buildComment = (body, id) => ({
     id: id || Date.now() + Math.floor(Math.random() * 999),
@@ -88,23 +93,25 @@ export default function CommentsBox({ target, initialTstamp = null, onJump = nul
           placeholder={t('cmt.ph')}
           className="flex-1 px-3 py-2 bg-black/40 border border-white/10 rounded-xl text-[12px] text-white placeholder:text-stone-600 focus:outline-none focus:border-[#f36f21]"
         />
-        <button onClick={() => setPinMin(pinMin === null ? 0 : null)} title="Ghim kèm phút đang xem" className={`px-2.5 rounded-xl border text-[10px] font-black flex items-center gap-1 ${pinMin !== null ? 'bg-[#ff9a3d]/20 border-[#ff9a3d]/50 text-[#ffb37a]' : 'bg-black/30 border-white/10 text-stone-500 hover:text-white'}`}>
-          <MapPin className="w-3.5 h-3.5" />
-          {pinMin !== null ? fmtTstamp(pinMin) : 'phút'}
-        </button>
+        {!isShort && (
+          <button onClick={() => setPinMin(pinMin === null ? 0 : null)} title="Ghim kèm phút đang xem" className={`px-2.5 rounded-xl border text-[10px] font-black flex items-center gap-1 ${pinMin !== null ? 'bg-[#ff9a3d]/20 border-[#ff9a3d]/50 text-[#ffb37a]' : 'bg-black/30 border-white/10 text-stone-500 hover:text-white'}`}>
+            <MapPin className="w-3.5 h-3.5" />
+            {pinMin !== null ? fmtTstamp(pinMin) : 'phút'}
+          </button>
+        )}
         <button onClick={send} disabled={sending || (!text.trim() && !rec.rec.dataUrl)} className="px-3.5 rounded-xl grad-brand text-white disabled:opacity-40 active:scale-95">
           <Send className="w-4 h-4" />
         </button>
       </div>
-      {pinMin !== null && !rec.rec.on && (
+      {!isShort && pinMin !== null && !rec.rec.on && (
         <div className="flex items-center gap-2 mb-2 px-3 py-1.5 rounded-xl bg-[#ff9a3d]/10 border border-[#ff9a3d]/25 text-[11px] text-[#ffd9b3]">
           <MapPin className="w-3.5 h-3.5" /> Bình luận sẽ ghim vào <b className="font-mono">{fmtTstamp(pinMin)}</b>
           {onJump && <button onClick={() => jump(pinMin)} className="ml-auto px-2 py-0.5 rounded-md bg-white/10 hover:bg-white/20 text-[10px] font-bold">Xem lại lúc này</button>}
           <button onClick={() => setPinMin(null)} className="px-1.5 text-stone-400 hover:text-white text-[10px] font-bold">Bỏ</button>
         </div>
       )}
-      {/* Voice-note recorder */}
-      <div className="mb-2">
+      {/* Voice-note recorder (bỏ ở Shorts cho gọn) */}
+      <div className="mb-2" hidden={isShort} style={isShort ? { display: 'none' } : undefined}>
         {rec.rec.on ? (
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-rose-950/40 border border-rose-500/30 text-rose-200 text-[12px] font-bold">
             <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />

@@ -7,3 +7,6 @@ dist
 .DS_Store
 .env
 .env.local
+
+# Video mẫu sinh ra để demo Shorts (không đưa vào repo)
+/public/_demo/

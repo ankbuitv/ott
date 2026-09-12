@@ -22,6 +22,13 @@
  * ============
  */
 
+import {
+  buildLicenseToken, deriveKeyBytes, deriveIvBytes, aes128CbcEncrypt,
+  insertExtXKey, keyBucket, playlistProtectable, protectSkipReason,
+  toHex, verifyLicenseToken,
+  KEY_ROTATE_DEFAULT, KEY_GRACE_DEFAULT, PROTECT_MAX_BYTES_DEFAULT,
+} from "./stream-protect.js";
+
 const SOURCE_M3U_URL = "https://github.com/ankbuitv/mytv/raw/refs/heads/main/playlist.m3u";
 // Nguồn dự phòng khi playlist chính không tải được (repo private/404/rate-limit)
 const SOURCE_M3U_FALLBACK = "https://raw.githubusercontent.com/ankbuitv/ott/refs/heads/main/playlists/tv.m3u";
@@ -293,6 +300,9 @@ export default {
       if (p.startsWith("/user/")) return await guardApiRes(request, await handleUser(p, request, env));
       // Admin API
       if (p.startsWith("/admin/")) return await guardApiRes(request, await handleAdmin(p, request, env, ctx));
+      // BẢO VỆ LUỒNG: cấp key AES-128 ngay tại origin này (dự phòng / test local —
+      // production mặc định trỏ sang https://license.ankb.qzz.io qua LICENSE_BASE)
+      if (p.startsWith("/lic/k/")) return await handleLicenseKey(request, env, decodeURIComponent(p.slice("/lic/k/".length).split("?")[0] || ""));
       // WebSocket upgrade
       if (p === "/ws" && request.headers.get("Upgrade") === "websocket") {
         return handleWebSocket(request, env, ctx);
@@ -1178,6 +1188,8 @@ async function ensureSchema(env) {
       "ALTER TABLE comments ADD COLUMN pinned INTEGER DEFAULT 0",
       "ALTER TABLE channels ADD COLUMN blocked_regions TEXT DEFAULT ''",
       "ALTER TABLE channels ADD COLUMN is_sponsored INTEGER DEFAULT 0",
+      // BẢO VỆ LUỒNG: 1 = tự mã hoá AES-128 khi phát qua proxy, 0 = bỏ qua kênh này
+      "ALTER TABLE channels ADD COLUMN protect INTEGER DEFAULT 1",
       "ALTER TABLE events ADD COLUMN blocked_regions TEXT DEFAULT ''",
       "ALTER TABLE ads ADD COLUMN blocked_regions TEXT DEFAULT ''",
       "ALTER TABLE movie_sources ADD COLUMN blocked_regions TEXT DEFAULT ''",
@@ -1452,8 +1464,165 @@ function streamProxyEnabled(env) {
   const v = String((env && env.STREAM_MODE) || "").trim().toLowerCase();
   return v === "proxy" || v === "1" || v === "on" || v === "true";
 }
+
+// ============ BẢO VỆ LUỒNG: mã hoá AES-128 tại proxy + license server ============
+// Mọi luồng đi QUA PROXY đều tự mã hoá, trừ các trường hợp sau (tự né, không
+// bao giờ làm hỏng phát):
+//   • PROTECT=off                     — khoá toàn cục (env)
+//   • kênh có channels.protect = 0    — admin tắt từng kênh
+//   • FPT Play (fptplay/fpt.vn/...)   — nguồn tự bảo vệ, can thiệp hay lỗi
+//   • host nằm trong PROTECT_SKIP_HOSTS
+//   • playlist không mã hoá được: master playlist, đã có #EXT-X-KEY, fMP4/CMAF,
+//     dùng #EXT-X-BYTERANGE
+// Key do license server cấp (mặc định https://license.ankb.qzz.io/k/<token>),
+// stateless: key = HMAC(LICENSE_SECRET, token)[0..16] — không ghi KV/D1 trong
+// đường phát. Chi tiết: BAO_VE_LUONG.md
+function protectEnabled(env) {
+  const v = String((env && env.PROTECT) || "on").trim().toLowerCase();
+  return !(v === "off" || v === "0" || v === "false" || v === "no");
+}
+function licenseSecret(env) { return String((env && env.LICENSE_SECRET) || "").trim(); }
+function licenseBase(env) {
+  const b = String((env && env.LICENSE_BASE) || "https://license.ankb.qzz.io").trim().replace(/\/+$/, "");
+  return b || "/lic"; // rỗng → dùng chính worker này (cùng origin, khỏi CORS)
+}
+function licenseRotate(env) {
+  const n = parseInt(env && env.LICENSE_KEY_ROTATE, 10);
+  return Number.isFinite(n) && n >= 60 ? n : KEY_ROTATE_DEFAULT;
+}
+function licenseGrace(env) {
+  const n = parseInt(env && env.LICENSE_KEY_GRACE, 10);
+  return Number.isFinite(n) && n >= 60 ? n : KEY_GRACE_DEFAULT;
+}
+function protectMaxBytes(env) {
+  const n = parseInt(env && env.PROTECT_MAX_BYTES, 10);
+  return Number.isFinite(n) && n > 0 ? n : PROTECT_MAX_BYTES_DEFAULT;
+}
+function protectSkipHosts(env) {
+  return String((env && env.PROTECT_SKIP_HOSTS) || "").split(",").map((s) => s.trim()).filter(Boolean);
+}
+
+/**
+ * Quyết định có mã hoá playlist này không + sinh sẵn URL key/IV.
+ * Trả { on, reason, bucket, exp, keyUri, ivHex, token }
+ */
+async function protectionPlan(env, { text, targetUrl, ch, payload, vod }) {
+  const off = (reason) => ({ on: false, reason, bucket: 0, exp: 0, keyUri: "", ivHex: "", token: "" });
+  if (!protectEnabled(env)) return off("global_off");
+  const secret = licenseSecret(env);
+  if (!secret) return off("no_secret");
+  if (ch && Number(ch.protect) === 0) return off("channel_off");
+  const skip = protectSkipReason(targetUrl, protectSkipHosts(env));
+  if (skip) return off(skip); // 'fpt' | 'host'
+  const chk = playlistProtectable(text);
+  if (!chk.ok) return off(chk.reason);
+
+  const now = Math.floor(Date.now() / 1000);
+  const rotate = licenseRotate(env);
+  const grace = licenseGrace(env);
+  const bucket = keyBucket(now, rotate);
+  // VOD/catch-up: player không tải lại playlist nên key phải sống lâu hơn
+  const exp = vod ? now + SEGMENT_TOKEN_TTL_VOD + grace : (bucket + 1) * rotate + grace;
+  const token = await buildLicenseToken({
+    uid: payload.uid, sid: payload.sid, cid: payload.cid || "", bucket, exp, rotate,
+  }, secret);
+  const iv = await deriveIvBytes(token, secret);
+  return {
+    on: true, reason: "", bucket, exp, token,
+    keyUri: licenseBase(env) + "/k/" + token,
+    ivHex: toHex(iv),
+  };
+}
+
+/** Token license cho 1 segment — rebuild y hệt lúc cấp playlist (cùng input → cùng token). */
+async function segmentLicenseToken(env, payload) {
+  return await buildLicenseToken({
+    uid: payload.uid, sid: payload.sid, cid: payload.cid || "",
+    bucket: payload.b, exp: payload.le, rotate: licenseRotate(env),
+  }, licenseSecret(env));
+}
+
+/**
+ * Mã hoá 1 segment (AES-128-CBC, PKCS#7) rồi trả về.
+ * Cache theo (URL gốc + bucket) để N người xem cùng kênh chỉ tốn 1 lần mã hoá —
+ * sống được trên Workers Free (giới hạn CPU 10ms/request).
+ * Trả null khi không bảo vệ được (caller sẽ phát bình thường).
+ */
+async function protectSegmentResponse(request, env, resp, payload, baseHeaders) {
+  if (!resp || (resp.status !== 200 && resp.status !== 206)) return null;
+  const cacheKey = "https://protect.local/seg?u=" + (await sha256hex(String(payload.u || ""))) + "&b=" + payload.b;
+  const cache = (typeof caches !== "undefined" && caches.default) ? caches.default : null;
+
+  let bytes = null;
+  if (cache) {
+    try {
+      const hit = await cache.match(cacheKey);
+      if (hit) bytes = new Uint8Array(await hit.arrayBuffer());
+    } catch { bytes = null; }
+  }
+
+  if (!bytes) {
+    const buf = new Uint8Array(await resp.arrayBuffer());
+    if (buf.byteLength === 0) return null;
+    if (buf.byteLength > protectMaxBytes(env)) {
+      // Segment quá lớn (CPU) — playlist đã hứa mã hoá nên phải báo lỗi, player thử lại
+      return new Response(JSON.stringify({ error: "segment_too_large", bytes: buf.byteLength }), {
+        status: 502, headers: { ...jsonHeaders(request, env), "X-CHRTV-Protect": "too_large" },
+      });
+    }
+    const tok = await segmentLicenseToken(env, payload);
+    const secret = licenseSecret(env);
+    const [key, iv] = await Promise.all([deriveKeyBytes(tok, secret), deriveIvBytes(tok, secret)]);
+    bytes = await aes128CbcEncrypt(buf, key, iv);
+    if (cache) {
+      try {
+        await cache.put(cacheKey, new Response(bytes, {
+          headers: { "Content-Type": "video/mp2t", "Cache-Control": "public, max-age=45" },
+        }));
+      } catch { /* cache lỗi — không sao, mã hoá lại lần sau */ }
+    }
+  }
+
+  const h = new Headers(baseHeaders);
+  h.set("Content-Type", "video/mp2t");
+  h.set("Content-Length", String(bytes.byteLength));
+  h.delete("Content-Range");
+  h.set("Accept-Ranges", "none");
+  h.set("Cache-Control", "private, max-age=30");
+  h.set("X-CHRTV-Protect", "aes128");
+  return new Response(bytes, { status: 200, headers: h });
+}
+
+/** Trả 16 byte key AES cho /lic/k/<token> (cùng origin — dự phòng/license nội bộ). */
+async function handleLicenseKey(request, env, token) {
+  const secret = licenseSecret(env);
+  if (!secret) return json({ error: "no_secret", message: "Thiếu LICENSE_SECRET" }, 500, request, env);
+  const strictIp = String((env && env.LICENSE_STRICT_IP) || "") === "1";
+  let iph = "";
+  if (strictIp) {
+    const ip = (request.headers.get("CF-Connecting-IP") || "").split(",")[0].trim();
+    if (ip) iph = (await sha256hex("chrtv-ip|" + ip + "|" + secret)).slice(0, 16);
+  }
+  const v = await verifyLicenseToken(token, secret, { now: Math.floor(Date.now() / 1000), iph, strictIp });
+  if (!v.ok) {
+    return new Response(JSON.stringify({ error: "forbidden", reason: v.reason }), {
+      status: 403, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", ...corsHeadersFor(request, env) },
+    });
+  }
+  const key = await deriveKeyBytes(token, secret);
+  return new Response(key, {
+    status: 200,
+    headers: {
+      "Content-Type": "application/octet-stream",
+      "Content-Length": String(key.byteLength),
+      "Cache-Control": "no-store, private",
+      ...corsHeadersFor(request, env),
+    },
+  });
+}
 function publicChannel(ch, env) {
   const out = {
+    protect: ch.protect === 0 ? 0 : 1, // 1 = tự mã hoá AES-128 khi phát qua proxy
     id: ch.id,
     channel_id: ch.channel_id,
     name: ch.name,
@@ -2665,11 +2834,26 @@ async function handleStreamProxy(request, env) {
     // VOD/catch-up (có #EXT-X-ENDLIST): player KHÔNG tải lại playlist nên segment
     // token phải sống lâu hơn; live giữ TTL 60s cho chặt.
     const isVod = /#EXT-X-ENDLIST/i.test(text);
+    // BẢO VỆ LUỒNG: tự quyết định mã hoá hay bỏ qua (né FPT Play, kênh tắt bảo vệ,
+    // fMP4/CMAF, upstream đã có EXT-X-KEY...). Xem BAO_VE_LUONG.md
+    const prot = await protectionPlan(env, {
+      text, targetUrl: target.toString(), ch, payload, vod: isVod,
+    });
     const body = await rewriteM3U8Sealed(text, target, proxyBase, {
       o: target.origin, p: dir, cid: payload.cid || "", uid: payload.uid, sid: payload.sid, vod: isVod,
+      b: prot.on ? prot.bucket : null,
+      le: prot.on ? prot.exp : 0,
     }, env);
-    return new Response(body, { status: resp.status, headers });
+    const finalBody = prot.on ? insertExtXKey(body, prot.keyUri, prot.ivHex) : body;
+    headers.set("X-CHRTV-Protect", prot.on ? "aes128" : (prot.reason || "off"));
+    return new Response(finalBody, { status: resp.status, headers });
   }
+  // ---- BẢO VỆ LUỒNG: mã hoá segment (chỉ khi playlist của nó đã cấp EXT-X-KEY) ----
+  if (Number.isFinite(payload.b) && protectEnabled(env) && licenseSecret(env)) {
+    const pr = await protectSegmentResponse(request, env, resp, payload, headers);
+    if (pr) return pr; // null = không bảo vệ được → rơi xuống phát bình thường
+  }
+
   // Segment: chỉ giữ lại Content-Type + range headers cần cho phát lại
   const upCT = resp.headers.get("Content-Type");
   if (upCT && /^(video\/|audio\/|application\/octet-stream|binary)/i.test(upCT)) headers.set("Content-Type", upCT.split(";")[0]);
@@ -2696,6 +2880,8 @@ async function rewriteM3U8Sealed(text, targetUrl, proxyBase, ctx, env) {
         const t = await sealStreamToken({
           k: "seg", u: abs, o: ctx.o, p: ctx.p, cid: ctx.cid,
           uid: ctx.uid, sid: ctx.sid, iat: nowS, exp: nowS + (ctx.vod ? SEGMENT_TOKEN_TTL_VOD : SEGMENT_TOKEN_TTL),
+          // b/le: có mặt = segment này đã được mã hoá, worker dùng để suy ra ĐÚNG key
+          ...(ctx.b === null || ctx.b === undefined ? {} : { b: ctx.b, le: Number(ctx.le) || 0 }),
         }, env);
         cache.set(abs, proxyBase + "?t=" + t);
       }
@@ -4009,13 +4195,32 @@ async function handleAdmin(path, request, env, ctx) {
     const ch = await request.json().catch(() => ({}));
     if (!ch.channel_id || !ch.name || !ch.stream_url) return json({ error: "Thiếu thông tin kênh" }, 400, request, env);
     try {
-      await env.DB.prepare("INSERT OR REPLACE INTO channels (channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days, is_active, user_agent, referer, manifest_type, license_type, clear_key_id, clear_key, blocked_regions, is_sponsored) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(ch.channel_id, ch.name, ch.logo || "", ch.group_title || "", ch.stream_url, ch.catchup_type || "append", ch.catchup_days || 7, ch.is_active !== undefined ? ch.is_active : 1, (ch.user_agent || "").slice(0, 300), (ch.referer || "").slice(0, 300), (ch.manifest_type || "").slice(0, 16), (ch.license_type || "").slice(0, 32), (ch.clear_key_id || ch.clearKeyId || "").slice(0, 64), (ch.clear_key || ch.clearKey || "").slice(0, 64), cleanRegionList(ch.blocked_regions).join(","), ch.is_sponsored ? 1 : 0).run();
+      await env.DB.prepare("INSERT OR REPLACE INTO channels (channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days, is_active, user_agent, referer, manifest_type, license_type, clear_key_id, clear_key, blocked_regions, is_sponsored, protect) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(ch.channel_id, ch.name, ch.logo || "", ch.group_title || "", ch.stream_url, ch.catchup_type || "append", ch.catchup_days || 7, ch.is_active !== undefined ? ch.is_active : 1, (ch.user_agent || "").slice(0, 300), (ch.referer || "").slice(0, 300), (ch.manifest_type || "").slice(0, 16), (ch.license_type || "").slice(0, 32), (ch.clear_key_id || ch.clearKeyId || "").slice(0, 64), (ch.clear_key || ch.clearKey || "").slice(0, 64), cleanRegionList(ch.blocked_regions).join(","), ch.is_sponsored ? 1 : 0,
+      (ch.protect === 0 || ch.protect === false || ch.protect === "0") ? 0 : 1).run();
     } catch {
       await env.DB.prepare("INSERT OR REPLACE INTO channels (channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").bind(ch.channel_id, ch.name, ch.logo || "", ch.group_title || "", ch.stream_url, ch.catchup_type || "append", ch.catchup_days || 7, ch.is_active !== undefined ? ch.is_active : 1).run();
     }
     try { _chanCache = null; } catch {}
     await logAudit(env, adminUser?.id || 0, "channel.upsert", { channel_id: ch.channel_id, name: ch.name });
     return json({ success: true }, 200, request, env);
+  }
+
+  // ========== BẢO VỆ LUỒNG: bật/tắt mã hoá AES-128 cho từng kênh ==========
+  // Mặc định TẤT CẢ kênh đều bật (cột channels.protect = 1). Tắt từng kênh ở
+  // Admin → tab "Bảo vệ luồng". FPT Play tự né ở lớp phát, không cần tắt tay.
+  if (path === "/admin/channel-protect" && request.method === "POST") {
+    const body = await request.json().catch(() => ({}));
+    const { channel_id, protect } = body;
+    if (!channel_id) return json({ error: "missing_channel_id" }, 400, request, env);
+    const val = (protect === 0 || protect === false || protect === "0" || protect === "off") ? 0 : 1;
+    try {
+      await env.DB.prepare("UPDATE channels SET protect = ? WHERE channel_id = ?").bind(val, String(channel_id)).run();
+    } catch (e) {
+      return json({ error: "Lỗi lưu cấu hình bảo vệ" }, 500, request, env);
+    }
+    try { _chanCache = null; } catch {}
+    await logAudit(env, adminUser?.id || 0, "channel.protect", { channel_id, protect: val });
+    return json({ success: true, channel_id, protect: val }, 200, request, env);
   }
 
   if (path === "/admin/channels" && request.method === "DELETE") {

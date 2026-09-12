@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchActiveTheme, THEME_PRESETS } from "../services/siteTheme.js";
 
-// Demo theme via ?demo=fifa-asean-cup-2026 hoặc ?demo=1 (mặc định FIFA ASEAN)
+// Demo theme via ?demo=fifa
 function getDemoThemeFromUrl() {
   try {
     const url = new URL(window.location.href);
     const demo = url.searchParams.get("demo") || url.searchParams.get("theme_demo");
     if (!demo) return null;
-    // ?demo=1 hoặc ?demo=fifa → lấy preset đầu
     if (demo === "1" || demo.toLowerCase().includes("fifa")) {
       const p = THEME_PRESETS.find(x => x.key.includes("fifa-asean")) || THEME_PRESETS[0];
       return {
@@ -20,7 +19,7 @@ function getDemoThemeFromUrl() {
         primary_color: p.primary_color,
         secondary_color: p.secondary_color,
         accent_color: p.accent_color,
-        background_url: p.background_url || "https://images.unsplash.com/photo-1431324155629-1a6deb1dec8d?w=1600&q=80",
+        background_url: p.background_url || "",
         banner_url: p.banner_url || "",
         logo_url: "",
         confetti: p.confetti || "trophy",
@@ -28,13 +27,12 @@ function getDemoThemeFromUrl() {
         sort_order: 0,
       };
     }
-    // ?demo=<key> → tìm preset theo key
     const found = THEME_PRESETS.find(x => x.key === demo);
     if (found) {
       return {
         ...found,
         id: 9999,
-        background_url: found.background_url || "https://images.unsplash.com/photo-1431324155629-1a6deb1dec8d?w=1600&q=80",
+        background_url: found.background_url || "",
         banner_url: found.banner_url || "",
         logo_url: "",
         confetti: found.confetti || "trophy",
@@ -45,7 +43,7 @@ function getDemoThemeFromUrl() {
   return null;
 }
 
-// Hiệu ứng confetti nhẹ (canvas 2D) — không dùng lib ngoài.
+// Confetti nhẹ full màn (optional)
 function ConfettiCanvas({ kind }) {
   const ref = useRef(null);
   useEffect(() => {
@@ -62,32 +60,29 @@ function ConfettiCanvas({ kind }) {
       ball: ["⚽", "🥅", "🏟️"],
       pumpkin: ["🎃", "👻", "🍬"],
     }[kind] || ["✨", "🎉", "⭐"];
-
     const resize = () => {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
     };
     resize();
     window.addEventListener("resize", resize);
-
     const spawn = () => {
       particles.push({
         x: Math.random() * canvas.width,
         y: -20,
-        vx: (Math.random() - 0.5) * 2,
-        vy: Math.random() * 1.5 + 0.5,
+        vx: (Math.random() - 0.5) * 1.5,
+        vy: Math.random() * 1.2 + 0.4,
         rot: Math.random() * 360,
-        rotV: (Math.random() - 0.5) * 2,
-        size: 14 + Math.random() * 14,
+        rotV: (Math.random() - 0.5) * 1.5,
+        size: 12 + Math.random() * 12,
         emoji: EMOJI[Math.floor(Math.random() * EMOJI.length)],
         life: 0,
       });
     };
-
     let lastSpawn = 0;
     const loop = (t) => {
-      if (t - lastSpawn > 180) {
-        if (particles.length < 32) spawn();
+      if (t - lastSpawn > 220) {
+        if (particles.length < 22) spawn();
         lastSpawn = t;
       }
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -95,7 +90,7 @@ function ConfettiCanvas({ kind }) {
         p.x += p.vx;
         p.y += p.vy;
         p.rot += p.rotV;
-        p.vy += 0.015;
+        p.vy += 0.012;
         p.life++;
         ctx.save();
         ctx.translate(p.x, p.y);
@@ -104,7 +99,7 @@ function ConfettiCanvas({ kind }) {
         ctx.fillText(p.emoji, 0, 0);
         ctx.restore();
       });
-      particles = particles.filter((p) => p.y < canvas.height + 40 && p.life < 800);
+      particles = particles.filter((p) => p.y < canvas.height + 40 && p.life < 700);
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
@@ -113,7 +108,6 @@ function ConfettiCanvas({ kind }) {
       window.removeEventListener("resize", resize);
     };
   }, [kind]);
-
   if (!kind || kind === "none") return null;
   return (
     <canvas
@@ -131,6 +125,188 @@ function ConfettiCanvas({ kind }) {
   );
 }
 
+// Trang trí header TopNav: icon bóng đá, cúp, cờ ASEAN bay lơ lửng trong header
+function TopNavDecor({ theme, setTheme }) {
+  if (!theme) return null;
+  // Icon set theo loại theme
+  const isFootball = ["trophy", "ball"].includes(theme.confetti) || theme.key?.includes("fifa") || theme.key?.includes("worldcup") || theme.key?.includes("euro") || theme.key?.includes("asean");
+  
+  // ASEAN flags cho FIFA ASEAN Cup
+  const aseanFlags = ["🇻🇳", "🇹🇭", "🇮🇩", "🇲🇾", "🇸🇬", "🇵🇭", "🇲🇲", "🇰🇭", "🇱🇦", "🇧🇳"];
+  const footballIcons = isFootball 
+    ? ["⚽", "🏆", "🥅", "🏟️", "⚽", "🏆", ...aseanFlags.slice(0, 6)]
+    : [theme.emoji || "🎉", "✨", "🎊"];
+
+  return (
+    <>
+      <style>{`
+        /* TopNav được theme hoá */
+        html[data-site-theme] .topbar-mytv {
+          background: linear-gradient(90deg, 
+            color-mix(in srgb, var(--theme-primary) 92%, black),
+            color-mix(in srgb, var(--theme-secondary) 96%, black)
+          ) !important;
+          border-bottom: 2px solid var(--theme-accent) !important;
+          box-shadow: 0 2px 20px color-mix(in srgb, var(--theme-primary) 30%, transparent), 0 0 0 1px rgba(255,255,255,.06) inset !important;
+          position: sticky;
+          overflow: visible !important;
+        }
+        html[data-site-theme] .topbar-mytv::before {
+          content: "";
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          opacity: .08;
+          background-image: var(--theme-bg-url);
+          background-size: cover;
+          background-position: center;
+        }
+        /* Logo glow theo theme */
+        html[data-site-theme] .topbar-mytv img[alt="CHRTV PLAY"] {
+          filter: drop-shadow(0 0 10px var(--theme-accent)) drop-shadow(0 4px 14px color-mix(in srgb, var(--theme-primary) 60%, transparent)) !important;
+        }
+        /* Badge nhỏ góc logo */
+        .theme-logo-badge {
+          position: absolute;
+          top: -6px;
+          right: -10px;
+          width: 20px;
+          height: 20px;
+          border-radius: 999px;
+          background: var(--theme-accent);
+          color: #000;
+          font-size: 11px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: 900;
+          box-shadow: 0 2px 8px rgba(0,0,0,.4);
+          animation: theme-bounce 1.8s ease-in-out infinite;
+          z-index: 2;
+        }
+        @keyframes theme-bounce {
+          0%,100% { transform: translateY(0) scale(1); }
+          50% { transform: translateY(-2px) scale(1.08); }
+        }
+        /* Container icon trang trí trong header */
+        .site-theme-topnav-decor {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          height: 64px;
+          pointer-events: none;
+          overflow: hidden;
+          z-index: 41;
+        }
+        @media (max-width: 640px) {
+          .site-theme-topnav-decor { height: 56px; }
+        }
+        .site-theme-topnav-decor .t-icon {
+          position: absolute;
+          font-size: 14px;
+          opacity: .85;
+          filter: drop-shadow(0 1px 3px rgba(0,0,0,.5));
+          animation: t-float var(--dur, 3s) ease-in-out infinite;
+          animation-delay: var(--delay, 0s);
+          user-select: none;
+        }
+        @keyframes t-float {
+          0%,100% { transform: translateY(0) rotate(var(--rot, 0deg)); }
+          50% { transform: translateY(-4px) rotate(calc(var(--rot, 0deg) + 8deg)); }
+        }
+        /* Dải chạy chữ nhỏ dưới header (marquee) - chỉ khi có description */
+        .site-theme-marquee {
+          position: absolute;
+          bottom: -18px;
+          left: 0;
+          right: 0;
+          height: 18px;
+          background: var(--theme-accent);
+          color: #000;
+          font-size: 10px;
+          font-weight: 800;
+          letter-spacing: .04em;
+          display: flex;
+          align-items: center;
+          overflow: hidden;
+          white-space: nowrap;
+          z-index: 6;
+        }
+        .site-theme-marquee span {
+          display: inline-block;
+          padding-left: 100%;
+          animation: marquee 18s linear infinite;
+        }
+        @keyframes marquee {
+          0% { transform: translateX(0); }
+          100% { transform: translateX(-100%); }
+        }
+        /* Nút tắt theme nhỏ trong header */
+        .theme-close-btn {
+          position: absolute;
+          right: 6px;
+          top: 50%;
+          transform: translateY(-50%);
+          pointer-events: auto;
+          width: 18px;
+          height: 18px;
+          border-radius: 999px;
+          background: rgba(0,0,0,.35);
+          border: 1px solid rgba(255,255,255,.15);
+          color: #fff;
+          font-size: 11px;
+          font-weight: 900;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          z-index: 10;
+        }
+        .theme-close-btn:hover { background: rgba(0,0,0,.55); }
+      `}</style>
+
+      {/* Lớp trang trí icon trong header */}
+      <div className="site-theme-topnav-decor" aria-hidden>
+        {footballIcons.map((icon, i) => {
+          // Phân bố icon đều trong header, tránh che search
+          const left = 8 + (i * 7) % 78; // 8% - 86%
+          const top = i % 3 === 0 ? 4 : i % 3 === 1 ? 28 : 16;
+          const rot = (i * 13) % 30 - 15;
+          const dur = 2.2 + (i % 4) * 0.6;
+          const delay = (i * 0.18) % 2;
+          // Ẩn bớt trên mobile để không rối
+          const hideOnMobile = i > 6 ? " hidden md:block" : "";
+          return (
+            <span
+              key={i}
+              className={`t-icon${hideOnMobile}`}
+              style={{
+                left: `${left}%`,
+                top: `${top}px`,
+                "--rot": `${rot}deg`,
+                "--dur": `${dur}s`,
+                "--delay": `${delay}s`,
+                fontSize: i < 2 ? 16 : 13,
+                opacity: i < 2 ? 0.95 : 0.65,
+              }}
+            >
+              {icon}
+            </span>
+          );
+        })}
+        {/* Cúp vàng nổi bật giữa header (chỉ desktop) */}
+        {isFootball && (
+          <span className="t-icon hidden lg:block" style={{ left: "46%", top: "6px", fontSize: 22, opacity: 0.9, "--rot": "-8deg", "--dur": "2.5s" }}>
+            🏆
+          </span>
+        )}
+        <button className="theme-close-btn" onClick={() => setTheme(null)} title="Tắt trang trí" style={{ pointerEvents: "auto" }}>×</button>
+      </div>
+    </>
+  );
+}
+
 export default function ThemeDecorator() {
   const [theme, setTheme] = useState(() => {
     const demo = getDemoThemeFromUrl();
@@ -145,13 +321,11 @@ export default function ThemeDecorator() {
   });
 
   useEffect(() => {
-    // Nếu đang demo thì không fetch API
     if (theme && theme.id === 9999) return;
     let mounted = true;
     fetchActiveTheme().then((t) => {
       if (mounted) setTheme(t);
     });
-    // Poll mỗi 2 phút (đổi chủ đề realtime)
     const iv = setInterval(() => {
       fetchActiveTheme({ force: true }).then((t) => {
         if (mounted) setTheme(t);
@@ -172,6 +346,7 @@ export default function ThemeDecorator() {
       root.dataset.siteTheme = "";
       const el = document.getElementById("site-theme-custom-css");
       if (el) el.remove();
+      root.style.removeProperty("--theme-bg-url");
       try { window.dispatchEvent(new CustomEvent("chrtv-theme-change", { detail: null })); } catch {}
       return;
     }
@@ -184,7 +359,6 @@ export default function ThemeDecorator() {
     } else {
       root.style.removeProperty("--theme-bg-url");
     }
-    // Custom CSS (admin nhập) — sanitize nhẹ: chỉ cho phép trong <style> riêng
     let styleEl = document.getElementById("site-theme-custom-css");
     if (theme.css) {
       if (!styleEl) {
@@ -201,80 +375,39 @@ export default function ThemeDecorator() {
 
   if (!theme) return null;
 
-  const hasBanner = !!(theme.banner_url || theme.description);
+  // Tìm TopNav và inject decor vào đó bằng portal-like: render decor nhưng CSS sẽ gắn vào .topbar-mytv
+  // Dải marquee nhỏ dưới header (optional)
+  const showMarquee = !!(theme.description && theme.key?.includes("fifa"));
 
   return (
     <>
-      {/* CSS vars toàn site — override nhẹ, không phá layout */}
-      <style>{`
-        :root[data-site-theme] {
-          --brand: var(--theme-primary, #f36f21);
-        }
-        [data-site-theme] body, body[data-theme] {
-          /* nếu có background_url thì phủ nhẹ */
-        }
-        .site-theme-banner {
-          position: sticky;
-          top: 0;
-          z-index: 9997;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 10px;
-          padding: 8px 14px;
-          font-weight: 800;
-          font-size: 13px;
-          letter-spacing: .02em;
-          color: #fff;
-          background: linear-gradient(90deg, var(--theme-primary), var(--theme-accent));
-          border-bottom: 1px solid rgba(255,255,255,.15);
-          box-shadow: 0 4px 18px rgba(0,0,0,.25);
-        }
-        .site-theme-banner img {
-          height: 28px;
-          max-width: 160px;
-          object-fit: contain;
-          border-radius: 8px;
-          background: rgba(255,255,255,.9);
-          padding: 2px 6px;
-        }
-        .site-theme-banner .close {
-          margin-left: auto;
-          background: rgba(0,0,0,.2);
-          border: 0;
-          color: #fff;
-          border-radius: 999px;
-          width: 22px;
-          height: 22px;
-          cursor: pointer;
-          font-weight: 900;
-        }
-        .site-theme-bg {
-          position: fixed;
-          inset: 0;
-          pointer-events: none;
-          z-index: -1;
-          opacity: .12;
-          background-image: var(--theme-bg-url);
-          background-size: cover;
-          background-position: center;
-          filter: blur(0.5px);
-        }
-      `}</style>
-
-      {theme.background_url ? <div className="site-theme-bg" aria-hidden /> : null}
-
-      {hasBanner ? (
-        <div className="site-theme-banner" role="banner" aria-label={theme.name}>
-          <span style={{ fontSize: 18 }}>{theme.emoji || "🎉"}</span>
-          <span>{theme.name}</span>
-          {theme.description ? <span style={{ opacity: .9, fontWeight: 500, fontSize: 12, marginLeft: 6 }} className="hide-mobile">— {theme.description}</span> : null}
-          {theme.banner_url ? <img src={theme.banner_url} alt="" loading="lazy" /> : null}
-          <button className="close" aria-label="Đóng" onClick={() => setTheme(null)}>×</button>
+      <TopNavDecor theme={theme} setTheme={setTheme} />
+      {showMarquee && (
+        <div
+          className="site-theme-marquee"
+          style={{
+            top: "64px",
+            bottom: "auto",
+            position: "fixed",
+            zIndex: 39,
+          }}
+        >
+          <span>
+            {theme.emoji} {theme.name} — {theme.description} &nbsp; • &nbsp; {theme.emoji} {theme.name} — {theme.description} &nbsp; • &nbsp; 🏆 ASEAN CUP 2026 • 🇻🇳 VIỆT NAM VÔ ĐỊCH • ⚽ LIVE TRÊN CHRTV PLAY •
+          </span>
+          <button className="theme-close-btn" onClick={() => setTheme(null)} title="Tắt trang trí">×</button>
         </div>
-      ) : null}
-
-      <ConfettiCanvas kind={theme.confetti} />
+      )}
+      {/* Confetti chỉ khi không phải demo header-only, hoặc khi user muốn */}
+      {theme.confetti && theme.confetti !== "none" && !showMarquee ? <ConfettiCanvas kind={theme.confetti} /> : null}
+      {/* Nếu là FIFA thì confetti nhẹ hơn, chỉ trong header nên không render full-screen */}
+      {showMarquee && theme.confetti !== "none" && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, height: 64, pointerEvents: "none", zIndex: 41, overflow: "hidden" }}>
+          <div style={{ position: "absolute", inset: 0, display: "flex", justifyContent: "space-around", alignItems: "center", opacity: 0.18, fontSize: 18 }}>
+            <span>⚽</span><span>🏆</span><span>🇻🇳</span><span>⚽</span><span>🇹🇭</span><span>🏆</span><span>🇮🇩</span><span>⚽</span>
+          </div>
+        </div>
+      )}
     </>
   );
 }

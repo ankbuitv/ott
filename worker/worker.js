@@ -818,7 +818,7 @@ async function handlePush(path, request, env) {
 // Gửi email qua Brevo API. Cấu hình biến môi trường:
 //   BREVO_API_KEY       — API key lấy từ https://app.brevo.com/settings/keys/api
 //   BREVO_SENDER_EMAIL  — email đã verify trong Brevo (vd: noreply@yourdomain.com)
-//   BREVO_SENDER_NAME   — tên người gửi (mặc định "CHRTV")
+//   BREVO_SENDER_NAME   — tên người gửi (mặc định "NO REPLY - CHRTV PL▷Y")
 async function sendBrevoEmail(env, { to, subject, html, text }) {
   const apiKey = env.BREVO_API_KEY;
   const senderEmail = env.BREVO_SENDER_EMAIL || "noreply@chrtv.app";

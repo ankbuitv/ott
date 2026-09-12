@@ -107,10 +107,13 @@ Biến môi trường (thêm vào `[vars]` trong `wrangler.toml` nếu muốn đ
 | `PROTECT_SKIP_HOSTS` | rỗng | host cần né, cách nhau bởi dấu phẩy |
 | `LICENSE_STRICT_IP` | `0` | `1` = khoá key theo IP (dễ rớt mạng 4G) |
 
-> ⚠️ **`STREAM_MODE=proxy`** là điều kiện để bảo vệ có tác dụng (luồng phải đi qua
-> worker). Chế độ `direct` (mặc định hiện tại) trả thẳng URL gốc → **không mã hoá
-> được**. Bật proxy sẽ tốn CPU/request của Workers; cân nhắc Workers Paid nếu
-> lượng xem lớn. Test nội bộ: `wrangler.dev.toml` đã bật sẵn proxy.
+> ⚠️ **Luồng phải đi qua worker thì mới mã hoá được** — với **`STREAM_MODE=auto`**
+> (mặc định từ 2026-09-12) mọi kênh phát qua `/api/stream/proxy` nên ĐỀU được mã hoá,
+> trừ kênh mà nguồn chặn IP Cloudflare (client tự fallback `?direct=1` — kênh đó không
+> mã hoá được nhưng vẫn xem được). Chế độ `direct` thuần trả thẳng URL gốc → **không mã
+> hoá được**. Bật proxy toàn bộ (không fallback): `STREAM_MODE=proxy`. Lưu ý: proxy tốn
+> CPU/request của Workers; cân nhắc Workers Paid nếu lượng xem lớn. Test nội bộ:
+> `wrangler.dev.toml` đã bật sẵn `auto` (kèm PROTECT=on).
 
 ---
 

@@ -1452,17 +1452,32 @@ function streamUrlIsPublic(env) {
   return String((env && env.PUBLIC_STREAM_URL) || "") === "1";
 }
 
-// ========== CHẾ ĐỘ PHÁT LUỒNG: DIRECT (mặc định) vs PROXY ==========
-// Vì sao bỏ proxy làm mặc định: hầu hết nguồn IPTV (FPT, TV360, VTVgo…) chặn
+// ========== CHẾ ĐỘ PHÁT LUỒNG: AUTO (mặc định) / PROXY / DIRECT ==========
+// Vì sao từng bỏ proxy làm mặc định: nhiều nguồn IPTV (FPT, TV360, VTVgo…) chặn
 // dải IP egress của Cloudflare Workers nên khi stream đi qua /api/stream/proxy
-// người xem chỉ thấy lỗi 403/451 hoặc đứng hình. Chế độ DIRECT: client vẫn PHẢI
-// gọi /api/stream/token (đăng nhập, gói cước, xem thử 5 phút, chống flood đều
-// kiểm tra phía server như trước) nhưng server trả THẲNG URL gốc để client phát
-// trực tiếp — nguồn thấy IP của người xem nên không bị chặn.
-// Muốn bật lại proxy (giấu link gốc khỏi DevTools): set biến STREAM_MODE=proxy.
-function streamProxyEnabled(env) {
+// người xem chỉ thấy lỗi 403/451 hoặc đứng hình — đủ thứ lớp bảo vệ mà không
+// xem được là vô nghĩa.
+//
+// Từ 2026-09-12 CHẾ ĐỘ AUTO là mặc định — "proxy trước, tụt về direct khi cần":
+//   - /api/stream/token vẫn kiểm tra đầy đủ (đăng nhập, gói cước, xem thử 5
+//     phút, chống flood) rồi trả `proxy_url` — LINK GỐC GIẤU khỏi DevTools/m3u8
+//     sniffer (không còn .m3u8 thật trên Network, mọi URI con đã seal opaque).
+//   - Khi proxy bị NGUỒN chặn, proxy trả 502 UPSTREAM_UNAVAILABLE (kèm header
+//     X-CHRTV-Upstream-Error) — client gọi lại /api/stream/token?direct=1
+//     (cùng JWT, chạy lại đúng mọi lớp kiểm tra) để nhận URL gốc phát trực
+//     tiếp. Mỗi kênh chỉ "thử proxy" đúng 1 lần/phiên rồi nhớ luôn phát direct.
+//   - STREAM_MODE=proxy  : luôn proxy (giấu link tuyệt đối, chấp nhận kênh bị chặn)
+//   - STREAM_MODE=direct : luôn trả URL gốc ngay (chế độ 2026-09 — link lộ rõ,
+//                          m3u8 sniffer nhìn thấy URL thật — CHÍNH là lý do
+//                          "bật bảo vệ mà sniffer vẫn dò ra link")
+function streamMode(env) {
   const v = String((env && env.STREAM_MODE) || "").trim().toLowerCase();
-  return v === "proxy" || v === "1" || v === "on" || v === "true";
+  if (v === "proxy" || v === "1" || v === "on" || v === "true") return "proxy";
+  if (v === "direct" || v === "0" || v === "off" || v === "false") return "direct";
+  return "auto";
+}
+function streamProxyEnabled(env) {
+  return streamMode(env) !== "direct";
 }
 
 // ============ BẢO VỆ LUỒNG: mã hoá AES-128 tại proxy + license server ============
@@ -2082,8 +2097,13 @@ async function handleProxy(request, env) {
     const o = String(request.headers.get("X-CHRTV-Upstream-UA") || "").replace(/[\r\n]+/g, " ").trim().slice(0, 300);
     if (o) proxyUA = o;
   } catch {}
+  // Forward Range để video/mp4 đi qua proxy vẫn tua được (shorts, xem lại)
+  const rngHeader = request.headers.get("Range");
   const fetchOpts = {
-    headers: { "User-Agent": proxyUA, "Accept": "*/*", "Referer": target.origin + "/" },
+    headers: {
+      "User-Agent": proxyUA, "Accept": "*/*", "Referer": target.origin + "/",
+      ...(rngHeader ? { Range: rngHeader } : {}),
+    },
     signal: AbortSignal.timeout(8000),
     redirect: "manual",
   };
@@ -2136,7 +2156,14 @@ async function proxyResponse(resp, targetUrl, proxyBase, request, env) {
   const upCT = resp.headers.get("Content-Type");
   if (upCT) headers.set("Content-Type", upCT.split(";")[0]);
 
-  if (!isPlaylist) return new Response(resp.body, { status: resp.status, headers });
+  if (!isPlaylist) {
+    // Giữ lại header range/length — mp4 đi qua proxy vẫn tua được bình thường
+    for (const h of ["Content-Range", "Accept-Ranges", "Content-Length"]) {
+      const v = resp.headers.get(h);
+      if (v) headers.set(h, v);
+    }
+    return new Response(resp.body, { status: resp.status, headers });
+  }
 
   const text = await resp.text();
   const rewritten = rewriteM3U8(text, targetUrl, proxyBase);
@@ -2257,8 +2284,11 @@ async function streamSid(request, env) {
   const ua = (request.headers.get("User-Agent") || "").slice(0, 80);
   return (await sha256hex(ip + "|" + ua + "|" + streamTokenSecret(env))).slice(0, 16);
 }
-function streamErr(obj, status, request, env) {
-  return new Response(JSON.stringify(obj), { status, headers: jsonHeaders(request, env) });
+function streamErr(obj, status, request, env, extraHeaders) {
+  return new Response(JSON.stringify(obj), {
+    status,
+    headers: jsonHeaders(request, env, extraHeaders),
+  });
 }
 
 // ---- GATING theo nhóm kênh (5 gói): Standard=VTV, Recreational=+BOX, Ultimate=+SPORT, Elite=+FILM, Signature=tất cả ----
@@ -2574,6 +2604,9 @@ async function handleStreamToken(request, env) {
   const q = new URL(request.url).searchParams;
   const channelId = q.get("channel") || "";
   const uParam = q.get("u") || "";
+  // AUTO MODE: client xin phát trực tiếp sau khi proxy bị nguồn chặn
+  // (UPSTREAM_UNAVAILABLE) — vẫn đi qua ĐẦY ĐỦ các lớp kiểm tra bên dưới.
+  const forceDirect = q.get("direct") === "1";
   const atParam = q.get("at");
   let at = 0;
   if (atParam) {
@@ -2646,11 +2679,12 @@ async function handleStreamToken(request, env) {
     previewInfo = st;
   }
 
-  // 3b) CHẾ ĐỘ DIRECT (mặc định): trả thẳng URL gốc sau khi đã qua mọi lớp
-  //     kiểm tra ở trên. Nguồn stream thấy IP của người xem (không phải IP
-  //     Cloudflare) nên hết bị chặn. Xem thử vẫn trừ quota 60s/lần xin và
-  //     client quay lại xin URL mới mỗi phút -> hết 5 phút là chặn như cũ.
-  if (!streamProxyEnabled(env)) {
+  // 3b) DIRECT (STREAM_MODE=direct, hoặc AUTO-FALLBACK ?direct=1): trả thẳng
+  //     URL gốc sau khi đã qua mọi lớp kiểm tra ở trên. Nguồn stream thấy IP
+  //     của người xem (không phải IP Cloudflare) nên hết bị chặn. Xem thử vẫn
+  //     trừ quota 60s/lần xin và client quay lại xin URL mới mỗi phút
+  //     -> hết 5 phút là chặn như cũ.
+  if (!streamProxyEnabled(env) || forceDirect) {
     const nowD = Math.floor(Date.now() / 1000);
     let previewOutD = null;
     let rotateAtD = 0;
@@ -2670,6 +2704,7 @@ async function handleStreamToken(request, env) {
     return json({
       success: true,
       direct: true,
+      mode: "direct",
       url: targetUrl,
       exp: nowD + 3600,
       rotate_at: rotateAtD, // 0 = URL gốc không hết hạn, không cần xoay
@@ -2717,6 +2752,9 @@ async function handleStreamToken(request, env) {
     iat: now, exp: payload.exp,
     rotate_at: payload.exp - (previewInfo ? 15 : STREAM_TOKEN_GRACE), ttl,
     proxy_url: `/api/stream/proxy?t=${t}`,
+    mode: streamMode(env),
+    // AUTO: cho client biết nó được phép xin ?direct=1 khi proxy bị nguồn chặn
+    ...(streamMode(env) === "auto" ? { fallback: "direct" } : {}),
     ...(previewOut ? { preview: previewOut } : {}),
   }, 200, request, env);
 }
@@ -2813,9 +2851,16 @@ async function handleStreamProxy(request, env) {
       resp = r2.resp;
       upstreamHeaders["User-Agent"] = r2.ua;
     }
-    if (!resp) return json({ error: "Stream unavailable" }, 502, request, env);
+    if (!resp) return streamErr({ error: "UPSTREAM_UNAVAILABLE", message: "Nguồn phát không phản hồi." }, 502, request, env, { "X-CHRTV-Upstream-Error": "0" });
+    // Nguồn từ chối phục vụ qua IP Cloudflare (403/401/451…) hoặc lỗi phía
+    // nguồn — báo RÕ ràng để client chế độ auto chuyển sang phát trực tiếp,
+    // thay vì trả 403 trông như token hết hạn rồi client xoay token vô ích.
+    if (resp.status >= 400) {
+      try { resp.body && resp.body.cancel && resp.body.cancel().catch(() => {}); } catch {}
+      return streamErr({ error: "UPSTREAM_UNAVAILABLE", upstream: resp.status, message: "Nguồn phát không phục vụ qua proxy — chuyển sang phát trực tiếp." }, 502, request, env, { "X-CHRTV-Upstream-Error": String(resp.status) });
+    }
   } catch {
-    return json({ error: "Stream unavailable" }, 502, request, env);
+    return streamErr({ error: "UPSTREAM_UNAVAILABLE", message: "Không kết nối được nguồn phát." }, 502, request, env, { "X-CHRTV-Upstream-Error": "0" });
   }
 
   const ct = (resp.headers.get("Content-Type") || "").toLowerCase();

@@ -1,16 +1,17 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import shaka from 'shaka-player';
 import Hls from 'hls.js';
-import { Play, Pause, Volume2, VolumeX, Maximize, Minimize, AlertTriangle, Radio, Clock, ArrowLeft, ChevronUp, ChevronDown, RefreshCw, List, X, Settings, Flag, Signal } from 'lucide-react';
+import { Play, Pause, Volume2, VolumeX, Maximize, Minimize, AlertTriangle, Radio, Clock, ArrowLeft, ChevronUp, ChevronDown, RefreshCw, List, X, Settings, Flag, Signal, ZoomIn } from 'lucide-react';
 import { formatTimeHHMM, calculateProgramProgress } from '../utils/dateUtils';
 import { maskScores } from '../utils/spoiler';
 import { useToast } from '../contexts/ToastContext';
 import { useI18n } from '../contexts/I18nContext';
-import { isHlsUrl, isProxiedStreamUrl, getRotateAtMs, refreshStreamToken, makeStreamRequestFilter, applyStreamClientHeaders } from '../services/streamGuard';
+import { isHlsUrl, isProxiedStreamUrl, getRotateAtMs, refreshStreamToken, makeStreamRequestFilter, applyStreamClientHeaders, fallbackToDirectUrl } from '../services/streamGuard';
 import { logPlayerError } from '../services/telemetry';
 import StreamWatermark from './StreamWatermark';
 import useNetworkQuality, { heightCapFor } from '../hooks/useNetworkQuality';
 import { useSettings } from '../contexts/SettingsContext';
+import useVideoZoom from '../hooks/useVideoZoom';
 import ReportChannelModal from './ReportChannelModal';
 
 function hexToUint8(hex) {
@@ -40,6 +41,7 @@ export default function VideoPlayer({
   const { addToast } = useToast();
   const { t } = useI18n();
   const { settings } = useSettings();
+  const zoom = useVideoZoom(); // Vừa khung / Phóng to / Kéo giãn — lưu theo máy
 
   const [playing, setPlaying] = useState(true);
   const [muted, setMuted] = useState(false);
@@ -103,6 +105,18 @@ export default function VideoPlayer({
     const proxied = isProxiedStreamUrl(streamUrl);
     const isHls = isHlsUrl(streamUrl) || proxied;
     let rotateTimer = null;
+    // AUTO MODE: proxy bị NGUỒN chặn (502 UPSTREAM_UNAVAILABLE) -> chuyển kênh
+    // này sang phát trực tiếp, thử đúng 1 lần cho mỗi lần mở kênh.
+    let directTried = false;
+    const tryDirectFallback = async (hlsOrNull) => {
+      if (directTried || !proxied || !channel) return false;
+      directTried = true;
+      const fresh = await fallbackToDirectUrl(channel).catch(() => "");
+      if (cancelled || !fresh) return false;
+      if (hlsOrNull) hlsOrNull.loadSource(fresh);
+      else { video.src = fresh; video.play().catch(() => {}); }
+      return true;
+    };
 
     const cleanup = () => {
       if (rotateTimer) { clearTimeout(rotateTimer); rotateTimer = null; }
@@ -199,6 +213,11 @@ export default function VideoPlayer({
           video.src = streamUrl;
           video.addEventListener('waiting', () => !cancelled && setBuffering(true));
           video.addEventListener('playing', () => !cancelled && setBuffering(false));
+          // AUTO MODE: phát native qua proxy mà lỗi nguồn -> xin URL gốc (1 lần)
+          video.addEventListener('error', () => {
+            if (cancelled || !proxied) return;
+            tryDirectFallback(null);
+          });
           await video.play().catch(() => setPlaying(false));
           setBuffering(false);
         }
@@ -258,6 +277,13 @@ export default function VideoPlayer({
             if (cancelled) return;
             // Token phát hết hạn (403/401 từ proxy) -> xin token mới ngay thay vì báo lỗi
             const st = data?.response?.code || 0;
+            // AUTO MODE: proxy bị NGUỒN chặn IP Cloudflare -> trả 502
+            // UPSTREAM_UNAVAILABLE (kèm header X-CHRTV-Upstream-Error) -> xin
+            // URL gốc phát trực tiếp cho kênh này (đúng 1 lần, nhớ cả phiên)
+            if (proxied && (st === 502 || st === 504)) {
+              tryDirectFallback(hls).then((ok) => { if (!ok && !cancelled) hls.startLoad(); });
+              return;
+            }
             if (proxied && (st === 401 || st === 403)) {
               refreshStreamToken(channel, 0)
                 .then((fresh) => { if (!cancelled && fresh) { hls.loadSource(fresh); scheduleRotate(); } })
@@ -272,7 +298,11 @@ export default function VideoPlayer({
               fatal: !!data.fatal,
             });
             if (data.fatal) {
-              if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
+              if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                // Mạng/manifest qua proxy chết hoàn toàn -> thử phát trực tiếp 1
+                // lần trước khi retry vô hạn (nguồn chặn IP Cloudflare, CORS…)
+                tryDirectFallback(hls).then((ok) => { if (!ok && !cancelled) hls.startLoad(); });
+              }
               else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
               else {
                 cleanup();
@@ -353,7 +383,7 @@ export default function VideoPlayer({
         </div>
       )}
 
-      <video ref={videoRef} className="w-full h-full object-contain" playsInline autoPlay controlsList="nodownload noplaybackrate noremoteplayback" disablePictureInPicture disableRemotePlayback onContextMenu={(e) => e.preventDefault()} />
+      <video ref={videoRef} className={`w-full h-full ${zoom.cls}`} playsInline autoPlay controlsList="nodownload noplaybackrate noremoteplayback" disablePictureInPicture disableRemotePlayback onContextMenu={(e) => e.preventDefault()} />
 
       {/* Logo watermark của web đắp lên khung hình — cấu hình ở Admin → "Logo khi phát" */}
       <StreamWatermark
@@ -487,6 +517,11 @@ export default function VideoPlayer({
               {onPrevChannel && <button onClick={onPrevChannel} className="p-2 rounded-full bg-white/10 hover:bg-white/15 text-white"><ChevronUp className="w-4 h-4" /></button>}
               {onNextChannel && <button onClick={onNextChannel} className="p-2 rounded-full bg-white/10 hover:bg-white/15 text-white"><ChevronDown className="w-4 h-4" /></button>}
             </div>
+            {/* Phóng to: Vừa khung -> Phóng to (lấp khung, cắt mép) -> Kéo giãn */}
+            <button onClick={() => { zoom.cycle(); resetOverlay(); }} title={`Chế độ hình: ${zoom.label}`} className="hidden sm:flex items-center gap-1.5 px-3 py-2.5 rounded-full bg-white/10 hover:bg-white/15 text-white">
+              <ZoomIn className="w-4 h-4" />
+              <span className="text-[10px] font-bold">{zoom.label}</span>
+            </button>
             <div className="ml-auto">
               <button onClick={toggleFullscreen} className="p-2.5 rounded-full bg-white/10 hover:bg-white/15 text-white">
                 {fullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}

@@ -1,14 +1,26 @@
 # 🛡 CHỐNG RIP LINK M3U8 — vì sao tool vẫn lấy được và đã vá thế nào
 
-> **⚠️ CẬP NHẬT 2026-09: ĐÃ BỎ PROXY LÀM MẶC ĐỊNH (`STREAM_MODE=direct`).**
-> Nhiều nguồn IPTV (FPT, TV360, VTVgo…) chặn dải IP egress của Cloudflare Workers nên
-> khi stream đi qua `/api/stream/proxy` người xem toàn thấy 403/đứng hình — đủ thứ lớp
-> bảo vệ mà không xem được là vô nghĩa. Giữ lại: `/api/playlist` vẫn CHỈ trả metadata,
-> `/api/stream/token` vẫn kiểm tra đăng nhập + gói cước + xem thử + chống flood phía
-> server, chỉ khác là sau khi kiểm tra xong server **trả thẳng URL gốc** cho client phát
-> trực tiếp (nguồn thấy IP người xem, không bị chặn). Muốn bật lại toàn bộ luồng proxy
-> bên dưới (giấu link gốc khỏi DevTools): set biến môi trường `STREAM_MODE=proxy` cho
-> Worker — client tự động chuyển sang `proxy_url`, không cần build lại app.
+> **✅ CẬP NHẬT 2026-09-12: CHẾ ĐỘ `auto` LÀ MẶC ĐỊNH — "proxy trước, tụt về direct khi cần".**
+>
+> **Trả lời câu hỏi "sao bật bảo vệ luồng mà m3u8 sniffer vẫn dò ra link?"**: từ 2026-09
+> hệ thống từng đặt `direct` làm mặc định — sau khi kiểm tra đăng nhập/gói cước, server
+> **trả thẳng URL gốc** cho client phát trực tiếp (vì nhiều nguồn IPTV chặn dải IP
+> Cloudflare Workers nên phát qua proxy toàn bị 403). Mà trình duyệt CẦN URL thật để
+> tải luồng → mở F12 / Charles / extension sniff m3u8 là thấy link ngay. Đó là lựa chọn
+> "bảo vệ tắt để xem được", không phải lỗi token.
+>
+> Chế độ **auto** giờ giải quyết cả hai đầu:
+> 1. `/api/stream/token` trả **`proxy_url`** (link gốc bị giấu, playlist + segment đều
+>    là opaque token `/api/stream/proxy?t=…`, kèm mã hoá AES-128) — sniffer chỉ thấy
+>    URL proxy, **không còn đường dẫn `.m3u8` thật** trên Network.
+> 2. Khi **nguồn** chặn IP Cloudflare, `/api/stream/proxy` trả `502 UPSTREAM_UNAVAILABLE`
+>    (kèm header `X-CHRTV-Upstream-Error`) → client gọi lại `/api/stream/token?direct=1`
+>    (vẫn qua đầy đủ kiểm tra đăng nhập + gói cước + xem thử) để nhận URL gốc phát trực
+>    tiếp. Kênh đó được **ghi nhớ cho cả phiên** — lần sau mở kênh đi thẳng direct, không
+>    thử proxy lại vô ích.
+>
+> Muốn tắt hẳn cơ chế giấu link: `STREAM_MODE=direct`. Muốn giấu tuyệt đối, không
+> fallback (chấp nhận kênh bị nguồn chặn không xem được): `STREAM_MODE=proxy`.
 
 ## 1. Vì sao “bảo mật đủ thứ” mà tool chuyên nghiệp vẫn lấy được link gốc?
 
@@ -56,20 +68,28 @@ người biết dùng proxy sniffer. Hạ tầng token + proxy trong Worker (`/a
 9. **Gỡ `public/playlists/tv.m3u`** khỏi bản build; `api.js` không còn fallback “tải M3U local”.
    File nguồn vẫn nằm ở `playlists/tv.m3u` trong repo để cron/Worker nạp vào D1.
 
-## 3. Kết quả đo được (Worker local + origin HLS giả lập)
+## 3. Kết quả đo được (Worker local + origin HLS giả lập, STREAM_MODE=auto)
 
 ```
 /api/playlist                       -> 0 lần xuất hiện chuỗi "stream_url"
 /playlists/tv.m3u, /tv.m3u          -> 404
+/api/stream/token (auto)            -> 200, chỉ có proxy_url + fallback=direct + mode=auto
+                                       (KHÔNG có trường url — link gốc không đi qua client)
 GET /api/stream/proxy?t=… (đúng phiên trình duyệt)      -> 200, playlist đã viết lại
-   (mọi URI con thành /api/stream/proxy?t=…, KHÔNG còn origin thật)
-cùng link đó, User-Agent khác        -> 403 TOKEN_SID_MISMATCH
-cùng link đó, curl trần              -> 403
-cùng link đó, VLC                    -> 403
+   (mọi URI con thành /api/stream/proxy?t=…, KHÔNG còn origin thật — đếm 0 lần chuỗi host gốc)
+   + #EXT-X-KEY AES-128, header X-CHRTV-Protect: aes128
+kênh nguồn chặn IP Cloudflare (upstream 403)
+   -> /api/stream/proxy?t=… trả 502 UPSTREAM_UNAVAILABLE
+      + header X-CHRTV-Upstream-Error: 403 (client biết mà xin ?direct=1)
+/api/stream/token?channel=…&direct=1 -> 200, mode=direct, url=<link gốc>
+                                       (vẫn chạy đủ đăng nhập + gói cước + xem thử)
+cùng link proxy, User-Agent khác     -> 403 TOKEN_SID_MISMATCH
+cùng link proxy, curl trần           -> 403
+cùng link proxy, VLC                 -> 403
 ```
 
-Bộ `scripts/acceptance-test.sh` đã thêm mục **[12] CHỐNG RIP LINK M3U8** kiểm tra tự động
-các trường hợp trên (38/38 pass).
+Bộ `scripts/protect-e2e.mjs` (19 test) chạy trên worker local chế độ auto: 17/19 pass
+(2 test còn lại cần internet thật tới stream.fptplay.net để kiểm tra "tự né FPT").
 
 ## 4. Cần làm khi deploy
 
@@ -77,12 +97,13 @@ các trường hợp trên (38/38 pass).
 # 1) (khuyến nghị) chuyển nguồn M3U sang link riêng tư, không để công khai trên GitHub
 npx wrangler secret put M3U_SOURCE_URL
 
-# 2) deploy
+# 2) deploy (wrangler.toml đã set STREAM_MODE="auto" — không cần làm gì thêm)
 npm run build && npx wrangler deploy
 
 # 3) kiểm tra thật trên production
 curl -s https://play.ankb.qzz.io/api/playlist | grep -c stream_url    # phải = 0
 curl -s -o /dev/null -w '%{http_code}\n' https://play.ankb.qzz.io/playlists/tv.m3u  # phải 404
+# mở DevTools → Network khi xem TV: phải thấy /api/stream/proxy?t=… thay vì .m3u8 thật
 BASE=https://play.ankb.qzz.io bash scripts/acceptance-test.sh
 ```
 

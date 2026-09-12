@@ -1,14 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import shaka from 'shaka-player';
 import Hls from 'hls.js';
-import { Play, Pause, Volume2, VolumeX, Maximize, Search, Heart, Radio, Clock, AlertTriangle, RefreshCw, Tv, ChevronDown, ChevronUp, LayoutGrid, List, MonitorPlay, Film, Trophy, Boxes, Globe, Star, Filter, X, Zap, Users, Wrench, History } from 'lucide-react';
+import { Play, Pause, Volume2, VolumeX, Maximize, Search, Heart, Radio, Clock, AlertTriangle, RefreshCw, Tv, ChevronDown, ChevronUp, LayoutGrid, List, MonitorPlay, Film, Trophy, Boxes, Globe, Star, Filter, X, Zap, Users, Wrench, History, ZoomIn, ChevronsRight } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { PartyModal } from './Pack48Ui';
 import { useI18n } from '../contexts/I18nContext';
 import { getHomePrefs } from '../services/prefs';
 import { parseEpgDate, formatTimeHHMM } from '../utils/dateUtils';
 import { maskScores } from '../utils/spoiler';
-import { isHlsUrl, isProxiedStreamUrl, getRotateAtMs, refreshStreamToken, makeStreamRequestFilter, applyStreamClientHeaders } from '../services/streamGuard';
+import { isHlsUrl, isProxiedStreamUrl, getRotateAtMs, refreshStreamToken, makeStreamRequestFilter, applyStreamClientHeaders, fallbackToDirectUrl } from '../services/streamGuard';
+import useVideoZoom from '../hooks/useVideoZoom';
 import StreamWatermark from './StreamWatermark';
 
 // (#22) Timeshift: tìm chương trình trong EPG đang phát tại mốc `at` (ms)
@@ -35,6 +36,18 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
   const [vol, setVol] = useState(100);
   const [buffering, setBuffering] = useState(true);
   const [error, setError] = useState(null);
+  // Phóng to: Vừa khung / Phóng to (lấp khung) / Kéo giãn — lưu theo máy
+  const zoom = useVideoZoom();
+  // Bảng điều khiển: hiện khi hover (CSS), khi focus bàn phím, và khi chạm
+  // vào video (TV/remote + mobile không có hover) — tự ẩn sau 3.5s
+  const [ctrlOn, setCtrlOn] = useState(false);
+  const ctrlTimer = useRef(null);
+  const flashCtrl = useCallback(() => {
+    setCtrlOn(true);
+    if (ctrlTimer.current) clearTimeout(ctrlTimer.current);
+    ctrlTimer.current = setTimeout(() => setCtrlOn(false), 3500);
+  }, []);
+  useEffect(() => () => { if (ctrlTimer.current) clearTimeout(ctrlTimer.current); }, []);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -45,6 +58,18 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
     const proxied = isProxiedStreamUrl(streamUrl);
     const isHls = isHlsUrl(streamUrl) || proxied;
     let rotateTimer = null;
+    // AUTO MODE: proxy bị NGUỒN chặn (502 UPSTREAM_UNAVAILABLE) -> xin URL gốc
+    // phát trực tiếp cho kênh này (đúng 1 lần mỗi lần mở, nhớ cả phiên)
+    let directTried = false;
+    const tryDirectFallback = async (hlsOrNull) => {
+      if (directTried || !proxied || !channel) return false;
+      directTried = true;
+      const fresh = await fallbackToDirectUrl(channel).catch(() => "");
+      if (cancelled || !fresh) return false;
+      if (hlsOrNull) hlsOrNull.loadSource(fresh);
+      else { video.src = fresh; video.play().catch(() => {}); }
+      return true;
+    };
     const cleanup = () => {
       if (rotateTimer) { clearTimeout(rotateTimer); rotateTimer = null; }
       try { if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; } } catch {}
@@ -121,6 +146,11 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
           video.src = streamUrl;
           video.addEventListener('waiting', () => !cancelled && setBuffering(true));
           video.addEventListener('playing', () => !cancelled && setBuffering(false));
+          // AUTO MODE: phát native qua proxy mà lỗi nguồn -> xin URL gốc (1 lần)
+          video.addEventListener('error', () => {
+            if (cancelled || !proxied) return;
+            tryDirectFallback(null);
+          });
           try { await video.play(); setPlaying(true); } catch { setPlaying(false); }
           setBuffering(false);
         }
@@ -165,6 +195,12 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
           hls.on(Hls.Events.ERROR, (evt, data) => {
             if (cancelled) return;
             const st = data?.response?.code || 0;
+            // AUTO MODE: NGUỒN chặn IP Cloudflare -> proxy trả 502
+            // UPSTREAM_UNAVAILABLE -> xin URL gốc phát trực tiếp (nhớ cả phiên)
+            if (proxied && (st === 502 || st === 504)) {
+              tryDirectFallback(hls).then((ok) => { if (!ok && !cancelled) hls.startLoad(); });
+              return;
+            }
             if (proxied && (st === 401 || st === 403)) {
               refreshStreamToken(channel, 0)
                 .then((fresh) => { if (!cancelled && fresh) { hls.loadSource(fresh); scheduleRotate(); } })
@@ -172,7 +208,10 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
               return;
             }
             if (data.fatal) {
-              if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
+              if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                // Proxy chết hoàn toàn (CORS/mạng) -> thử direct 1 lần rồi mới retry
+                tryDirectFallback(hls).then((ok) => { if (!ok && !cancelled) hls.startLoad(); });
+              }
               else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
               else { cleanup(); loadShaka(); }
             }
@@ -213,7 +252,19 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
 
   return (
     <div ref={stageRef} className="relative w-full h-full bg-black group/video">
-      <video ref={videoRef} className="w-full h-full object-contain" playsInline autoPlay controls={false} controlsList="nodownload noplaybackrate noremoteplayback" disablePictureInPicture disableRemotePlayback onContextMenu={(e) => e.preventDefault()} />
+      <video
+        ref={videoRef}
+        className={`w-full h-full ${zoom.cls}`}
+        playsInline
+        autoPlay
+        controls={false}
+        controlsList="nodownload noplaybackrate noremoteplayback"
+        disablePictureInPicture
+        disableRemotePlayback
+        onContextMenu={(e) => e.preventDefault()}
+        onClick={() => { togglePlay(); flashCtrl(); }}
+        onDoubleClick={goFullscreen}
+      />
       {/* Logo watermark của web trên trang TV — Admin → "Logo khi phát" */}
       <StreamWatermark channel={channel} page="tv" containerRef={stageRef} buffering={buffering} />
       {buffering && !error && (
@@ -237,11 +288,16 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
           </div>
         </div>
       )}
-      <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-0 group-hover/video:opacity-100 transition-opacity flex items-center gap-2">
+      <div className={`absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/90 via-black/40 to-transparent transition-opacity flex items-center gap-2 ${ctrlOn ? 'opacity-100' : 'opacity-0 group-hover/video:opacity-100 group-focus-within/video:opacity-100'}`}>
         <button onClick={togglePlay} className="p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur">{playing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 fill-current" />}</button>
         <button onClick={toggleMute} className="p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur">{muted || vol === 0 ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}</button>
         <input type="range" min={0} max={100} value={muted ? 0 : vol} onChange={changeVol} className="w-24 accent-[#f36f21]" />
         <div className="ml-auto flex items-center gap-2">
+          {/* Phóng to: Vừa khung -> Phóng to (lấp khung, cắt mép) -> Kéo giãn */}
+          <button onClick={() => { zoom.cycle(); flashCtrl(); }} title={`Chế độ hình: ${zoom.label}`} className="flex items-center gap-1.5 px-3 py-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur">
+            <ZoomIn className="w-4 h-4" />
+            <span className="text-[10px] font-bold hidden sm:inline">{zoom.label}</span>
+          </button>
           <button onClick={goFullscreen} className="p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur"><Maximize className="w-4 h-4" /></button>
         </div>
       </div>
@@ -377,7 +433,7 @@ export default function TVPage({
   };
 
   return (
-    <div className={`w-full mx-auto text-white ${theater ? 'max-w-[1920px] px-2 md:px-4' : 'max-w-[1760px] px-3 md:px-6'} py-4`}>
+    <div className={`w-full mx-auto text-white ${theater ? 'max-w-[1920px] px-2 md:px-4' : 'max-w-[1900px] px-3 md:px-5'} py-4`}>
       {/* Top bar */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
         <span className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#f36f21] to-[#ff9a3d] flex items-center justify-center shadow-lg shadow-[#f36f21]/20"><Tv className="w-5 h-5 text-white" /></span>
@@ -386,7 +442,7 @@ export default function TVPage({
             Truyền hình
             <span className="px-2.5 py-1 rounded-full bg-white/10 border border-white/10 text-[11px] font-bold tracking-widest text-stone-300">{channels.length} KÊNH • {groups.length} NHÓM</span>
           </h1>
-          <p className="text-[11px] md:text-xs text-stone-500 mt-1 flex items-center gap-1.5"><Zap className="w-3 h-3 text-[#ff9a3d]" /> Trực tiếp • Chia nhóm theo TVG • Player to hơn</p>
+          <p className="text-[11px] md:text-xs text-stone-500 mt-1 flex items-center gap-1.5"><Zap className="w-3 h-3 text-[#ff9a3d]" /> Trực tiếp • Chia nhóm theo TVG • Phóng to hình (Vừa khung / Phóng to / Kéo giãn)</p>
         </div>
         <div className="ml-auto flex items-center gap-2">
           {tvChannel && (
@@ -404,10 +460,10 @@ export default function TVPage({
         </div>
       </div>
 
-      <div className={`grid gap-4 items-start ${theater ? 'grid-cols-1' : 'grid-cols-1 xl:grid-cols-[1.55fr_460px]'}`}>
-        {/* LEFT — PLAYER BIGGER */}
+      <div className={`grid gap-4 items-start ${theater ? 'grid-cols-1' : 'grid-cols-1 xl:grid-cols-[minmax(0,1.9fr)_420px]'}`}>
+        {/* LEFT — PLAYER TO (chiếm ~2/3 màn hình, cột kênh hẹp lại) */}
         <div className="flex flex-col gap-4 min-w-0">
-          <div className={`relative rounded-[24px] overflow-hidden bg-black border border-white/10 shadow-[0_20px_80px_rgba(0,0,0,.7)] ${theater ? 'aspect-video md:aspect-[21/9]' : 'aspect-video'}`}>
+          <div className="relative rounded-[24px] overflow-hidden bg-black border border-white/10 shadow-[0_20px_80px_rgba(0,0,0,.7)] aspect-video">
             {/* (#54) Biển bảo trì kênh — kênh đang bảo trì thì không tự phát, gợi ý kênh thay thế cùng nhóm */}
             {maintActive && (
               <div className="absolute inset-0 z-40 flex items-center justify-center bg-[#0b0c10]/92 backdrop-blur p-4">
@@ -463,12 +519,18 @@ export default function TVPage({
               </div>
             )}
             {tvChannel && tvStreamUrl && (
-              <div className="absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/90 via-black/40 to-transparent pointer-events-none">
+              <div className="absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/90 via-black/40 to-transparent pointer-events-none z-10">
                 <div className="flex items-center gap-3">
                   {tvChannel.logo ? <img src={tvChannel.logo} alt="" className="w-11 h-11 rounded-xl object-contain bg-black/60 p-1 border border-white/10" onError={e => e.target.style.display='none'} /> : <span className="w-11 h-11 rounded-xl bg-white/10 flex items-center justify-center text-sm font-black">{(tvChannel.name||'?')[0]}</span>}
                   <div className="min-w-0">
                     <p className="text-[15px] md:text-[17px] font-black text-white leading-tight truncate flex items-center gap-2">{tvChannel.name} {favSet.has(tvChannel.channel_id) && <Heart className="w-4 h-4 fill-[#f36f21] text-[#f36f21]" />}</p>
                     <p className="text-[11px] text-white/70 truncate flex items-center gap-1.5"><span className="px-1.5 py-0.5 rounded bg-white/10 border border-white/10 text-[9px] font-bold">{tvChannel.group_title}</span>{tvChannel.sponsored && <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-[9px] font-black text-emerald-300">★ TÀI TRỢ</span>} • {epgNowNext?.now ? maskScores(epgNowNext.now.title) : 'LIVE'}</p>
+                    {(epgNowNext?.now || epgNowNext?.next) && (
+                      <p className="text-[10px] text-white/55 truncate flex items-center gap-1.5 mt-0.5">
+                        {epgNowNext?.now && <><Clock className="w-3 h-3 shrink-0" />{formatTimeHHMM(epgNowNext.now.start)} - {formatTimeHHMM(epgNowNext.now.stop)}</>}
+                        {epgNowNext?.next && <><ChevronsRight className="w-3 h-3 shrink-0" /><span className="truncate">Tiếp: {maskScores(epgNowNext.next.title)}</span></>}
+                      </p>
+                    )}
                   </div>
                   <span className="ml-auto px-2.5 py-1 rounded-full bg-red-600 text-white text-[10px] font-black tracking-widest animate-pulse shadow-lg shadow-red-600/20">LIVE</span>
                 </div>
@@ -493,32 +555,18 @@ export default function TVPage({
             </div>
           )}
           {tvChannel && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="rounded-2xl bg-white/[0.04] border border-white/[0.07] p-4 backdrop-blur">
-                <p className="text-[10px] font-black tracking-widest text-[#ff9a3d] mb-1 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#f36f21] animate-pulse"></span> ĐANG PHÁT</p>
-                <h3 className="text-[16px] font-bold leading-snug line-clamp-2">{epgNowNext?.now ? maskScores(epgNowNext.now.title) : tvChannel.name}</h3>
-                <p className="text-[12px] text-stone-400 mt-1.5 line-clamp-3 leading-relaxed">{epgNowNext?.now?.desc || 'Đang phát trực tiếp'}</p>
-                {epgNowNext?.now && <p className="text-[11px] text-stone-500 mt-2 flex items-center gap-1"><Clock className="w-3 h-3" />{formatTimeHHMM(epgNowNext.now.start)} - {formatTimeHHMM(epgNowNext.now.stop)}</p>}
+            <div className="rounded-2xl bg-white/[0.04] border border-white/[0.07] px-4 py-2.5 backdrop-blur flex items-center gap-3 flex-wrap">
+              <span className="flex items-center gap-1.5 text-[10px] font-black tracking-widest text-[#ff9a3d] shrink-0"><span className="w-2 h-2 rounded-full bg-[#f36f21] animate-pulse"></span>ĐANG PHÁT</span>
+              <div className="min-w-0 flex-1 basis-[220px]">
+                <p className="text-[14px] font-bold text-white truncate">{epgNowNext?.now ? maskScores(epgNowNext.now.title) : tvChannel.name}</p>
+                <p className="text-[11px] text-stone-500 truncate flex items-center gap-1.5">
+                  {epgNowNext?.now && <><Clock className="w-3 h-3 shrink-0" />{formatTimeHHMM(epgNowNext.now.start)} - {formatTimeHHMM(epgNowNext.now.stop)}</>}
+                  {epgNowNext?.next && <><span className="text-stone-600">·</span><span className="text-stone-400 shrink-0">Tiếp:</span><span className="truncate">{maskScores(epgNowNext.next.title)}</span></>}
+                </p>
               </div>
-              <div className="rounded-2xl bg-white/[0.04] border border-white/[0.07] p-4 backdrop-blur">
-                {epgNowNext?.next ? (
-                  <>
-                    <p className="text-[10px] font-black tracking-widest text-stone-500 mb-1">TIẾP THEO</p>
-                    <h3 className="text-[15px] font-bold text-stone-200 line-clamp-2">{maskScores(epgNowNext.next.title)}</h3>
-                    <p className="text-[11px] text-stone-500 mt-2">{formatTimeHHMM(epgNowNext.next.start)} - {formatTimeHHMM(epgNowNext.next.stop)}</p>
-                    <p className="text-[11px] text-stone-500 mt-1 line-clamp-2">{epgNowNext.next.desc || ''}</p>
-                  </>
-                ) : (
-                  <div className="h-full flex flex-col justify-center">
-                    <p className="text-[11px] font-bold text-stone-500">KÊNH</p>
-                    <p className="text-sm font-bold mt-1">{tvChannel.name}</p>
-                    <p className="text-xs text-stone-500 mt-1">{tvChannel.group_title} • {channels.filter(c => c.group_title === tvChannel.group_title).length} kênh cùng nhóm</p>
-                    <div className="mt-3 flex gap-2">
-                      {onToggleFavorite && <button onClick={() => onToggleFavorite(tvChannel.channel_id)} className={`px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1 border ${favSet.has(tvChannel.channel_id) ? 'bg-[#f36f21]/20 border-[#f36f21]/30 text-[#ffb37a]' : 'bg-white/5 border-white/10 text-stone-300'}`}><Heart className={`w-3.5 h-3.5 ${favSet.has(tvChannel.channel_id) ? 'fill-current' : ''}`} />{favSet.has(tvChannel.channel_id) ? 'Đã thích' : 'Yêu thích'}</button>}
-                      {onCloseTv && <button onClick={onCloseTv} className="px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs font-bold text-stone-400 hover:text-white"><X className="w-3.5 h-3.5 inline mr-1" />Đóng</button>}
-                    </div>
-                  </div>
-                )}
+              <div className="flex items-center gap-2 shrink-0">
+                {onToggleFavorite && <button onClick={() => onToggleFavorite(tvChannel.channel_id)} className={`px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1 border ${favSet.has(tvChannel.channel_id) ? 'bg-[#f36f21]/20 border-[#f36f21]/30 text-[#ffb37a]' : 'bg-white/5 border-white/10 text-stone-300 hover:text-white'}`}><Heart className={`w-3.5 h-3.5 ${favSet.has(tvChannel.channel_id) ? 'fill-current' : ''}`} />{favSet.has(tvChannel.channel_id) ? 'Đã thích' : 'Yêu thích'}</button>}
+                {onCloseTv && <button onClick={onCloseTv} className="px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs font-bold text-stone-400 hover:text-white"><X className="w-3.5 h-3.5 inline mr-1" />Đóng</button>}
               </div>
             </div>
           )}

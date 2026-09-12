@@ -1,17 +1,21 @@
 /**
  * CHRTV STREAM GUARD — xin quyền phát từ server trước khi chạy luồng.
  *
- * Luồng hiện tại (chế độ DIRECT — mặc định từ 2026-09):
+ * Luồng hiện tại (chế độ AUTO — mặc định từ 2026-09-12):
  *
  *   1. /api/playlist chỉ trả METADATA (không có stream_url).
  *   2. Muốn phát -> POST/GET /api/stream/token?channel=<id> kèm JWT (user hoặc guest)
  *      -> server kiểm tra đăng nhập + gói cước + xem thử 5 phút, rồi trả
- *      `url` = LINK GỐC để client phát TRỰC TIẾP.
- *      (Vì sao bỏ proxy: nguồn IPTV chặn dải IP Cloudflare Workers nên phát qua
- *      proxy toàn bị 403/đứng hình. Phát trực tiếp, nguồn thấy IP người xem.)
- *   3. Server vẫn bật lại được chế độ proxy cũ (STREAM_MODE=proxy) khi muốn giấu
- *      link — lúc đó response có `proxy_url` = /api/stream/proxy?t=<token> và
- *      client tự động dùng nó, xoay token như trước.
+ *      `proxy_url` = /api/stream/proxy?t=<token> — LINK GỐC BỊ GIẤU, mọi URI con
+ *      trong playlist đã được seal thành opaque token nên m3u8 sniffer KHÔNG còn
+ *      thấy đường dẫn .m3u8 thật.
+ *   3. Nếu NGUỒN chặn IP Cloudflare (proxy trả 502 UPSTREAM_UNAVAILABLE), player
+ *      gọi fallbackToDirectUrl() — server (vẫn kiểm tra đầy đủ) trả `url` gốc
+ *      để phát trực tiếp, và kênh đó được nhớ là "phát direct" cho cả phiên.
+ *      Vì sao cần đường này: nhiều nguồn IPTV VN (FPT, TV360, VTVgo…) chặn dải
+ *      IP egress của Cloudflare Workers nên phát qua proxy toàn bị 403.
+ *   4. STREAM_MODE=direct: server trả thẳng URL gốc luôn (link lộ — không khuyến
+ *      nghị); STREAM_MODE=proxy: luôn proxy, không fallback.
  *
  * Kênh do NGƯỜI DÙNG tự import (M3U cá nhân) vẫn phát thẳng vì link là của họ.
  */
@@ -79,8 +83,23 @@ export function isProxiedStreamUrl(u) {
   return /\/api\/stream\/proxy\?/.test(String(u || ""));
 }
 
-// ---- Thông tin xoay token theo từng kênh: { url, exp, rotateAt } ----
+// ---- Thông tin xoay token theo từng kênh: { url, exp, rotateAt, canFallback } ----
 const rotateInfo = new Map();
+
+// AUTO MODE: kênh mà NGUỒN chặn IP Cloudflare (proxy trả UPSTREAM_UNAVAILABLE)
+// -> ghi nhớ ở đây để các lần xin token sau đi thẳng `?direct=1` (không thử lại
+// proxy vô ích mỗi lần mở kênh). Chỉ tồn tại trong phiên (module state).
+const directPreferred = new Set();
+
+/** Đánh dấu kênh này nên phát direct (gọi khi proxy bị nguồn chặn). */
+export function markStreamDirect(channelId) {
+  if (channelId) directPreferred.add(channelId);
+}
+
+/** Kênh này đã chuyển hẳn sang chế độ direct trong phiên hiện tại? */
+export function streamPrefersDirect(channelId) {
+  return directPreferred.has(channelId);
+}
 
 /** Thời điểm (ms) nên xin token mới cho kênh này; 0 = không cần xoay. */
 export function getRotateAtMs(channelId) {
@@ -105,10 +124,15 @@ function localCatchupUrl(baseUrl, atSec, catchupType = "append") {
 }
 
 /**
- * Xin quyền phát từ server và trả về URL phát (proxy).
+ * Xin quyền phát từ server và trả về URL phát (proxy hoặc direct).
  * Ném Error kèm .code: LOGIN_REQUIRED | PLAN_REQUIRED | NO_SESSION | TOKEN_ERROR
+ *
+ * Chế độ AUTO (mặc định từ 2026-09-12): server trả `proxy_url` (link gốc đã
+ * giấu) + flag `fallback: "direct"`. Khi player thấy proxy bị NGUỒN chặn
+ * (UPSTREAM_UNAVAILABLE) thì gọi `fallbackToDirectUrl()` — kênh đó được ghi
+ * nhớ và các lần sau xin thẳng `?direct=1` ngay từ đầu.
  */
-export async function requestStreamAccess(channel, { at = 0 } = {}) {
+export async function requestStreamAccess(channel, { at = 0, forceDirect = false } = {}) {
   if (!channel) return "";
 
   // Kênh người dùng tự import / kênh dự phòng: server không quản lý -> phát thẳng.
@@ -127,6 +151,8 @@ export async function requestStreamAccess(channel, { at = 0 } = {}) {
   else if (raw) qs.set("u", raw);
   else throw err("TOKEN_ERROR", "Kênh thiếu định danh.");
   if (at) qs.set("at", String(at));
+  // Direct-buộc: do player yêu cầu (auto-fallback) hoặc kênh này từng bị nguồn chặn
+  if (forceDirect || directPreferred.has(channel.channel_id)) qs.set("direct", "1");
 
   let res;
   try {
@@ -154,9 +180,10 @@ export async function requestStreamAccess(channel, { at = 0 } = {}) {
   // Phiên xem thử: server trả quota còn lại sau mỗi lần cấp token
   if (data.preview) setPreviewState({ ...data.preview, enabled: true });
 
-  // Chế độ DIRECT (mặc định): server trả thẳng `url` gốc — nguồn thấy IP của
-  // người xem nên không bị chặn như khi đi qua IP Cloudflare của proxy.
-  // Chế độ PROXY (server set STREAM_MODE=proxy): nhận `proxy_url` như cũ.
+  // Chế độ DIRECT (STREAM_MODE=direct): server trả thẳng `url` gốc — nguồn thấy
+  // IP của người xem nên không bị chặn như khi đi qua IP Cloudflare của proxy.
+  // Chế độ PROXY/AUTO (mặc định): nhận `proxy_url`; AUTO kèm thêm flag
+  // `fallback: "direct"` để client biết nó được xin ?direct=1 khi nguồn chặn.
   const directUrl = data.url || "";
   const proxyUrl = data.proxy_url ? `${base}${data.proxy_url}` : "";
   const url = directUrl || proxyUrl;
@@ -174,6 +201,8 @@ export async function requestStreamAccess(channel, { at = 0 } = {}) {
     direct: !!directUrl,
     exp: (data.exp || nowS + 300) * 1000,
     rotateAt: rotateAtS > 0 ? Math.max(Date.now() + 15000, rotateAtS * 1000) : 0,
+    // AUTO: server cho phép xin ?direct=1 khi proxy bị nguồn chặn
+    canFallback: !directUrl && data.fallback === "direct",
   });
   return url;
 }
@@ -181,6 +210,27 @@ export async function requestStreamAccess(channel, { at = 0 } = {}) {
 /** Xin token mới cho cùng kênh (gọi trước khi token hết hạn để phát liền mạch). */
 export async function refreshStreamToken(channel, at = 0) {
   return requestStreamAccess(channel, { at });
+}
+
+/**
+ * AUTO FALLBACK — proxy bị NGUỒN chặn (UPSTREAM_UNAVAILABLE 502): đánh dấu kênh
+ * này phát direct cho cả phiên rồi xin lại URL gốc (chạy đủ các lớp kiểm tra
+ * phía server). Trả "" nếu không xin được — player giữ nguyên nguồn cũ.
+ */
+export async function fallbackToDirectUrl(channel) {
+  if (!channel) return "";
+  markStreamDirect(channel.channel_id);
+  try {
+    return await requestStreamAccess(channel, { forceDirect: true });
+  } catch {
+    return "";
+  }
+}
+
+/** Kênh này có được phép xin phát trực tiếp khi proxy lỗi nguồn? (chế độ auto) */
+export function canFallbackToDirect(channelId) {
+  const info = rotateInfo.get(channelId);
+  return !!(info && info.canFallback);
 }
 
 /**

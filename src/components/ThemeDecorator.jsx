@@ -1,5 +1,49 @@
 import { useEffect, useRef, useState } from "react";
-import { fetchActiveTheme } from "../services/siteTheme.js";
+import { fetchActiveTheme, THEME_PRESETS } from "../services/siteTheme.js";
+
+// Demo theme via ?demo=fifa-asean-cup-2026 hoặc ?demo=1 (mặc định FIFA ASEAN)
+function getDemoThemeFromUrl() {
+  try {
+    const url = new URL(window.location.href);
+    const demo = url.searchParams.get("demo") || url.searchParams.get("theme_demo");
+    if (!demo) return null;
+    // ?demo=1 hoặc ?demo=fifa → lấy preset đầu
+    if (demo === "1" || demo.toLowerCase().includes("fifa")) {
+      const p = THEME_PRESETS.find(x => x.key.includes("fifa-asean")) || THEME_PRESETS[0];
+      return {
+        ...p,
+        id: 9999,
+        key: p.key,
+        name: p.name,
+        emoji: p.emoji,
+        description: p.description,
+        primary_color: p.primary_color,
+        secondary_color: p.secondary_color,
+        accent_color: p.accent_color,
+        background_url: p.background_url || "https://images.unsplash.com/photo-1431324155629-1a6deb1dec8d?w=1600&q=80",
+        banner_url: p.banner_url || "",
+        logo_url: "",
+        confetti: p.confetti || "trophy",
+        css: "",
+        sort_order: 0,
+      };
+    }
+    // ?demo=<key> → tìm preset theo key
+    const found = THEME_PRESETS.find(x => x.key === demo);
+    if (found) {
+      return {
+        ...found,
+        id: 9999,
+        background_url: found.background_url || "https://images.unsplash.com/photo-1431324155629-1a6deb1dec8d?w=1600&q=80",
+        banner_url: found.banner_url || "",
+        logo_url: "",
+        confetti: found.confetti || "trophy",
+        css: "",
+      };
+    }
+  } catch {}
+  return null;
+}
 
 // Hiệu ứng confetti nhẹ (canvas 2D) — không dùng lib ngoài.
 function ConfettiCanvas({ kind }) {
@@ -88,9 +132,21 @@ function ConfettiCanvas({ kind }) {
 }
 
 export default function ThemeDecorator() {
-  const [theme, setTheme] = useState(null);
+  const [theme, setTheme] = useState(() => {
+    const demo = getDemoThemeFromUrl();
+    if (demo) {
+      try {
+        localStorage.setItem("chrtv_active_theme_v1", JSON.stringify(demo));
+        localStorage.setItem("chrtv_active_theme_ts", String(Date.now()));
+      } catch {}
+      return demo;
+    }
+    return null;
+  });
 
   useEffect(() => {
+    // Nếu đang demo thì không fetch API
+    if (theme && theme.id === 9999) return;
     let mounted = true;
     fetchActiveTheme().then((t) => {
       if (mounted) setTheme(t);

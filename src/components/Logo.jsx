@@ -15,7 +15,6 @@ function LogoMark({ className = '' }) {
       loading="eager"
       decoding="async"
       onError={(e) => {
-        // fallback to local svg if external fails
         if (e.currentTarget.src !== window.location.origin + MAIN_LOGO_SVG) {
           e.currentTarget.src = MAIN_LOGO_SVG;
         }
@@ -27,23 +26,22 @@ function LogoMark({ className = '' }) {
 export default function Logo({ size = 'md', showSubtext = true, className = '' }) {
   const { t } = useI18n();
   const sizes = {
-    sm: { wrap: 'gap-2', logo: 'h-8', sub: 'text-[7px]', reward: 'h-8' },
-    md: { wrap: 'gap-2.5', logo: 'h-10', sub: 'text-[8px]', reward: 'h-10' },
-    lg: { wrap: 'gap-2.5', logo: 'h-12', sub: 'text-[9px]', reward: 'h-12' },
-    xl: { wrap: 'gap-3', logo: 'h-16', sub: 'text-[11px]', reward: 'h-16' },
-  }[size] || { wrap: 'gap-2.5', logo: 'h-10', sub: 'text-[8px]', reward: 'h-10' };
+    sm: { wrap: 'gap-2', icon: 'w-7 h-7 sm:w-8 sm:h-8', main: 'text-[13px] sm:text-[15px]', play: 'text-[7px] sm:text-[8px] px-1 sm:px-1.5 py-0.5', sub: 'text-[7px]', reward: 'h-8' },
+    md: { wrap: 'gap-2.5', icon: 'w-10 h-10', main: 'text-xl', play: 'text-[9px] px-2 py-[3px]', sub: 'text-[8px]', reward: 'h-10' },
+    lg: { wrap: 'gap-2.5', icon: 'w-12 h-12', main: 'text-[26px]', play: 'text-[10px] px-2 py-1', sub: 'text-[9px]', reward: 'h-12' },
+    xl: { wrap: 'gap-3', icon: 'w-16 h-16', main: 'text-4xl', play: 'text-xs px-2.5 py-1', sub: 'text-[11px]', reward: 'h-16' },
+  }[size] || { wrap: 'gap-2.5', icon: 'w-10 h-10', main: 'text-xl', play: 'text-[9px] px-2 py-[3px]', sub: 'text-[8px]', reward: 'h-10' };
 
   return (
     <div className={`flex items-center ${sizes.wrap} ${className}`}>
       <img
         src={MAIN_LOGO_URL}
         alt="CHRTV PLAY"
-        className={`${sizes.logo} w-auto object-contain object-left shrink-0 transition-transform duration-200 hover:scale-[1.03]`}
-        style={{ filter: 'drop-shadow(0 4px 14px rgba(243,111,33,.35))' }}
+        className={`${sizes.icon} shrink-0 object-contain transition-transform duration-200 hover:scale-105`}
+        style={{ filter: 'drop-shadow(0 4px 14px rgba(243,111,33,.4))' }}
         loading="eager"
         decoding="async"
         onError={(e) => {
-          // fallback to local svg
           if (!e.currentTarget.dataset.fallback) {
             e.currentTarget.dataset.fallback = '1';
             e.currentTarget.src = MAIN_LOGO_SVG;
@@ -51,11 +49,17 @@ export default function Logo({ size = 'md', showSubtext = true, className = '' }
         }}
       />
 
-      {showSubtext && (
-        <span className={`${sizes.sub} hidden md:block font-semibold tracking-[0.14em] text-stone-500 ml-1 uppercase truncate`}>
-          {t('app.tagline')}
+      <div className="flex flex-col leading-none min-w-0">
+        <span className="flex items-center gap-1 sm:gap-1.5">
+          <span className={`${sizes.main} font-black tracking-tight text-white`}>CHRTV</span>
+          <span className={`${sizes.play} font-black tracking-[0.18em] text-white rounded-md grad-brand shadow-lg shadow-[#f36f21]/30`}>PL▷Y</span>
         </span>
-      )}
+        {showSubtext && (
+          <span className={`${sizes.sub} hidden md:block font-semibold tracking-[0.14em] text-stone-500 mt-1 uppercase truncate`}>
+            {t('app.tagline')}
+          </span>
+        )}
+      </div>
 
       <img
         src={REWARD_IMG}

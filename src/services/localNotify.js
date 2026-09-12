@@ -44,7 +44,7 @@ export function popDueReminders() {
 export function fireBrowserNotification(title, body) {
   try {
     if ('Notification' in window && Notification.permission === 'granted') {
-      new Notification(title, { body, icon: '/logo.png' });
+      new Notification(title, { body, icon: 'https://i.ibb.co/VcLxwgM2/logo.png' });
     }
   } catch {}
 }

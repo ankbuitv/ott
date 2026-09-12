@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Film, Eye, Gift, CreditCard, Megaphone, Clock, MessageCircle, Target, FileSpreadsheet, Trash2, Check, X, Plus, Activity, Flag, RefreshCw, Bug, MapPin, ShieldAlert, Radio, HandCoins, Image } from 'lucide-react';
+import { Film, Eye, Gift, CreditCard, Megaphone, Clock, MessageCircle, Target, FileSpreadsheet, Trash2, Check, X, Plus, Activity, Flag, RefreshCw, Bug, MapPin, ShieldAlert, Radio, HandCoins, Image, Palette, Sparkles } from 'lucide-react';
+import { THEME_PRESETS } from '../services/siteTheme.js';
 
 // Các tab admin mới: trực tiếp, gift, thanh toán, QC, lịch đăng, bình luận, dự đoán, báo cáo.
 const inp = 'w-full bg-slate-900/60 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-[#f36f21]/50';
@@ -547,6 +548,139 @@ export function MovieSourcesTab({ BASE, headers, addToast }) {
   );
 }
 
+
+// ---- Chủ đề trang trí (site_themes) — FIFA ASEAN Cup v.v. ----
+export function ThemesTab({ BASE, headers, addToast }) {
+  const [themes, setThemes] = useState([]);
+  const [form, setForm] = useState({
+    key: '', name: '', emoji: '🏆', description: '',
+    primary_color: '#0e7a3a', secondary_color: '#0b1d12', accent_color: '#ffd700',
+    background_url: '', banner_url: '', logo_url: '', confetti: 'trophy', css: '',
+    is_active: 1, starts_at: '', ends_at: '', sort_order: 0,
+  });
+  const [editing, setEditing] = useState(null);
+  const load = () => api(BASE, headers, '/admin/themes').then(d => setThemes(d.themes || [])).catch(()=>{});
+  useEffect(()=>{ load(); }, []);
+  const reset = () => {
+    setForm({ key: '', name: '', emoji: '🏆', description: '', primary_color: '#0e7a3a', secondary_color: '#0b1d12', accent_color: '#ffd700', background_url: '', banner_url: '', logo_url: '', confetti: 'trophy', css: '', is_active: 1, starts_at: '', ends_at: '', sort_order: 0 });
+    setEditing(null);
+  };
+  const applyPreset = (p) => {
+    setForm(f => ({ ...f, key: p.key, name: p.name, emoji: p.emoji || '🏆', description: p.description || '', primary_color: p.primary_color || '#f36f21', secondary_color: p.secondary_color || '#1a1c24', accent_color: p.accent_color || '#ffb37a', confetti: p.confetti || 'none' }));
+  };
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!form.key || !form.name) { addToast('Thiếu key/tên', 'error'); return; }
+    const method = editing ? 'PUT' : 'POST';
+    const body = editing ? { id: editing, ...form } : form;
+    const d = await api(BASE, headers, '/admin/themes', { method, body: JSON.stringify(body) });
+    if (d.success) { addToast(editing ? 'Đã cập nhật chủ đề' : `Đã tạo ${d.key}`, 'success'); reset(); load(); }
+    else addToast(d.error || 'Lỗi', 'error');
+  };
+  const startEdit = (t) => {
+    setEditing(t.id);
+    setForm({
+      key: t.key, name: t.name, emoji: t.emoji || '', description: t.description || '',
+      primary_color: t.primary_color || '#f36f21', secondary_color: t.secondary_color || '#1a1c24', accent_color: t.accent_color || '#ffb37a',
+      background_url: t.background_url || '', banner_url: t.banner_url || '', logo_url: t.logo_url || '',
+      confetti: t.confetti || 'none', css: t.css || '', is_active: t.is_active ?? 1,
+      starts_at: t.starts_at || '', ends_at: t.ends_at || '', sort_order: t.sort_order || 0,
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+  const toggleActive = async (t) => {
+    const d = await api(BASE, headers, '/admin/themes', { method: 'PUT', body: JSON.stringify({ id: t.id, is_active: t.is_active ? 0 : 1 }) });
+    if (d.success) { addToast(t.is_active ? 'Đã tắt chủ đề' : 'Đã bật — sẽ hiện toàn site!', 'success'); load(); }
+  };
+  const del = async (id) => {
+    if (!confirm('Xoá chủ đề này?')) return;
+    const d = await api(BASE, headers, '/admin/themes', { method: 'DELETE', body: JSON.stringify({ id }) });
+    if (d.success) { addToast('Đã xoá', 'success'); load(); } else addToast(d.error || 'Lỗi', 'error');
+  };
+  return (
+    <div className="p-4 space-y-4">
+      <div className="rounded-xl bg-gradient-to-br from-[#0e7a3a]/20 to-[#ffd700]/10 border border-[#0e7a3a]/30 p-3">
+        <p className="text-[12px] font-black text-white flex items-center gap-1.5"><Palette className="w-4 h-4 text-[#ffd700]" /> Trang trí theo chủ đề</p>
+        <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">Tạo chủ đề sự kiện (VD: FIFA ASEAN Cup 2026) — chọn màu, emoji, banner, hiệu ứng confetti, thời gian. Bật <b>is_active</b> → toàn bộ web tự đổi màu + banner + hiệu ứng. Chỉ 1 chủ đề active đầu (sort_order nhỏ nhất) được áp dụng.</p>
+        <div className="flex flex-wrap gap-1.5 mt-2">
+          {THEME_PRESETS.map(p => (
+            <button key={p.key} onClick={() => applyPreset(p)} className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-white/10 hover:bg-white/20 text-white border border-white/10 flex items-center gap-1">
+              <span>{p.emoji}</span> {p.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <form onSubmit={submit} className="space-y-2 rounded-xl bg-black/30 border border-white/[0.06] p-3">
+        <p className="text-[11px] font-black uppercase tracking-wider text-slate-400">{editing ? `Sửa #${editing}` : 'Tạo chủ đề mới'}</p>
+        <div className="grid grid-cols-2 gap-2">
+          <input value={form.key} onChange={e => setForm({ ...form, key: e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '-') })} placeholder="key (vd: fifa-asean-cup-2026)" className={inp + ' font-mono'} />
+          <input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Tên hiển thị (FIFA ASEAN Cup 2026)" className={inp} />
+          <input value={form.emoji} onChange={e => setForm({ ...form, emoji: e.target.value })} placeholder="Emoji 🏆" className={inp} />
+          <select value={form.confetti} onChange={e => setForm({ ...form, confetti: e.target.value })} className={inp}>
+            <option value="none">Không confetti</option>
+            <option value="trophy">🏆 Cúp + bóng</option>
+            <option value="fireworks">🎆 Pháo hoa</option>
+            <option value="snow">❄️ Tuyết rơi</option>
+            <option value="ball">⚽ Bóng đá</option>
+            <option value="pumpkin">🎃 Halloween</option>
+          </select>
+          <input value={form.primary_color} onChange={e => setForm({ ...form, primary_color: e.target.value })} placeholder="#0e7a3a primary" className={inp + ' font-mono'} />
+          <input value={form.secondary_color} onChange={e => setForm({ ...form, secondary_color: e.target.value })} placeholder="#0b1d12 secondary" className={inp + ' font-mono'} />
+          <input value={form.accent_color} onChange={e => setForm({ ...form, accent_color: e.target.value })} placeholder="#ffd700 accent" className={inp + ' font-mono'} />
+          <input type="number" value={form.sort_order} onChange={e => setForm({ ...form, sort_order: e.target.value })} placeholder="Thứ tự (0 = ưu tiên)" className={inp} />
+        </div>
+        <input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Mô tả ngắn (hiện ở banner)" className={inp} />
+        <input value={form.banner_url} onChange={e => setForm({ ...form, banner_url: e.target.value })} placeholder="Banner URL (https://...)" className={inp} />
+        <input value={form.background_url} onChange={e => setForm({ ...form, background_url: e.target.value })} placeholder="Background URL (ảnh nền mờ toàn site, optional)" className={inp} />
+        <input value={form.logo_url} onChange={e => setForm({ ...form, logo_url: e.target.value })} placeholder="Logo override URL (optional, đè logo header khi theme active)" className={inp} />
+        <div className="grid grid-cols-2 gap-2">
+          <input value={form.starts_at} onChange={e => setForm({ ...form, starts_at: e.target.value })} placeholder="Bắt đầu YYYY-MM-DD HH:MM:SS (trống = luôn)" className={inp + ' font-mono text-[11px]'} />
+          <input value={form.ends_at} onChange={e => setForm({ ...form, ends_at: e.target.value })} placeholder="Kết thúc YYYY-MM-DD HH:MM:SS" className={inp + ' font-mono text-[11px]'} />
+        </div>
+        <textarea value={form.css} onChange={e => setForm({ ...form, css: e.target.value })} placeholder="Custom CSS (optional, VD: .topnav { border-color: var(--theme-accent)!important }) — tối đa 4000 ký tự" className={inp + ' min-h-[70px] font-mono text-[11px]'} />
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1.5 text-[11px] text-slate-300 cursor-pointer"><input type="checkbox" checked={!!form.is_active} onChange={e => setForm({ ...form, is_active: e.target.checked ? 1 : 0 })} /> Kích hoạt ngay</label>
+          <span className="flex-1" />
+          {editing && <button type="button" onClick={reset} className={btnG}>Huỷ sửa</button>}
+          <button type="submit" className={btnP}><Sparkles className="w-3.5 h-3.5" /> {editing ? 'Lưu' : 'Tạo chủ đề'}</button>
+        </div>
+        {form.primary_color && (
+          <div className="flex items-center gap-2 pt-1">
+            <span className="text-[10px] text-slate-500">Preview:</span>
+            <span className="w-5 h-5 rounded-full border border-white/20" style={{ background: form.primary_color }} />
+            <span className="w-5 h-5 rounded-full border border-white/20" style={{ background: form.secondary_color }} />
+            <span className="w-5 h-5 rounded-full border border-white/20" style={{ background: form.accent_color }} />
+            <span className="text-[11px]">{form.emoji} {form.name || 'Tên chủ đề'}</span>
+          </div>
+        )}
+      </form>
+
+      <div className="space-y-2">
+        <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Danh sách ({themes.length})</p>
+        {themes.length === 0 && <p className="text-[11px] text-slate-600 italic">Chưa có chủ đề nào — bấm preset FIFA ASEAN Cup 2026 ở trên để tạo nhanh.</p>}
+        {themes.map(t => (
+          <div key={t.id} className={`flex items-center gap-2 rounded-xl border px-3 py-2 ${t.is_active ? 'bg-[#0e7a3a]/15 border-[#0e7a3a]/30' : 'bg-black/30 border-white/[0.06]'}`}>
+            <span className="text-[14px]">{t.emoji || '🎨'}</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-[12px] font-bold text-white truncate">{t.name} <span className="font-mono text-[10px] text-slate-500">({t.key})</span></p>
+              <p className="text-[10px] text-slate-400 truncate">{t.description || ''} {t.starts_at ? `· từ ${t.starts_at}` : ''} {t.ends_at ? `→ ${t.ends_at}` : ''}</p>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="w-3 h-3 rounded-full border border-white/20" style={{ background: t.primary_color }} />
+              <span className="w-3 h-3 rounded-full border border-white/20" style={{ background: t.accent_color }} />
+            </div>
+            <button onClick={() => toggleActive(t)} className={`text-[10px] font-black px-2 py-1 rounded-full ${t.is_active ? 'bg-emerald-500/20 text-emerald-300' : 'bg-white/10 text-slate-400'}`}>{t.is_active ? 'Đang bật' : 'Tắt'}</button>
+            <button onClick={() => startEdit(t)} className="text-[11px] text-slate-400 hover:text-white px-1.5">Sửa</button>
+            <button onClick={() => del(t.id)} className="text-slate-600 hover:text-red-400"><Trash2 className="w-3.5 h-3.5" /></button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
 export const EXTRA_TABS = [
   { id: 'health', label: 'Sức khoẻ kênh', icon: Activity },
   { id: 'live', label: 'Trực tiếp', icon: Eye },
@@ -566,6 +700,7 @@ export const EXTRA_TABS = [
   { id: 'chal48', label: 'Challenge', icon: Target },
   { id: 'aff48', label: 'Affiliate', icon: HandCoins },
   { id: 'wmlayer', label: 'Logo khi phát', icon: Image },
+  { id: 'themes', label: 'Chủ đề trang trí', icon: Palette },
 ];
 
 // ============================================================================

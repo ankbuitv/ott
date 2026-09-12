@@ -3,54 +3,82 @@ import { getAvatar } from '../contexts/ProfileContext';
 import { useI18n } from '../contexts/I18nContext';
 
 export const REWARD_IMG = 'https://i.ibb.co/C3R51nH4/reward.png';
+export const MAIN_LOGO_URL = 'https://i.ibb.co/VcLxwgM2/logo.png';
+export const MAIN_LOGO_SVG = '/logo.svg';
 
 function LogoMark({ className = '' }) {
+  let src = MAIN_LOGO_URL;
+  try {
+    const raw = localStorage.getItem('chrtv_active_theme_v1');
+    if (raw) {
+      const th = JSON.parse(raw);
+      if (th && th.logo_url) src = th.logo_url;
+    }
+  } catch {}
   return (
-    <svg viewBox="0 0 64 64" className={className} aria-hidden="true">
-      <defs>
-        <linearGradient id="chr-tile" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#1c1d24" />
-          <stop offset="1" stopColor="#0c0d12" />
-        </linearGradient>
-        <linearGradient id="chr-play" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#ffb37a" />
-          <stop offset="0.45" stopColor="#f36f21" />
-          <stop offset="1" stopColor="#d63c0f" />
-        </linearGradient>
-        <linearGradient id="chr-edge" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#ffffff" stopOpacity="0.28" />
-          <stop offset="0.5" stopColor="#ffffff" stopOpacity="0.04" />
-          <stop offset="1" stopColor="#ffffff" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <rect x="2" y="2" width="60" height="60" rx="18" fill="url(#chr-tile)" />
-      <rect x="2.75" y="2.75" width="58.5" height="58.5" rx="17" fill="none" stroke="#ffffff" strokeOpacity="0.14" strokeWidth="1.5" />
-      <rect x="2" y="2" width="60" height="60" rx="18" fill="url(#chr-edge)" />
-      <circle cx="32" cy="32" r="16.5" fill="none" stroke="url(#chr-play)" strokeWidth="4.5" />
-      <path d="M28.6 24.2v15.6c0 1.15 1.25 1.86 2.22 1.26l11.4-7.05a1.5 1.5 0 0 0 0-2.52l-11.4-7.05c-.97-.6-2.22.11-2.22 1.26z" fill="url(#chr-play)" />
-      <circle cx="46.5" cy="17.5" r="2.6" fill="#f36f21" />
-      <circle cx="46.5" cy="17.5" r="2.6" fill="#ffffff" opacity="0.25" />
-    </svg>
+    <img
+      src={src}
+      alt="CHRTV PLAY"
+      className={`${className} object-contain`}
+      loading="eager"
+      decoding="async"
+      onError={(e) => {
+        if (e.currentTarget.src !== window.location.origin + MAIN_LOGO_SVG) {
+          e.currentTarget.src = MAIN_LOGO_SVG;
+        }
+      }}
+    />
   );
 }
 
 export default function Logo({ size = 'md', showSubtext = true, className = '' }) {
   const { t } = useI18n();
+  const [themeLogo, setThemeLogo] = React.useState('');
+  React.useEffect(() => {
+    const read = () => {
+      try {
+        const raw = localStorage.getItem('chrtv_active_theme_v1');
+        if (raw) {
+          const th = JSON.parse(raw);
+          if (th && th.logo_url) { setThemeLogo(th.logo_url); return; }
+        }
+      } catch {}
+      setThemeLogo('');
+    };
+    read();
+    const onStorage = (e) => { if (!e || e.key === 'chrtv_active_theme_v1') read(); };
+    const onCustom = () => read();
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('chrtv-theme-change', onCustom);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('chrtv-theme-change', onCustom);
+    };
+  }, []);
+  const logoSrc = themeLogo || MAIN_LOGO_URL;
   const sizes = {
-    sm: { main: 'text-[13px] sm:text-[15px]', play: 'text-[7px] sm:text-[8px] px-1 sm:px-1.5 py-0.5', sub: 'text-[7px]', icon: 'w-7 h-7 sm:w-8 sm:h-8', reward: 'h-8' },
-    md: { main: 'text-xl', play: 'text-[9px] px-2 py-[3px]', sub: 'text-[8px]', icon: 'w-10 h-10', reward: 'h-10' },
-    lg: { main: 'text-[26px]', play: 'text-[10px] px-2 py-1', sub: 'text-[9px]', icon: 'w-12 h-12', reward: 'h-12' },
-    xl: { main: 'text-4xl', play: 'text-xs px-2.5 py-1', sub: 'text-[11px]', icon: 'w-16 h-16', reward: 'h-16' },
-  }[size] || { main: 'text-xl', play: 'text-[9px] px-2 py-[3px]', sub: 'text-[8px]', icon: 'w-10 h-10', reward: 'h-10' };
+    sm: { wrap: 'gap-2', icon: 'w-7 h-7 sm:w-8 sm:h-8', main: 'text-[13px] sm:text-[15px]', play: 'text-[7px] sm:text-[8px] px-1 sm:px-1.5 py-0.5', sub: 'text-[7px]', reward: 'h-8' },
+    md: { wrap: 'gap-2.5', icon: 'w-10 h-10', main: 'text-xl', play: 'text-[9px] px-2 py-[3px]', sub: 'text-[8px]', reward: 'h-10' },
+    lg: { wrap: 'gap-2.5', icon: 'w-12 h-12', main: 'text-[26px]', play: 'text-[10px] px-2 py-1', sub: 'text-[9px]', reward: 'h-12' },
+    xl: { wrap: 'gap-3', icon: 'w-16 h-16', main: 'text-4xl', play: 'text-xs px-2.5 py-1', sub: 'text-[11px]', reward: 'h-16' },
+  }[size] || { wrap: 'gap-2.5', icon: 'w-10 h-10', main: 'text-xl', play: 'text-[9px] px-2 py-[3px]', sub: 'text-[8px]', reward: 'h-10' };
 
   return (
-    <div className={`flex items-center gap-2.5 ${className}`}>
-      <div
-        className={`${sizes.icon} shrink-0 transition-transform duration-200 hover:scale-105`}
+    <div className={`flex items-center ${sizes.wrap} ${className}`}>
+      <img
+        src={logoSrc}
+        alt="CHRTV PLAY"
+        className={`${sizes.icon} shrink-0 object-contain transition-transform duration-200 hover:scale-105`}
         style={{ filter: 'drop-shadow(0 4px 14px rgba(243,111,33,.4))' }}
-      >
-        <LogoMark className="w-full h-full" />
-      </div>
+        loading="eager"
+        decoding="async"
+        onError={(e) => {
+          if (!e.currentTarget.dataset.fallback) {
+            e.currentTarget.dataset.fallback = '1';
+            e.currentTarget.src = e.currentTarget.src === logoSrc && logoSrc !== MAIN_LOGO_URL ? MAIN_LOGO_URL : MAIN_LOGO_SVG;
+          }
+        }}
+      />
 
       <div className="flex flex-col leading-none min-w-0">
         <span className="flex items-center gap-1 sm:gap-1.5">
@@ -66,8 +94,11 @@ export default function Logo({ size = 'md', showSubtext = true, className = '' }
 
       <img
         src={REWARD_IMG}
-        alt=""
-        className={`${sizes.reward} hidden md:block w-auto max-w-[4.5rem] shrink-0 object-contain object-center`}
+        alt="reward"
+        className={`${sizes.reward} block w-auto max-w-[3.5rem] md:max-w-[4.5rem] shrink-0 object-contain object-center ml-1`}
+        loading="eager"
+        decoding="async"
+        onError={(e) => { e.currentTarget.style.display = 'none'; }}
       />
     </div>
   );

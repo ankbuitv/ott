@@ -333,10 +333,10 @@ export default function EpgGridTimeline({
                   }`}
                 >
                   <img
-                    src={ch.logo || 'https://i.ibb.co/HDmcxzMK/Gemini-Generated-Image-v7i9yav7i9yav7i9-removebg-preview.png'}
+                    src={ch.logo || 'https://i.ibb.co/VcLxwgM2/logo.png'}
                     alt=""
                     className="w-9 h-9 object-contain rounded-lg bg-black/50 p-0.5 ring-1 ring-white/10 shrink-0"
-                    onError={(e) => { e.target.src = 'https://i.ibb.co/HDmcxzMK/Gemini-Generated-Image-v7i9yav7i9yav7i9-removebg-preview.png'; }}
+                    onError={(e) => { e.target.src = 'https://i.ibb.co/VcLxwgM2/logo.png'; }}
                   />
                   <span className="min-w-0 flex-1">
                     <span className={`block truncate text-[12px] font-bold ${active ? 'text-white' : 'text-slate-300'}`}>{ch.name}</span>
@@ -363,10 +363,10 @@ export default function EpgGridTimeline({
                   <ChevronLeft className="w-5 h-5 text-slate-300" />
                 </button>
                 <img
-                  src={activeChannel.logo || 'https://i.ibb.co/HDmcxzMK/Gemini-Generated-Image-v7i9yav7i9yav7i9-removebg-preview.png'}
+                  src={activeChannel.logo || 'https://i.ibb.co/VcLxwgM2/logo.png'}
                   alt=""
                   className="w-11 h-11 object-contain rounded-xl bg-black/50 p-1 ring-1 ring-white/10"
-                  onError={(e) => { e.target.src = 'https://i.ibb.co/HDmcxzMK/Gemini-Generated-Image-v7i9yav7i9yav7i9-removebg-preview.png'; }}
+                  onError={(e) => { e.target.src = 'https://i.ibb.co/VcLxwgM2/logo.png'; }}
                 />
                 <div className="min-w-0 flex-1">
                   <h2 className="text-[15px] font-black text-white truncate">{activeChannel.name}</h2>

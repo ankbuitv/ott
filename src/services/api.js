@@ -4,7 +4,7 @@ import { authHeaders } from "./session";
 const BASE_WORKER_URL = API_BASE;
 
 export const DEFAULT_FALLBACK_STREAM = "http://bore.pub:30113/hls/index.m3u8";
-export const CHRTV_LOGO_URL = "https://i.ibb.co/HDmcxzMK/Gemini-Generated-Image-v7i9yav7i9yav7i9-removebg-preview.png";
+export const CHRTV_LOGO_URL = "https://i.ibb.co/VcLxwgM2/logo.png";
 
 /**
  * Danh sách kênh là thứ duy nhất mà nếu thiếu thì app coi như "crash" (trắng màn hình),

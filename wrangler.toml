@@ -55,6 +55,10 @@ database_id = "6beab015-333c-45a2-8062-41d1fd3f066f"
 # binding = "EPG_KV"
 # id = "REPLACE_WITH_REAL_KV_ID"
 
+[vars]
+BREVO_SENDER_NAME = "NO REPLY - CHRTV PL▷Y"
+BREVO_SENDER_EMAIL = "noreply@chrtv.app"
+
 # Note: worker/worker.js degrades gracefully when DB / EPG_KV are not bound
 # (M3U/default channel list, per-request EPG fetch, localStorage fallbacks),
 # so the app is fully functional without them.

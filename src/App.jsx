@@ -15,6 +15,7 @@ import { fetchPreroll, loadPreviewState, subscribePreview, getPreviewState, fmtP
 import { setPrerollHandler, runPreroll } from './services/prerollGate';
 import Logo from './components/Logo';
 import TopNav from './components/TopNav';
+import ThemeDecorator from './components/ThemeDecorator';
 import VideoPlayer from './components/VideoPlayer';
 import EpgGridTimeline from './components/EpgGridTimeline';
 import SettingsPage from './components/SettingsPage';
@@ -557,6 +558,7 @@ function AppContent() {
 
   return (
     <div className="flex h-screen w-screen bg-black text-slate-100 overflow-hidden font-sans select-none flex-col">
+      <ThemeDecorator />
       {splash && (
         <div className="fixed inset-0 z-[300] flex flex-col items-center justify-center bg-[#07080c]">
           <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(520px 280px at 50% 42%, rgba(243,111,33,.22), transparent 70%)' }} />

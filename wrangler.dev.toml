@@ -18,6 +18,14 @@ BREVO_SENDER_EMAIL = "noreply@chrtv.app"
 # /api/movie/sources trả nguồn. Production đặt bằng: wrangler secret put MOVIE_FRAME_SRC
 # Ở local chỉ cần domain giả để test plumbing — không phải nguồn thật.
 MOVIE_FRAME_SRC = "https://player.example-partner.test"
+# ---- BẢO VỆ LUỒNG (chỉ local) ----
+# proxy: luồng đi qua worker để thử mã hoá (production đang mặc định DIRECT)
+STREAM_MODE = "proxy"
+PROTECT = "on"
+# "/lic" = relative -> player gọi cùng origin, vite proxy sang worker (xem vite.config.js)
+LICENSE_BASE = "/lic"
+# PHẢI GIỐNG HỆT secret của license worker khi chạy thật
+LICENSE_SECRET = "dev-only-license-secret-local-1234567890"
 
 [[d1_databases]]
 binding = "DB"

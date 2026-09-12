@@ -19,6 +19,13 @@ const proxy = Object.fromEntries(
     },
   ])
 );
+// Bảo vệ luồng: key AES-128 (cùng origin khi dev, production dùng license.ankb.qzz.io)
+proxy['/lic'] = {
+  target: API_TARGET,
+  changeOrigin: true,
+  secure: false,
+}
+
 // Lịch bóng đá: gọi cùng origin để tránh CORS/CSP chặn TheSportsDB + ESPN.
 proxy['/tsdb'] = {
   target: 'https://www.thesportsdb.com',

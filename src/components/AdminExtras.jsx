@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Film, Eye, Gift, CreditCard, Megaphone, Clock, MessageCircle, Target, FileSpreadsheet, Trash2, Check, X, Plus, Activity, Flag, RefreshCw, Bug, MapPin, ShieldAlert, Radio, HandCoins, Image, Palette, Sparkles } from 'lucide-react';
+import { Film, Eye, Gift, CreditCard, Megaphone, Clock, MessageCircle, Target, FileSpreadsheet, Trash2, Check, X, Plus, Activity, Flag, RefreshCw, Bug, MapPin, ShieldAlert, Radio, HandCoins, Image, Palette, Sparkles, Lock, Search, ShieldCheck } from 'lucide-react';
 import { THEME_PRESETS } from '../services/siteTheme.js';
 
 // Các tab admin mới: trực tiếp, gift, thanh toán, QC, lịch đăng, bình luận, dự đoán, báo cáo.
@@ -701,6 +701,7 @@ export const EXTRA_TABS = [
   { id: 'aff48', label: 'Affiliate', icon: HandCoins },
   { id: 'wmlayer', label: 'Logo khi phát', icon: Image },
   { id: 'themes', label: 'Chủ đề trang trí', icon: Palette },
+  { id: 'protect', label: 'Bảo vệ luồng', icon: Lock },
 ];
 
 // ============================================================================
@@ -1026,6 +1027,90 @@ export function AffiliatesTab({ BASE, headers, addToast }) {
         <input value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} placeholder="Nhãn nút (VD: Mua vé)" className={inp + ' col-span-2'} />
         <button type="submit" className={btnP + ' col-span-2 justify-center'}><Plus className="w-3.5 h-3.5" /> Thêm</button>
       </form>
+    </div>
+  );
+}
+
+// ============================================================================
+// BẢO VỆ LUỒNG (AES-128 + license.ankb.qzz.io)
+// Mặc định TẤT CẢ kênh bật. Tắt từng kênh tại đây (kênh hay lỗi khi qua proxy,
+// kênh nguồn tự mã hoá...). FPT Play tự né ở lớp phát, không cần tắt tay.
+// ============================================================================
+export function ProtectTab({ BASE, headers, addToast }) {
+  const [list, setList] = useState([]);
+  const [q, setQ] = useState('');
+  const [busy, setBusy] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  const load = () => {
+    setLoading(true);
+    fetch(`${BASE}/api/channels`).then(r => r.json()).then(d => setList(d.channels || [])).catch(() => {}).finally(() => setLoading(false));
+  };
+  useEffect(() => { load(); }, []);
+
+  const toggle = async (ch) => {
+    const next = ch.protect === 0 ? 1 : 0;
+    setBusy(ch.channel_id);
+    try {
+      const r = await fetch(`${BASE}/admin/channel-protect`, {
+        method: 'POST', headers, body: JSON.stringify({ channel_id: ch.channel_id, protect: next }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!d.success) throw new Error(d.error || 'Lỗi');
+      setList(prev => prev.map(x => x.channel_id === ch.channel_id ? { ...x, protect: next } : x));
+    } catch (e) {
+      if (addToast) addToast('Không lưu được: ' + e.message, 'error');
+    } finally { setBusy(''); }
+  };
+
+  const filtered = list.filter(c => {
+    const s = q.trim().toLowerCase();
+    if (!s) return true;
+    return (c.name || '').toLowerCase().includes(s) || (c.channel_id || '').toLowerCase().includes(s) || (c.group_title || '').toLowerCase().includes(s);
+  });
+  const onCount = list.filter(c => c.protect !== 0).length;
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/[0.06] px-3 py-2.5 text-[11px] text-emerald-200/90 leading-relaxed">
+        <b className="text-emerald-300">Mặc định: TẤT CẢ kênh đều được mã hoá</b> khi phát qua proxy
+        (<code className="text-emerald-100">STREAM_MODE=proxy</code>). Muốn giải mã phải gọi license server —
+        bỏ link vào VLC/potplayer sẽ đen hình. <b className="text-emerald-300">FPT Play tự động né</b>, các
+        luồng fMP4/CMAF hoặc đã có DRM cũng tự bỏ qua.
+      </div>
+
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Tìm kênh..." className={inp + ' pl-9'} />
+        </div>
+        <span className="text-[10px] font-black text-slate-400 whitespace-nowrap">{onCount}/{list.length} đang bật</span>
+        <button onClick={load} className={btnG}><RefreshCw className="w-3.5 h-3.5" />Tải lại</button>
+      </div>
+
+      {loading ? (
+        <p className="text-[11px] text-slate-500 py-6 text-center">Đang tải danh sách kênh...</p>
+      ) : (
+        <div className="space-y-1 max-h-[52vh] overflow-y-auto pr-1">
+          {filtered.map(ch => (
+            <div key={ch.channel_id} className="flex items-center gap-2.5 bg-slate-900/40 rounded-lg px-2.5 py-2 border border-slate-800/30">
+              <ShieldCheck className={`w-4 h-4 shrink-0 ${ch.protect === 0 ? 'text-slate-600' : 'text-emerald-400'}`} />
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-bold text-white truncate">{ch.name}</p>
+                <p className="text-[9px] text-slate-600 truncate">{ch.group_title || '—'} · {ch.channel_id}</p>
+              </div>
+              <button
+                disabled={busy === ch.channel_id}
+                onClick={() => toggle(ch)}
+                className={`shrink-0 px-2.5 py-1 rounded-md text-[10px] font-black border transition-all disabled:opacity-50 ${ch.protect === 0 ? 'bg-slate-800 border-slate-700 text-slate-400' : 'bg-emerald-600/20 border-emerald-500/40 text-emerald-300'}`}
+              >
+                {ch.protect === 0 ? 'ĐANG TẮT' : 'ĐANG BẬT'}
+              </button>
+            </div>
+          ))}
+          {filtered.length === 0 && <p className="text-[11px] text-slate-600 italic text-center py-6">Không thấy kênh nào</p>}
+        </div>
+      )}
     </div>
   );
 }

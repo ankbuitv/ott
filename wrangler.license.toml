@@ -1,0 +1,31 @@
+# ===========================================================================
+# CHRTV LICENSE SERVER — deploy riêng, gắn domain license.ankb.qzz.io
+#
+#   npx wrangler deploy -c wrangler.license.toml
+#
+# Sau khi deploy xong: Dashboard > Workers & Pages > chrtv-license
+#   > Settings > Domains & Routes > Add > Custom domain: license.ankb.qzz.io
+# (Workers Free dùng được custom domain, không cần thẻ.)
+#
+# BẮT BUỘC đặt secret TRƯỚC KHI DEPLOY (phải GIỐNG HỆT bên worker chính):
+#   npx wrangler secret put LICENSE_SECRET -c wrangler.license.toml
+#   npx wrangler secret put ADMIN_SECRET   -c wrangler.license.toml
+#
+# KV (chỉ dùng cho license dài hạn /issue /validate — KHÔNG dùng cho /k/):
+#   npx wrangler kv namespace create LICENSES
+# rồi bỏ comment block [[kv_namespaces]] bên dưới và điền id.
+# ===========================================================================
+name = "chrtv-license"
+main = "worker/license-worker.js"
+compatibility_date = "2024-01-01"
+
+[vars]
+# Trống = cho mọi origin gọi /k/ (player web cần CORS).
+# Muốn chặt: LICENSE_ALLOWED_ORIGINS = "https://play.ankb.qzz.io,https://chrtv.pages.dev"
+LICENSE_ALLOWED_ORIGINS = "*"
+# "1" = khoá key theo IP (mặc định tắt: tránh rớt mạng khi IP đổi)
+LICENSE_STRICT_IP = "0"
+
+# [[kv_namespaces]]
+# binding = "LICENSES"
+# id = "REPLACE_WITH_REAL_KV_ID"

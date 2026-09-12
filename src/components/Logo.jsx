@@ -63,8 +63,11 @@ export default function Logo({ size = 'md', showSubtext = true, className = '' }
 
       <img
         src={REWARD_IMG}
-        alt=""
-        className={`${sizes.reward} hidden md:block w-auto max-w-[4.5rem] shrink-0 object-contain object-center ml-1`}
+        alt="reward"
+        className={`${sizes.reward} block w-auto max-w-[3.5rem] md:max-w-[4.5rem] shrink-0 object-contain object-center ml-1`}
+        loading="eager"
+        decoding="async"
+        onError={(e) => { e.currentTarget.style.display = 'none'; }}
       />
     </div>
   );

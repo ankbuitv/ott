@@ -22,8 +22,8 @@ self.addEventListener('push', (event) => {
     } catch {}
     await self.registration.showNotification(title, {
       body,
-      icon: 'https://i.ibb.co/VcLxwgM2/logo.png',
-      badge: 'https://i.ibb.co/VcLxwgM2/logo.png',
+      icon: '/favicon-192.png',
+      badge: '/favicon-192.png',
       tag: 'chrtv-' + Date.now(),
       data: { url },
     });

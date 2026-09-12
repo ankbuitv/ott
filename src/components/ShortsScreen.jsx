@@ -1,16 +1,29 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Heart, Share2, Volume2, VolumeX, Play, Eye, BadgeCheck, Users, Video, X, UserPlus, UserCheck, Edit3, Upload, Link2, Image as ImageIcon, Star, Trophy, Medal, Flame } from 'lucide-react';
+import { Heart, Share2, Volume2, VolumeX, Play, Eye, BadgeCheck, Users, Video, X, UserPlus, UserCheck, Edit3, Upload, Link2, Image as ImageIcon, Star, Trophy, Medal, Flame, MessageCircle } from 'lucide-react';
 import { useI18n } from '../contexts/I18nContext';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { API_BASE } from '../services/config';
 import { authHeaders } from '../services/session';
+import { fetchComments } from '../services/social';
+import CommentsBox from './CommentsBox';
 
 function fmtCount(n) {
   n = Number(n) || 0;
   if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
   if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
   return String(n);
+}
+
+// Chiều cao nhỏ nhất của một thẻ short (video siêu ngang vẫn giữ được khung xem)
+const SHORT_MIN_H = 260;
+
+// Đổi tỉ lệ w/h thành nhãn dễ đọc (9:16, 16:9, 1:1...)
+function fmtRatio(r) {
+  if (!r || !Number.isFinite(r)) return '';
+  const known = [[9, 16], [16, 9], [1, 1], [4, 5], [5, 4], [3, 4], [4, 3], [3, 2], [2, 3], [21, 9]];
+  for (const [a, b] of known) if (Math.abs(r - a / b) < 0.02) return `${a}:${b}`;
+  return `${r.toFixed(2)}:1`;
 }
 
 function CreatorAvatar({ creator, author, size = 24, onClick }) {
@@ -29,12 +42,17 @@ function CreatorAvatar({ creator, author, size = 24, onClick }) {
   );
 }
 
-// 1 thẻ short dọc
-function ShortPlayer({ short, active, muted, onToggleMute, onAuthorClick, onFollowToggle, token }) {
+// 1 thẻ short — tự theo tỉ lệ thật của video (ngang 16:9 hay dọc 9:16 đều không bị crop)
+function ShortPlayer({ short, active, muted, onToggleMute, onSetMuted, onAuthorClick, onFollowToggle, token, maxH = 640 }) {
   const { t } = useI18n();
   const { addToast } = useToast();
   const videoRef = useRef(null);
+  const wrapRef = useRef(null);
   const [playing, setPlaying] = useState(false);
+  const [stageW, setStageW] = useState(0);       // chiều rộng khung chứa (đo bằng ResizeObserver)
+  const [ratio, setRatio] = useState(0);         // videoWidth / videoHeight — 0 = chưa đo được
+  const [showCmt, setShowCmt] = useState(false); // bảng bình luận
+  const [cmtCount, setCmtCount] = useState(0);
   const [liked, setLiked] = useState(() => {
     try { return (JSON.parse(localStorage.getItem('chrtv_short_likes') || '[]')).includes(short.id); } catch { return false; }
   });
@@ -46,11 +64,32 @@ function ShortPlayer({ short, active, muted, onToggleMute, onAuthorClick, onFoll
 
   useEffect(() => { setLocalFollow(!!creator?.is_following); setLocalFollowers(creator?.followers || 0); }, [creator?.is_following, creator?.followers]);
 
+  // Đo chiều rộng khung chứa để tính kích thước video theo đúng tỉ lệ
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const read = () => setStageW(el.clientWidth || 0);
+    read();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Số bình luận (chỉ tải cho short đang active để đỡ tốn request)
+  useEffect(() => {
+    if (!active) return;
+    let on = true;
+    fetchComments(`short-${short.id}`).then((list) => { if (on) setCmtCount(list.length || 0); }).catch(() => {});
+    return () => { on = false; };
+  }, [active, short.id]);
+
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
-    if (active) {
-      v.muted = muted;
+    // Mở bảng bình luận thì tạm dừng video, đóng lại thì chạy tiếp
+    if (active && !showCmt) {
+      v.muted = muted; // luôn tôn trọng trạng thái mute hiện tại — KHÔNG tự unmute bao giờ
       v.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
       if (!viewedRef.current) {
         viewedRef.current = true;
@@ -60,13 +99,26 @@ function ShortPlayer({ short, active, muted, onToggleMute, onAuthorClick, onFoll
       v.pause();
       setPlaying(false);
     }
-  }, [active, short.id]); // eslint-disable-line
+  }, [active, short.id, showCmt]); // eslint-disable-line
 
   useEffect(() => { if (videoRef.current) videoRef.current.muted = muted; }, [muted]);
 
+  const onMeta = (e) => {
+    const v = e.currentTarget;
+    if (v && v.videoWidth > 0 && v.videoHeight > 0) setRatio(v.videoWidth / v.videoHeight);
+  };
+
+  // Chạm vào video: đang mute thì BẬT TIẾNG (có thao tác người dùng nên trình duyệt cho phép),
+  // chạm tiếp theo mới tạm dừng / phát lại. Không bao giờ tự bật tiếng nếu người dùng không chạm.
   const togglePlay = () => {
     const v = videoRef.current;
     if (!v) return;
+    if (muted && onSetMuted) {
+      onSetMuted(false);
+      const p = v.paused ? v.play() : Promise.resolve();
+      p.then(() => setPlaying(true)).catch(() => { if (onSetMuted) onSetMuted(true); });
+      return;
+    }
     if (v.paused) { v.play().catch(() => {}); setPlaying(true); }
     else { v.pause(); setPlaying(false); }
   };
@@ -126,94 +178,164 @@ function ShortPlayer({ short, active, muted, onToggleMute, onAuthorClick, onFoll
     } catch { addToast('Lỗi kết nối', 'error'); }
   };
 
+  // ---- Kích thước khung theo tỉ lệ thật của video ----
+  const r = ratio > 0 ? ratio : 9 / 16;                                  // mặc định dọc tới khi biết tỉ lệ
+  const limitH = maxH > 0 ? maxH : 640;
+  const h = stageW > 0 ? Math.max(SHORT_MIN_H, Math.min(limitH, stageW / r)) : SHORT_MIN_H;
+  const w = stageW > 0 ? Math.min(stageW, Math.round(h * r)) : undefined;
+  const compact = h < 420;                                               // video ngang → UI gọn lại
+  const btn = compact ? 'w-9 h-9' : 'w-11 h-11';
+  const btnIcon = compact ? 'w-4 h-4' : 'w-5 h-5';
+
   return (
-    <div className="relative h-full w-full bg-black overflow-hidden sm:rounded-3xl sm:border sm:border-white/10" style={{ scrollSnapAlign: 'center' }}>
-      <video
-        ref={videoRef}
-        src={short.video_url}
-        poster={short.thumb_url || undefined}
-        loop
-        playsInline
-        preload="metadata"
-        onClick={togglePlay}
-        controlsList="nodownload noplaybackrate noremoteplayback"
-        disablePictureInPicture
-        onContextMenu={(e) => e.preventDefault()}
-        className="absolute inset-0 w-full h-full object-cover cursor-pointer"
-      />
-      <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(180deg, rgba(0,0,0,.35) 0%, transparent 25%, transparent 55%, rgba(0,0,0,.85) 100%)' }}></div>
+    <div ref={wrapRef} className="relative w-full flex items-center justify-center" style={{ height: h }}>
+      <div className="relative overflow-hidden bg-black sm:rounded-3xl sm:border sm:border-white/10" style={{ width: w, height: h }}>
+        {/* Nền mờ lấy từ thumbnail — lấp khoảng trống khi video không cùng tỉ lệ khung */}
+        {short.thumb_url ? (
+          <div
+            className="absolute inset-0"
+            style={{ backgroundImage: `url("${short.thumb_url}")`, backgroundSize: 'cover', backgroundPosition: 'center', filter: 'blur(26px) brightness(.5)', transform: 'scale(1.2)' }}
+          />
+        ) : null}
+        <video
+          ref={videoRef}
+          src={short.video_url}
+          poster={short.thumb_url || undefined}
+          loop
+          playsInline
+          preload={active ? 'auto' : 'metadata'}
+          onClick={togglePlay}
+          onLoadedMetadata={onMeta}
+          controlsList="nodownload noplaybackrate noremoteplayback"
+          disablePictureInPicture
+          onContextMenu={(e) => e.preventDefault()}
+          className="absolute inset-0 w-full h-full object-contain cursor-pointer"
+        />
+        <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(180deg, rgba(0,0,0,.35) 0%, transparent 25%, transparent 55%, rgba(0,0,0,.85) 100%)' }}></div>
 
-      {!playing && (
-        <button onClick={togglePlay} className="absolute inset-0 z-10 flex items-center justify-center" aria-label="Play">
-          <span className="w-16 h-16 rounded-full bg-black/50 border-2 border-white/85 flex items-center justify-center anim-pop-fast">
-            <Play className="w-7 h-7 text-white fill-current ml-1" />
-          </span>
-        </button>
-      )}
-
-      <button onClick={onToggleMute} className="absolute top-3 right-3 z-20 p-2 rounded-full bg-black/55 text-white/90 hover:bg-black/80">
-        {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-      </button>
-
-      <div className="absolute right-2.5 bottom-24 z-20 flex flex-col gap-4 items-center">
-        <button onClick={doLike} className="flex flex-col items-center gap-1 group">
-          <span className={`w-11 h-11 rounded-full flex items-center justify-center transition-all active:scale-90 ${liked ? 'bg-[#f3123f]/90 shadow-lg shadow-[#f3123f]/40' : 'bg-black/55 hover:bg-black/80'}`}>
-            <Heart className={`w-5 h-5 ${liked ? 'text-white fill-current' : 'text-white'}`} />
-          </span>
-          <span className="text-[10px] font-bold text-white drop-shadow">{fmtCount(likes)}</span>
-        </button>
-        <button onClick={doShare} className="flex flex-col items-center gap-1">
-          <span className="w-11 h-11 rounded-full bg-black/55 hover:bg-black/80 flex items-center justify-center transition-all active:scale-90">
-            <Share2 className="w-5 h-5 text-white" />
-          </span>
-          <span className="text-[10px] font-bold text-white drop-shadow">{t('shorts.share')}</span>
-        </button>
-        {creator?.id && (
-          <button onClick={doStar} className="flex flex-col items-center gap-1 group">
-            <span className="w-11 h-11 rounded-full bg-black/55 group-hover:bg-[#f5a623]/40 border border-white/10 group-hover:border-amber-400/60 flex items-center justify-center transition-all active:scale-90">
-              <Star className="w-5 h-5 text-amber-300" />
+        {!playing && (
+          <button onClick={togglePlay} className="absolute inset-0 z-10 flex items-center justify-center" aria-label="Play">
+            <span className="w-16 h-16 rounded-full bg-black/50 border-2 border-white/85 flex items-center justify-center anim-pop-fast">
+              <Play className="w-7 h-7 text-white fill-current ml-1" />
             </span>
-            <span className="text-[10px] font-bold text-white drop-shadow">⭐ {t('p48.star_short')}</span>
           </button>
         )}
-        <span className="flex flex-col items-center gap-1">
-          <span className="w-11 h-11 rounded-full bg-black/55 flex items-center justify-center">
-            <Eye className="w-5 h-5 text-white" />
+
+        {/* Nút mute + gợi ý "chạm để bật tiếng" (không tự bật tiếng bao giờ) */}
+        <button onClick={onToggleMute} title={muted ? t('shorts.unmute') : t('shorts.mute')} className="absolute top-3 right-3 z-20 p-2 rounded-full bg-black/55 text-white/90 hover:bg-black/80">
+          {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+        </button>
+        {muted && ratio > 0 && (
+          <div className="absolute top-3 left-3 z-20 flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-black/60 border border-white/15 pointer-events-none">
+            <VolumeX className="w-3.5 h-3.5 text-white" />
+            <span className="text-[10px] font-black text-white/90">{t('shorts.tap_sound')}</span>
+          </div>
+        )}
+
+        <div className={`absolute right-2.5 ${compact ? 'bottom-14' : 'bottom-24'} z-20 flex flex-col ${compact ? 'gap-2.5' : 'gap-4'} items-center`}>
+          <button onClick={doLike} className="flex flex-col items-center gap-1 group">
+            <span className={`${btn} rounded-full flex items-center justify-center transition-all active:scale-90 ${liked ? 'bg-[#f3123f]/90 shadow-lg shadow-[#f3123f]/40' : 'bg-black/55 hover:bg-black/80'}`}>
+              <Heart className={`${btnIcon} ${liked ? 'text-white fill-current' : 'text-white'}`} />
+            </span>
+            <span className="text-[10px] font-bold text-white drop-shadow">{fmtCount(likes)}</span>
+          </button>
+          <button onClick={() => setShowCmt(true)} className="flex flex-col items-center gap-1" title={t('cmt.title')}>
+            <span className={`${btn} rounded-full bg-black/55 hover:bg-black/80 flex items-center justify-center transition-all active:scale-90`}>
+              <MessageCircle className={`${btnIcon} text-white`} />
+            </span>
+            <span className="text-[10px] font-bold text-white drop-shadow">{fmtCount(cmtCount)}</span>
+          </button>
+          <button onClick={doShare} className="flex flex-col items-center gap-1">
+            <span className={`${btn} rounded-full bg-black/55 hover:bg-black/80 flex items-center justify-center transition-all active:scale-90`}>
+              <Share2 className={`${btnIcon} text-white`} />
+            </span>
+            <span className="text-[10px] font-bold text-white drop-shadow">{t('shorts.share')}</span>
+          </button>
+          {creator?.id && (
+            <button onClick={doStar} className="flex flex-col items-center gap-1 group">
+              <span className={`${btn} rounded-full bg-black/55 group-hover:bg-[#f5a623]/40 border border-white/10 group-hover:border-amber-400/60 flex items-center justify-center transition-all active:scale-90`}>
+                <Star className={`${btnIcon} text-amber-300`} />
+              </span>
+              <span className="text-[10px] font-bold text-white drop-shadow">⭐ {t('p48.star_short')}</span>
+            </button>
+          )}
+          <span className="flex flex-col items-center gap-1">
+            <span className={`${btn} rounded-full bg-black/55 flex items-center justify-center`}>
+              <Eye className={`${btnIcon} text-white`} />
+            </span>
+            <span className="text-[10px] font-bold text-white drop-shadow">{fmtCount(short.views)}</span>
           </span>
-          <span className="text-[10px] font-bold text-white drop-shadow">{fmtCount(short.views)}</span>
-        </span>
+        </div>
+
+        <div className={`absolute left-0 right-16 bottom-0 z-20 ${compact ? 'p-3' : 'p-4'}`}>
+          {creator ? (
+            <div className={`flex items-center gap-2.5 ${compact ? 'mb-1.5' : 'mb-2'}`}>
+              <CreatorAvatar creator={creator} size={compact ? 28 : 34} onClick={() => onAuthorClick && onAuthorClick(creator)} />
+              <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onAuthorClick && onAuthorClick(creator)}>
+                <div className="flex items-center gap-1">
+                  <span className="text-[13px] font-black text-white leading-tight truncate">{creator.display_name}</span>
+                  {creator.verified && <BadgeCheck className="w-3.5 h-3.5 text-cyan-400 shrink-0" />}
+                </div>
+                <div className="flex items-center gap-2 text-[11px] text-white/70">
+                  <span className="truncate">@{creator.handle}</span>
+                  <span className="flex items-center gap-0.5"><Users className="w-3 h-3" />{fmtCount(localFollowers)}</span>
+                </div>
+              </div>
+              <button onClick={handleFollow} className={`shrink-0 px-3 py-1 rounded-full text-[11px] font-black transition-all active:scale-95 ${localFollow ? 'bg-white/20 text-white border border-white/30' : 'bg-white text-black hover:bg-white/90'}`}>
+                {localFollow ? <span className="flex items-center gap-1"><UserCheck className="w-3 h-3" />Đang theo dõi</span> : <span className="flex items-center gap-1"><UserPlus className="w-3 h-3" />Theo dõi</span>}
+              </button>
+            </div>
+          ) : short.author ? (
+            <p className="flex items-center gap-1.5 text-[12px] font-bold text-white mb-1.5 cursor-pointer" onClick={() => onAuthorClick && onAuthorClick({ handle: short.author })}>
+              <span className="w-6 h-6 rounded-full grad-brand flex items-center justify-center text-[10px] font-black">
+                {(short.author || 'C')[0].toUpperCase()}
+              </span>
+              {short.author}
+              <BadgeCheck className="w-3.5 h-3.5 text-cyan-400" />
+            </p>
+          ) : null}
+          {short.title && <p className={`${compact ? 'text-[13px] line-clamp-1' : 'text-[14px] line-clamp-2'} font-extrabold text-white leading-snug drop-shadow`}>{short.title}</p>}
+          {short.caption && <p className={`text-[12px] text-white/75 mt-0.5 leading-snug ${compact ? 'line-clamp-1' : 'line-clamp-2'}`}>{short.caption}</p>}
+          {!compact && creator?.bio && <p className="text-[11px] text-white/60 mt-1.5 line-clamp-1 italic">{creator.bio}</p>}
+          {ratio > 0 && (
+            <p className="mt-1 text-[9px] font-black uppercase tracking-widest text-white/45">{fmtRatio(ratio)} · {t('shorts.fit_video')}</p>
+          )}
+        </div>
       </div>
 
-      <div className="absolute left-0 right-16 bottom-0 z-20 p-4">
-        {creator ? (
-          <div className="flex items-center gap-2.5 mb-2">
-            <CreatorAvatar creator={creator} size={34} onClick={() => onAuthorClick && onAuthorClick(creator)} />
-            <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onAuthorClick && onAuthorClick(creator)}>
-              <div className="flex items-center gap-1">
-                <span className="text-[13px] font-black text-white leading-tight truncate">{creator.display_name}</span>
-                {creator.verified && <BadgeCheck className="w-3.5 h-3.5 text-cyan-400 shrink-0" />}
-              </div>
-              <div className="flex items-center gap-2 text-[11px] text-white/70">
-                <span className="truncate">@{creator.handle}</span>
-                <span className="flex items-center gap-0.5"><Users className="w-3 h-3" />{fmtCount(localFollowers)}</span>
-              </div>
-            </div>
-            <button onClick={handleFollow} className={`shrink-0 px-3 py-1 rounded-full text-[11px] font-black transition-all active:scale-95 ${localFollow ? 'bg-white/20 text-white border border-white/30' : 'bg-white text-black hover:bg-white/90'}`}>
-              {localFollow ? <span className="flex items-center gap-1"><UserCheck className="w-3 h-3" />Đang theo dõi</span> : <span className="flex items-center gap-1"><UserPlus className="w-3 h-3" />Theo dõi</span>}
-            </button>
-          </div>
-        ) : short.author ? (
-          <p className="flex items-center gap-1.5 text-[12px] font-bold text-white mb-1.5 cursor-pointer" onClick={() => onAuthorClick && onAuthorClick({ handle: short.author })}>
-            <span className="w-6 h-6 rounded-full grad-brand flex items-center justify-center text-[10px] font-black">
-              {(short.author || 'C')[0].toUpperCase()}
-            </span>
-            {short.author}
-            <BadgeCheck className="w-3.5 h-3.5 text-cyan-400" />
+      {showCmt && (
+        <ShortCommentsSheet
+          short={short}
+          onClose={() => setShowCmt(false)}
+          onCount={setCmtCount}
+        />
+      )}
+    </div>
+  );
+}
+
+// Bình luận của 1 short — bảng trượt từ dưới lên (kiểu TikTok/YouTube Shorts)
+function ShortCommentsSheet({ short, onClose, onCount }) {
+  const { t } = useI18n();
+  const who = short.title || (short.creator?.handle ? `@${short.creator.handle}` : short.author || '');
+  return (
+    <div className="fixed inset-0 z-[300] flex items-end justify-center">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div
+        className="relative w-full sm:max-w-[520px] max-h-[72vh] flex flex-col rounded-t-[24px] border-t border-white/10 bg-[#151515] shadow-2xl anim-slide-up"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-white/10 shrink-0">
+          <span className="w-1 h-4 rounded-full bg-[#f36f21]" />
+          <MessageCircle className="w-4 h-4 text-slate-400 shrink-0" />
+          <p className="text-[13px] font-black text-white truncate flex-1">
+            {t('cmt.title')}{who ? <span className="text-stone-500 font-bold"> · {who}</span> : null}
           </p>
-        ) : null}
-        {short.title && <p className="text-[14px] font-extrabold text-white leading-snug drop-shadow line-clamp-2">{short.title}</p>}
-        {short.caption && <p className="text-[12px] text-white/75 mt-1 leading-snug line-clamp-2">{short.caption}</p>}
-        {creator?.bio && <p className="text-[11px] text-white/60 mt-1.5 line-clamp-1 italic">{creator.bio}</p>}
+          <button onClick={onClose} className="p-1.5 rounded-full hover:bg-white/10"><X className="w-4 h-4 text-slate-400" /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-4 pb-6">
+          <CommentsBox target={`short-${short.id}`} variant="short" onCount={onCount} />
+        </div>
       </div>
     </div>
   );
@@ -490,6 +612,7 @@ export default function ShortsScreen({ startId = null, onStartHandled = null } =
   const [showChal, setShowChal] = useState(false);
   const [showBoard, setShowBoard] = useState(false);
   const [chalFocus, setChalFocus] = useState(null);
+  const [stageH, setStageH] = useState(0);   // chiều cao khung chứa feed (để chặn chiều cao video)
   const listRef = useRef(null);
 
   const fetchShorts = useCallback(async () => {
@@ -527,24 +650,61 @@ export default function ShortsScreen({ startId = null, onStartHandled = null } =
     fetch(`${API_BASE}/api/challenges`).then(r => r.json()).then(d => setChallenges(d.challenges || [])).catch(() => {});
   }, [fetchShorts, fetchCreators, fetchMyProfile]);
 
+  // Đo chiều cao khung feed → truyền xuống từng short để chặn chiều cao tối đa
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const read = () => setStageH(el.clientHeight || 0);
+    read();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [shorts.length === 0]); // eslint-disable-line
+
+  // Video đang active = video lấp nhiều khung nhìn nhất (chiều cao thẻ giờ thay đổi theo tỉ lệ video)
+  const ratioMap = useRef(new Map());
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const nodes = Array.from(el.querySelectorAll('[data-short-index]'));
+    if (nodes.length === 0) return;
+    if (typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        const idx = Number(en.target.getAttribute('data-short-index'));
+        if (!Number.isFinite(idx)) return;
+        ratioMap.current.set(idx, en.isIntersecting ? en.intersectionRatio : 0);
+      });
+      let best = -1, bestR = 0;
+      ratioMap.current.forEach((r, idx) => { if (r > bestR) { bestR = r; best = idx; } });
+      if (best >= 0 && bestR > 0.2) setActiveIdx(best);
+    }, { root: el, threshold: [0, 0.2, 0.35, 0.5, 0.65, 0.8, 0.95] });
+    nodes.forEach(n => io.observe(n));
+    return () => io.disconnect();
+  }, [shorts.length, loading]);
+
+  // Cuộn tới đúng thẻ (offset tương đối trong wrapper nên không phụ thuộc chiều cao từng video)
+  const scrollToIndex = useCallback((idx) => {
+    const el = listRef.current;
+    if (!el) return;
+    const inner = el.firstElementChild;
+    const node = inner && inner.children[idx];
+    if (!node) return;
+    try {
+      el.scrollTo({ top: Math.max(0, node.offsetTop - inner.offsetTop), behavior: 'smooth' });
+    } catch {
+      el.scrollTop = Math.max(0, node.offsetTop - inner.offsetTop);
+    }
+    setActiveIdx(idx);
+  }, []);
+
   useEffect(() => {
     if (!startId || shorts.length === 0) return;
     const idx = shorts.findIndex(s => String(s.id) === String(startId));
-    if (idx > 0 && listRef.current) {
-      try {
-        listRef.current.scrollTop = idx * listRef.current.clientHeight;
-        setActiveIdx(idx);
-      } catch {}
-    }
+    if (idx > 0) scrollToIndex(idx);
     if (onStartHandled) onStartHandled();
-  }, [startId, shorts]); // eslint-disable-line
-
-  const onScroll = useCallback(() => {
-    const el = listRef.current;
-    if (!el) return;
-    const idx = Math.round(el.scrollTop / el.clientHeight);
-    setActiveIdx(Math.max(0, Math.min(idx, shorts.length - 1)));
-  }, [shorts.length]);
+  }, [startId, shorts, scrollToIndex, onStartHandled]); // eslint-disable-line
 
   const handleFollowToggle = (creatorId, isFollowing, followers) => {
     setShorts(prev => prev.map(s => {
@@ -573,17 +733,14 @@ export default function ShortsScreen({ startId = null, onStartHandled = null } =
       item = c ? { ...sh, creator: c } : { ...sh, creator: sh.creator ? { ...sh.creator, display_name: sh.creator.display_name || sh.creator.handle, bio: '' } : null };
     }
     setShorts(prev => prev.some(x => String(x.id) === String(item.id)) ? prev : [item, ...prev]);
-    if (listRef.current) listRef.current.scrollTop = 0;
     setActiveIdx(0);
+    requestAnimationFrame(() => scrollToIndex(0));
     setShowChal(false);
   };
 
   const handleSelectShort = (id) => {
     const idx = shorts.findIndex(s => String(s.id) === String(id));
-    if (idx >= 0 && listRef.current) {
-      listRef.current.scrollTop = idx * listRef.current.clientHeight;
-      setActiveIdx(idx);
-    }
+    if (idx >= 0) requestAnimationFrame(() => scrollToIndex(idx));
   };
 
   if (loading) {
@@ -681,14 +838,23 @@ export default function ShortsScreen({ startId = null, onStartHandled = null } =
       ) : (
         <div
           ref={listRef}
-          onScroll={onScroll}
           className="mx-auto px-3 sm:px-0 overflow-y-auto"
-          style={{ maxWidth: 420, height: 'calc(100vh - 265px)', minHeight: 420, scrollSnapType: 'y mandatory', scrollbarWidth: 'none' }}
+          style={{ maxWidth: 420, height: 'calc(100vh - 265px)', minHeight: 420, scrollSnapType: 'y proximity', scrollbarWidth: 'none', overscrollBehavior: 'contain' }}
         >
           <div className="space-y-3 pb-2">
             {shorts.map((s, i) => (
-              <div key={s.id} style={{ height: 'calc(100vh - 275px)', minHeight: 410 }}>
-                <ShortPlayer short={s} active={i === activeIdx} muted={muted} onToggleMute={() => setMuted(m => !m)} onAuthorClick={setSelectedCreator} onFollowToggle={handleFollowToggle} token={token} />
+              <div key={s.id} data-short-index={i} style={{ scrollSnapAlign: 'center' }}>
+                <ShortPlayer
+                  short={s}
+                  active={i === activeIdx}
+                  muted={muted}
+                  onToggleMute={() => setMuted(m => !m)}
+                  onSetMuted={(next) => setMuted(!!next)}
+                  maxH={stageH}
+                  onAuthorClick={setSelectedCreator}
+                  onFollowToggle={handleFollowToggle}
+                  token={token}
+                />
               </div>
             ))}
           </div>

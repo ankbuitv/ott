@@ -112,6 +112,12 @@ function AppContent() {
   }, [addToast]);
 
   const [activeTab, setActiveTab] = useState(() => {
+    // Deep link: ?tab=shorts (vd: chia sẻ thẳng trang Shorts) — ưu tiên hơn tab đã lưu
+    try {
+      const p = new URLSearchParams(window.location.search || (window.location.hash || '').split('?')[1] || '');
+      const tab = (p.get('tab') || '').trim();
+      if (tab) return tab;
+    } catch {}
     return localStorage.getItem('chrtv_tab') || 'channels';
   });
   const [channels, setChannels] = useState([]);

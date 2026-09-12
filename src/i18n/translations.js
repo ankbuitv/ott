@@ -381,6 +381,8 @@ const T = {
   'shorts.copied': { vi: 'Đã chép link short!', en: 'Short link copied!' },
   'shorts.mute':   { vi: 'Tắt tiếng', en: 'Mute' },
   'shorts.unmute': { vi: 'Bật tiếng', en: 'Unmute' },
+  'shorts.tap_sound': { vi: 'Chạm để bật tiếng', en: 'Tap for sound', zh: '点按开启声音', fil: 'Tapik para sa tunog', fr: 'Appuyez pour le son' },
+  'shorts.fit_video': { vi: 'vừa khung video', en: 'fit to video', zh: '适配视频尺寸', fil: 'akma sa video', fr: 'ajusté à la vidéo' },
 
   // ============== VOICE ==============
   'voice.title':   { vi: 'Tìm bằng giọng nói (VD: mở VTV1)', en: 'Voice search (e.g. open VTV1)' },

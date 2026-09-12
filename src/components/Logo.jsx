@@ -7,9 +7,17 @@ export const MAIN_LOGO_URL = 'https://i.ibb.co/VcLxwgM2/logo.png';
 export const MAIN_LOGO_SVG = '/logo.svg';
 
 function LogoMark({ className = '' }) {
+  let src = MAIN_LOGO_URL;
+  try {
+    const raw = localStorage.getItem('chrtv_active_theme_v1');
+    if (raw) {
+      const th = JSON.parse(raw);
+      if (th && th.logo_url) src = th.logo_url;
+    }
+  } catch {}
   return (
     <img
-      src={MAIN_LOGO_URL}
+      src={src}
       alt="CHRTV PLAY"
       className={`${className} object-contain`}
       loading="eager"
@@ -25,6 +33,29 @@ function LogoMark({ className = '' }) {
 
 export default function Logo({ size = 'md', showSubtext = true, className = '' }) {
   const { t } = useI18n();
+  const [themeLogo, setThemeLogo] = React.useState('');
+  React.useEffect(() => {
+    const read = () => {
+      try {
+        const raw = localStorage.getItem('chrtv_active_theme_v1');
+        if (raw) {
+          const th = JSON.parse(raw);
+          if (th && th.logo_url) { setThemeLogo(th.logo_url); return; }
+        }
+      } catch {}
+      setThemeLogo('');
+    };
+    read();
+    const onStorage = (e) => { if (!e || e.key === 'chrtv_active_theme_v1') read(); };
+    const onCustom = () => read();
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('chrtv-theme-change', onCustom);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('chrtv-theme-change', onCustom);
+    };
+  }, []);
+  const logoSrc = themeLogo || MAIN_LOGO_URL;
   const sizes = {
     sm: { wrap: 'gap-2', icon: 'w-7 h-7 sm:w-8 sm:h-8', main: 'text-[13px] sm:text-[15px]', play: 'text-[7px] sm:text-[8px] px-1 sm:px-1.5 py-0.5', sub: 'text-[7px]', reward: 'h-8' },
     md: { wrap: 'gap-2.5', icon: 'w-10 h-10', main: 'text-xl', play: 'text-[9px] px-2 py-[3px]', sub: 'text-[8px]', reward: 'h-10' },
@@ -35,7 +66,7 @@ export default function Logo({ size = 'md', showSubtext = true, className = '' }
   return (
     <div className={`flex items-center ${sizes.wrap} ${className}`}>
       <img
-        src={MAIN_LOGO_URL}
+        src={logoSrc}
         alt="CHRTV PLAY"
         className={`${sizes.icon} shrink-0 object-contain transition-transform duration-200 hover:scale-105`}
         style={{ filter: 'drop-shadow(0 4px 14px rgba(243,111,33,.4))' }}
@@ -44,7 +75,7 @@ export default function Logo({ size = 'md', showSubtext = true, className = '' }
         onError={(e) => {
           if (!e.currentTarget.dataset.fallback) {
             e.currentTarget.dataset.fallback = '1';
-            e.currentTarget.src = MAIN_LOGO_SVG;
+            e.currentTarget.src = e.currentTarget.src === logoSrc && logoSrc !== MAIN_LOGO_URL ? MAIN_LOGO_URL : MAIN_LOGO_SVG;
           }
         }}
       />

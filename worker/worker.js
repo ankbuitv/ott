@@ -1091,6 +1091,9 @@ const SCHEMA_STATEMENTS = [
   //   trong channels thì mọi tuỳ chỉnh của admin sẽ bay theo đợt refresh.
   `CREATE TABLE IF NOT EXISTS site_config (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER DEFAULT 0)`,
   `CREATE TABLE IF NOT EXISTS channel_watermark (channel_id TEXT PRIMARY KEY, wm TEXT NOT NULL, updated_at INTEGER DEFAULT 0)`,
+  // ---- CHỦ ĐỀ TRANG TRÍ THEO SỰ KIỆN (VD: FIFA ASEAN Cup) ----
+  // Admin tạo chủ đề (màu, banner, hiệu ứng) + kích hoạt → site-wide auto apply.
+  `CREATE TABLE IF NOT EXISTS site_themes (id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT UNIQUE NOT NULL, name TEXT NOT NULL, emoji TEXT DEFAULT '', description TEXT DEFAULT '', primary_color TEXT DEFAULT '#f36f21', secondary_color TEXT DEFAULT '#1a1c24', accent_color TEXT DEFAULT '#ffb37a', background_url TEXT DEFAULT '', banner_url TEXT DEFAULT '', logo_url TEXT DEFAULT '', confetti TEXT DEFAULT 'none', css TEXT DEFAULT '', is_active INTEGER DEFAULT 0, starts_at TEXT DEFAULT '', ends_at TEXT DEFAULT '', sort_order INTEGER DEFAULT 0, created_by INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
 ];
 
 let schemaReady = false;
@@ -1289,6 +1292,22 @@ async function handleAPI(path, request, env, ctx) {
       const { results } = await env.DB.prepare("SELECT id, title, subtitle, image_url, link_type, link_value FROM events WHERE is_active = 1 AND (starts_at = '' OR starts_at IS NULL OR starts_at <= ?) AND (ends_at = '' OR ends_at IS NULL OR ends_at >= ?) AND (blocked_regions IS NULL OR blocked_regions = '' OR INSTR(',' || blocked_regions || ',', ?) = 0) ORDER BY sort_order ASC, id DESC LIMIT 20").bind(now, now, "," + cc + ",").all();
       return json({ success: true, events: results || [] }, 200, request, env);
     } catch { return json({ success: true, events: [] }, 200, request, env); }
+  }
+  // ---- CHỦ ĐỀ TRANG TRÍ (site_themes): public active themes ----
+  if (path === "/api/themes" && request.method === "GET") {
+    await ensureSchema(env);
+    try {
+      const now = new Date().toISOString().slice(0, 19).replace("T", " ");
+      const { results } = await env.DB.prepare("SELECT * FROM site_themes WHERE is_active = 1 AND (starts_at = '' OR starts_at IS NULL OR starts_at <= ?) AND (ends_at = '' OR ends_at IS NULL OR ends_at >= ?) ORDER BY sort_order ASC, id DESC LIMIT 20").bind(now, now).all();
+      const themes = (results || []).map((r) => ({
+        id: r.id, key: r.key, name: r.name, emoji: r.emoji || '', description: r.description || '',
+        primary_color: r.primary_color || '#f36f21', secondary_color: r.secondary_color || '#1a1c24',
+        accent_color: r.accent_color || '#ffb37a', background_url: r.background_url || '',
+        banner_url: r.banner_url || '', logo_url: r.logo_url || '', confetti: r.confetti || 'none',
+        css: r.css || '', starts_at: r.starts_at || '', ends_at: r.ends_at || '', sort_order: r.sort_order || 0,
+      }));
+      return json({ success: true, themes, active: themes[0] || null }, 200, request, env);
+    } catch { return json({ success: true, themes: [], active: null }, 200, request, env); }
   }
   if (path === "/api/sports-videos" && request.method === "GET") {
     await ensureSchema(env);
@@ -3815,6 +3834,63 @@ async function handleAdmin(path, request, env, ctx) {
     const { id } = await request.json().catch(() => ({}));
     if (!id) return json({ error: "Thiếu id" }, 400, request, env);
     await env.DB.prepare("DELETE FROM sports_videos WHERE id = ?").bind(id).run();
+    return json({ success: true }, 200, request, env);
+  }
+  // ---- CHỦ ĐỀ TRANG TRÍ (site_themes) — CRUD admin ----
+  if (path === "/admin/themes" && request.method === "GET") {
+    const { results } = await env.DB.prepare("SELECT * FROM site_themes ORDER BY sort_order ASC, id DESC").all();
+    return json({ success: true, themes: results || [] }, 200, request, env);
+  }
+  if (path === "/admin/themes" && request.method === "POST") {
+    const b = await request.json().catch(() => ({}));
+    if (!b.key || !b.name) return json({ error: "Thiếu key/tên chủ đề" }, 400, request, env);
+    const key = String(b.key).trim().toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 40);
+    if (!key) return json({ error: "Key không hợp lệ" }, 400, request, env);
+    try {
+      await env.DB.prepare("INSERT INTO site_themes (key, name, emoji, description, primary_color, secondary_color, accent_color, background_url, banner_url, logo_url, confetti, css, is_active, starts_at, ends_at, sort_order, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(
+        key,
+        String(b.name).slice(0, 80),
+        String(b.emoji || "").slice(0, 8),
+        String(b.description || "").slice(0, 500),
+        String(b.primary_color || "#f36f21").slice(0, 20),
+        String(b.secondary_color || "#1a1c24").slice(0, 20),
+        String(b.accent_color || "#ffb37a").slice(0, 20),
+        String(b.background_url || "").slice(0, 500),
+        String(b.banner_url || "").slice(0, 500),
+        String(b.logo_url || "").slice(0, 500),
+        String(b.confetti || "none").slice(0, 20),
+        String(b.css || "").slice(0, 4000),
+        b.is_active === 0 ? 0 : 1,
+        String(b.starts_at || "").slice(0, 19),
+        String(b.ends_at || "").slice(0, 19),
+        parseInt(b.sort_order) || 0,
+        adminUser ? adminUser.id : 0
+      ).run();
+    } catch (e) {
+      if (String(e?.message || "").includes("UNIQUE")) return json({ error: "Key chủ đề đã tồn tại" }, 409, request, env);
+      throw e;
+    }
+    try { await logAudit(env, adminUser ? adminUser.id : 0, "theme.create", { key }); } catch {}
+    return json({ success: true, key }, 200, request, env);
+  }
+  if (path === "/admin/themes" && request.method === "PUT") {
+    const b = await request.json().catch(() => ({}));
+    if (!b.id) return json({ error: "Thiếu id" }, 400, request, env);
+    const key = b.key ? String(b.key).trim().toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 40) : null;
+    await env.DB.prepare("UPDATE site_themes SET key = COALESCE(?, key), name = COALESCE(?, name), emoji = COALESCE(?, emoji), description = COALESCE(?, description), primary_color = COALESCE(?, primary_color), secondary_color = COALESCE(?, secondary_color), accent_color = COALESCE(?, accent_color), background_url = COALESCE(?, background_url), banner_url = COALESCE(?, banner_url), logo_url = COALESCE(?, logo_url), confetti = COALESCE(?, confetti), css = COALESCE(?, css), is_active = COALESCE(?, is_active), starts_at = COALESCE(?, starts_at), ends_at = COALESCE(?, ends_at), sort_order = COALESCE(?, sort_order) WHERE id = ?").bind(
+      key, b.name ?? null, b.emoji ?? null, b.description ?? null,
+      b.primary_color ?? null, b.secondary_color ?? null, b.accent_color ?? null,
+      b.background_url ?? null, b.banner_url ?? null, b.logo_url ?? null,
+      b.confetti ?? null, b.css ?? null, b.is_active ?? null, b.starts_at ?? null, b.ends_at ?? null, b.sort_order ?? null, b.id
+    ).run();
+    try { await logAudit(env, adminUser ? adminUser.id : 0, "theme.update", { id: b.id }); } catch {}
+    return json({ success: true }, 200, request, env);
+  }
+  if (path === "/admin/themes" && request.method === "DELETE") {
+    const { id } = await request.json().catch(() => ({}));
+    if (!id) return json({ error: "Thiếu id" }, 400, request, env);
+    await env.DB.prepare("DELETE FROM site_themes WHERE id = ?").bind(id).run();
+    try { await logAudit(env, adminUser ? adminUser.id : 0, "theme.delete", { id }); } catch {}
     return json({ success: true }, 200, request, env);
   }
   // Feedback báo lỗi kênh (1 chạm từ player)

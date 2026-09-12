@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Heart, Share2, Volume2, VolumeX, Play, Eye, BadgeCheck, Users, Video, X, UserPlus, UserCheck, Edit3, Upload, Link2, Image as ImageIcon, Star, Trophy, Medal, Flame, MessageCircle } from 'lucide-react';
+import { Heart, Share2, Volume2, VolumeX, Play, Eye, BadgeCheck, Users, Video, X, UserPlus, UserCheck, Edit3, Upload, Link2, Image as ImageIcon, Star, Trophy, Medal, Flame, MessageCircle, Maximize, Minimize, AlertTriangle, RefreshCw } from 'lucide-react';
+import Hls from 'hls.js';
 import { useI18n } from '../contexts/I18nContext';
 import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { API_BASE } from '../services/config';
+import { isHlsUrl } from '../services/streamGuard';
 import { authHeaders } from '../services/session';
 import { fetchComments } from '../services/social';
 import CommentsBox from './CommentsBox';
@@ -16,7 +18,7 @@ function fmtCount(n) {
 }
 
 // Chiều cao nhỏ nhất của một thẻ short (video siêu ngang vẫn giữ được khung xem)
-const SHORT_MIN_H = 260;
+const SHORT_MIN_H = 300;
 
 // Đổi tỉ lệ w/h thành nhãn dễ đọc (9:16, 16:9, 1:1...)
 function fmtRatio(r) {
@@ -43,16 +45,28 @@ function CreatorAvatar({ creator, author, size = 24, onClick }) {
 }
 
 // 1 thẻ short — tự theo tỉ lệ thật của video (ngang 16:9 hay dọc 9:16 đều không bị crop)
-function ShortPlayer({ short, active, muted, onToggleMute, onSetMuted, onAuthorClick, onFollowToggle, token, maxH = 640 }) {
+function ShortPlayer({ short, active, muted, onToggleMute, onSetMuted, onAuthorClick, onFollowToggle, token, maxH = 0 }) {
   const { t } = useI18n();
   const { addToast } = useToast();
   const videoRef = useRef(null);
   const wrapRef = useRef(null);
+  const frameRef = useRef(null);
   const [playing, setPlaying] = useState(false);
   const [stageW, setStageW] = useState(0);       // chiều rộng khung chứa (đo bằng ResizeObserver)
   const [ratio, setRatio] = useState(0);         // videoWidth / videoHeight — 0 = chưa đo được
   const [showCmt, setShowCmt] = useState(false); // bảng bình luận
   const [cmtCount, setCmtCount] = useState(0);
+  // (#shorts-fix) "nhiều short mở không lên": link .m3u8 không phát được bằng thẻ
+  // <video> thường trên Chrome/WebView -> cần hls.js; nguồn chặn CORS/http ->
+  // retry qua /api/proxy của web. Lỗi thật thì hiện bảng báo + nút thử lại.
+  const videoUrl = String(short.video_url || '');
+  const isHls = isHlsUrl(videoUrl);
+  const hlsSupported = typeof window !== 'undefined' && Hls.isSupported();
+  const proxyUrl = videoUrl ? `${API_BASE}/api/proxy?url=${encodeURIComponent(videoUrl)}` : '';
+  const [playErr, setPlayErr] = useState(!videoUrl);
+  const [loadKey, setLoadKey] = useState(0);     // bump để thử lại sau lỗi
+  const srcStageRef = useRef(0);                 // 0 = nguồn gốc, 1 = qua /api/proxy
+  const [isFs, setIsFs] = useState(false);       // phóng to toàn màn hình
   const [liked, setLiked] = useState(() => {
     try { return (JSON.parse(localStorage.getItem('chrtv_short_likes') || '[]')).includes(short.id); } catch { return false; }
   });
@@ -84,11 +98,85 @@ function ShortPlayer({ short, active, muted, onToggleMute, onSetMuted, onAuthorC
     return () => { on = false; };
   }, [active, short.id]);
 
+  // HLS (.m3u8): gắn hls.js cho short đang active (Chrome/WebView không phát
+  // native HLS). Manifest lỗi mạng (CORS/mixed-content/nguồn sập) -> đổi sang
+  // /api/proxy của web đúng 1 lần; vẫn lỗi mới báo lỗi.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !active || !isHls || !hlsSupported || !videoUrl) return;
+    let dead = false;
+    let hls = null;
+    let stage = 0; // 0 = nguồn gốc, 1 = qua /api/proxy
+    const attach = (url) => {
+      try { if (hls) hls.destroy(); } catch {}
+      hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false,
+        maxBufferLength: 20,
+        manifestLoadingMaxRetry: 2,
+        levelLoadingMaxRetry: 3,
+        fragLoadingMaxRetry: 4,
+      });
+      hls.attachMedia(v);
+      hls.on(Hls.Events.MEDIA_ATTACHED, () => { if (!dead) hls.loadSource(url); });
+      hls.on(Hls.Events.ERROR, (e, d) => {
+        if (dead || !d || !d.fatal) return;
+        if (d.type === Hls.ErrorTypes.NETWORK_ERROR && stage === 0 && proxyUrl) {
+          stage = 1;
+          srcStageRef.current = 1;
+          attach(proxyUrl);
+          return;
+        }
+        if (d.type === Hls.ErrorTypes.MEDIA_ERROR) { try { hls.recoverMediaError(); } catch {} return; }
+        setPlayErr(true);
+      });
+    };
+    attach(videoUrl);
+    return () => { dead = true; try { if (hls) hls.destroy(); } catch {} };
+  }, [active, videoUrl, isHls, hlsSupported, proxyUrl, loadKey]); // eslint-disable-line
+
+  // Phóng to toàn màn hình 1 short (trả lời "xem nhỏ quá" — mobile/desktop)
+  useEffect(() => {
+    const onFsChg = () => setIsFs(!!document.fullscreenElement && document.fullscreenElement === frameRef.current);
+    document.addEventListener('fullscreenchange', onFsChg);
+    return () => document.removeEventListener('fullscreenchange', onFsChg);
+  }, []);
+  const toggleFs = () => {
+    try {
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+      else if (frameRef.current && frameRef.current.requestFullscreen) frameRef.current.requestFullscreen().catch(() => {});
+    } catch {}
+  };
+
+  // mp4 / HLS-native (Safari-iOS): lỗi nguồn -> thử lại qua /api/proxy 1 lần
+  const onVideoTagError = () => {
+    if (!active) return;
+    if (srcStageRef.current > 0 || !proxyUrl) { setPlayErr(true); return; }
+    srcStageRef.current = 1;
+    const v = videoRef.current;
+    if (!v) return;
+    v.src = proxyUrl;
+    try { v.load(); } catch {}
+    v.play().catch(() => {});
+  };
+
+  const retryPlay = () => {
+    srcStageRef.current = 0;
+    setPlayErr(!videoUrl);
+    setPlaying(false);
+    const v = videoRef.current;
+    if (v && !(isHls && hlsSupported) && videoUrl) {
+      v.src = videoUrl;
+      try { v.load(); } catch {}
+    }
+    setLoadKey(k => k + 1);
+  };
+
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
     // Mở bảng bình luận thì tạm dừng video, đóng lại thì chạy tiếp
-    if (active && !showCmt) {
+    if (active && !showCmt && !playErr) {
       v.muted = muted; // luôn tôn trọng trạng thái mute hiện tại — KHÔNG tự unmute bao giờ
       v.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
       if (!viewedRef.current) {
@@ -99,7 +187,7 @@ function ShortPlayer({ short, active, muted, onToggleMute, onSetMuted, onAuthorC
       v.pause();
       setPlaying(false);
     }
-  }, [active, short.id, showCmt]); // eslint-disable-line
+  }, [active, short.id, showCmt, playErr, loadKey]); // eslint-disable-line
 
   useEffect(() => { if (videoRef.current) videoRef.current.muted = muted; }, [muted]);
 
@@ -180,7 +268,7 @@ function ShortPlayer({ short, active, muted, onToggleMute, onSetMuted, onAuthorC
 
   // ---- Kích thước khung theo tỉ lệ thật của video ----
   const r = ratio > 0 ? ratio : 9 / 16;                                  // mặc định dọc tới khi biết tỉ lệ
-  const limitH = maxH > 0 ? maxH : 640;
+  const limitH = maxH > 0 ? maxH : 720;
   const h = stageW > 0 ? Math.max(SHORT_MIN_H, Math.min(limitH, stageW / r)) : SHORT_MIN_H;
   const w = stageW > 0 ? Math.min(stageW, Math.round(h * r)) : undefined;
   const compact = h < 420;                                               // video ngang → UI gọn lại
@@ -188,8 +276,8 @@ function ShortPlayer({ short, active, muted, onToggleMute, onSetMuted, onAuthorC
   const btnIcon = compact ? 'w-4 h-4' : 'w-5 h-5';
 
   return (
-    <div ref={wrapRef} className="relative w-full flex items-center justify-center" style={{ height: h }}>
-      <div className="relative overflow-hidden bg-black sm:rounded-3xl sm:border sm:border-white/10" style={{ width: w, height: h }}>
+    <div ref={wrapRef} className="relative w-full flex items-center justify-center" style={isFs ? { height: '100%' } : { height: h }}>
+      <div ref={frameRef} className={`relative overflow-hidden bg-black ${isFs ? 'rounded-none' : 'sm:rounded-3xl sm:border sm:border-white/10'}`} style={isFs ? { width: '100%', height: '100%' } : { width: w, height: h }}>
         {/* Nền mờ lấy từ thumbnail — lấp khoảng trống khi video không cùng tỉ lệ khung */}
         {short.thumb_url ? (
           <div
@@ -199,13 +287,14 @@ function ShortPlayer({ short, active, muted, onToggleMute, onSetMuted, onAuthorC
         ) : null}
         <video
           ref={videoRef}
-          src={short.video_url}
+          src={isHls && hlsSupported ? undefined : (videoUrl || undefined)}
           poster={short.thumb_url || undefined}
           loop
           playsInline
-          preload={active ? 'auto' : 'metadata'}
+          preload={active ? 'auto' : 'none'}
           onClick={togglePlay}
           onLoadedMetadata={onMeta}
+          onError={onVideoTagError}
           controlsList="nodownload noplaybackrate noremoteplayback"
           disablePictureInPicture
           onContextMenu={(e) => e.preventDefault()}
@@ -213,7 +302,19 @@ function ShortPlayer({ short, active, muted, onToggleMute, onSetMuted, onAuthorC
         />
         <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(180deg, rgba(0,0,0,.35) 0%, transparent 25%, transparent 55%, rgba(0,0,0,.85) 100%)' }}></div>
 
-        {!playing && (
+        {/* Lỗi phát (link chết / nguồn chặn): báo rõ ràng + thử lại thay vì màn hình đen */}
+        {playErr && (
+          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/85 p-6 text-center">
+            <AlertTriangle className="w-10 h-10 text-[#ff9a3d] mb-3" />
+            <p className="text-white font-black text-[14px]">Không phát được video</p>
+            <p className="text-white/50 text-[11px] mt-1 mb-4 line-clamp-2">{short.title || short.caption || `Short #${short.id}`}</p>
+            <button onClick={retryPlay} className="px-4 py-2 rounded-full bg-[#f36f21] text-white text-xs font-bold flex items-center gap-1.5 hover:brightness-110">
+              <RefreshCw className="w-3.5 h-3.5" /> Thử lại
+            </button>
+          </div>
+        )}
+
+        {!playing && !playErr && (
           <button onClick={togglePlay} className="absolute inset-0 z-10 flex items-center justify-center" aria-label="Play">
             <span className="w-16 h-16 rounded-full bg-black/50 border-2 border-white/85 flex items-center justify-center anim-pop-fast">
               <Play className="w-7 h-7 text-white fill-current ml-1" />
@@ -221,10 +322,15 @@ function ShortPlayer({ short, active, muted, onToggleMute, onSetMuted, onAuthorC
           </button>
         )}
 
-        {/* Nút mute + gợi ý "chạm để bật tiếng" (không tự bật tiếng bao giờ) */}
-        <button onClick={onToggleMute} title={muted ? t('shorts.unmute') : t('shorts.mute')} className="absolute top-3 right-3 z-20 p-2 rounded-full bg-black/55 text-white/90 hover:bg-black/80">
-          {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-        </button>
+        {/* Nút mute + phóng to toàn màn hình + gợi ý "chạm để bật tiếng" */}
+        <div className="absolute top-3 right-3 z-20 flex flex-col gap-2">
+          <button onClick={onToggleMute} title={muted ? t('shorts.unmute') : t('shorts.mute')} className="p-2 rounded-full bg-black/55 text-white/90 hover:bg-black/80">
+            {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+          </button>
+          <button onClick={toggleFs} title="Phóng to toàn màn hình" className="p-2 rounded-full bg-black/55 text-white/90 hover:bg-black/80">
+            {isFs ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+          </button>
+        </div>
         {muted && ratio > 0 && (
           <div className="absolute top-3 left-3 z-20 flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-black/60 border border-white/15 pointer-events-none">
             <VolumeX className="w-3.5 h-3.5 text-white" />
@@ -839,7 +945,7 @@ export default function ShortsScreen({ startId = null, onStartHandled = null } =
         <div
           ref={listRef}
           className="mx-auto px-3 sm:px-0 overflow-y-auto"
-          style={{ maxWidth: 420, height: 'calc(100vh - 265px)', minHeight: 420, scrollSnapType: 'y proximity', scrollbarWidth: 'none', overscrollBehavior: 'contain' }}
+          style={{ maxWidth: 'min(94vw, 560px)', height: 'calc(100dvh - 265px)', minHeight: 460, scrollSnapType: 'y proximity', scrollbarWidth: 'none', overscrollBehavior: 'contain' }}
         >
           <div className="space-y-3 pb-2">
             {shorts.map((s, i) => (

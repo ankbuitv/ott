@@ -994,7 +994,7 @@ const SCHEMA_STATEMENTS = [
   `CREATE TABLE IF NOT EXISTS user_settings (user_id INTEGER PRIMARY KEY, theme TEXT DEFAULT 'dark', default_quality TEXT DEFAULT 'auto', buffer_goal INTEGER DEFAULT 10, language TEXT DEFAULT 'vi', parental_pin TEXT DEFAULT '', parental_enabled INTEGER DEFAULT 0, settings_json TEXT DEFAULT '{}', updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS user_favorites (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, channel_id TEXT NOT NULL, sort_order INTEGER DEFAULT 0, group_name TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, channel_id))`,
   `CREATE TABLE IF NOT EXISTS watch_history (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, channel_id TEXT NOT NULL, last_position INTEGER DEFAULT 0, watch_count INTEGER DEFAULT 1, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(user_id, channel_id))`,
-  `CREATE TABLE IF NOT EXISTS channels (id INTEGER PRIMARY KEY AUTOINCREMENT, channel_id TEXT UNIQUE NOT NULL, name TEXT NOT NULL, logo TEXT DEFAULT '', group_title TEXT DEFAULT '', stream_url TEXT NOT NULL, catchup_type TEXT DEFAULT 'append', catchup_days INTEGER DEFAULT 7, is_active INTEGER DEFAULT 1, user_agent TEXT DEFAULT '', referer TEXT DEFAULT '', manifest_type TEXT DEFAULT '', license_type TEXT DEFAULT '', clear_key_id TEXT DEFAULT '', clear_key TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+  `CREATE TABLE IF NOT EXISTS channels (id INTEGER PRIMARY KEY AUTOINCREMENT, channel_id TEXT UNIQUE NOT NULL, name TEXT NOT NULL, logo TEXT DEFAULT '', group_title TEXT DEFAULT '', stream_url TEXT NOT NULL, catchup_type TEXT DEFAULT 'append', catchup_days INTEGER DEFAULT 7, is_active INTEGER DEFAULT 1, user_agent TEXT DEFAULT '', referer TEXT DEFAULT '', manifest_type TEXT DEFAULT '', license_type TEXT DEFAULT '', clear_key_id TEXT DEFAULT '', clear_key TEXT DEFAULT '', stream_token TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
   `CREATE TABLE IF NOT EXISTS channel_ratings (id INTEGER PRIMARY KEY AUTOINCREMENT, channel_id TEXT NOT NULL, user_id INTEGER NOT NULL, rating INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(channel_id, user_id))`,
   `CREATE TABLE IF NOT EXISTS notifications (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, body TEXT NOT NULL, type TEXT DEFAULT 'info', channel_id TEXT DEFAULT '', url TEXT DEFAULT '', is_read INTEGER DEFAULT 0, target TEXT DEFAULT 'all', created_by INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, expires_at INTEGER DEFAULT 0)`,
   `CREATE TABLE IF NOT EXISTS analytics (id INTEGER PRIMARY KEY AUTOINCREMENT, event TEXT NOT NULL, user_id INTEGER DEFAULT 0, channel_id TEXT DEFAULT '', data TEXT DEFAULT '{}', ip TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
@@ -1190,6 +1190,9 @@ async function ensureSchema(env) {
       "ALTER TABLE channels ADD COLUMN is_sponsored INTEGER DEFAULT 0",
       // BẢO VỆ LUỒNG: 1 = tự mã hoá AES-128 khi phát qua proxy, 0 = bỏ qua kênh này
       "ALTER TABLE channels ADD COLUMN protect INTEGER DEFAULT 1",
+      // TOKEN KÊNH (.mpd/DASH): admin nhập ở Admin → "Token .mpd"; server tự ghép
+      // ?token=<giá trị> vào URL phát của kênh (xem applyChannelStreamToken)
+      "ALTER TABLE channels ADD COLUMN stream_token TEXT DEFAULT ''",
       "ALTER TABLE events ADD COLUMN blocked_regions TEXT DEFAULT ''",
       "ALTER TABLE ads ADD COLUMN blocked_regions TEXT DEFAULT ''",
       "ALTER TABLE movie_sources ADD COLUMN blocked_regions TEXT DEFAULT ''",
@@ -1452,17 +1455,32 @@ function streamUrlIsPublic(env) {
   return String((env && env.PUBLIC_STREAM_URL) || "") === "1";
 }
 
-// ========== CHẾ ĐỘ PHÁT LUỒNG: DIRECT (mặc định) vs PROXY ==========
-// Vì sao bỏ proxy làm mặc định: hầu hết nguồn IPTV (FPT, TV360, VTVgo…) chặn
+// ========== CHẾ ĐỘ PHÁT LUỒNG: AUTO (mặc định) / PROXY / DIRECT ==========
+// Vì sao từng bỏ proxy làm mặc định: nhiều nguồn IPTV (FPT, TV360, VTVgo…) chặn
 // dải IP egress của Cloudflare Workers nên khi stream đi qua /api/stream/proxy
-// người xem chỉ thấy lỗi 403/451 hoặc đứng hình. Chế độ DIRECT: client vẫn PHẢI
-// gọi /api/stream/token (đăng nhập, gói cước, xem thử 5 phút, chống flood đều
-// kiểm tra phía server như trước) nhưng server trả THẲNG URL gốc để client phát
-// trực tiếp — nguồn thấy IP của người xem nên không bị chặn.
-// Muốn bật lại proxy (giấu link gốc khỏi DevTools): set biến STREAM_MODE=proxy.
-function streamProxyEnabled(env) {
+// người xem chỉ thấy lỗi 403/451 hoặc đứng hình — đủ thứ lớp bảo vệ mà không
+// xem được là vô nghĩa.
+//
+// Từ 2026-09-12 CHẾ ĐỘ AUTO là mặc định — "proxy trước, tụt về direct khi cần":
+//   - /api/stream/token vẫn kiểm tra đầy đủ (đăng nhập, gói cước, xem thử 5
+//     phút, chống flood) rồi trả `proxy_url` — LINK GỐC GIẤU khỏi DevTools/m3u8
+//     sniffer (không còn .m3u8 thật trên Network, mọi URI con đã seal opaque).
+//   - Khi proxy bị NGUỒN chặn, proxy trả 502 UPSTREAM_UNAVAILABLE (kèm header
+//     X-CHRTV-Upstream-Error) — client gọi lại /api/stream/token?direct=1
+//     (cùng JWT, chạy lại đúng mọi lớp kiểm tra) để nhận URL gốc phát trực
+//     tiếp. Mỗi kênh chỉ "thử proxy" đúng 1 lần/phiên rồi nhớ luôn phát direct.
+//   - STREAM_MODE=proxy  : luôn proxy (giấu link tuyệt đối, chấp nhận kênh bị chặn)
+//   - STREAM_MODE=direct : luôn trả URL gốc ngay (chế độ 2026-09 — link lộ rõ,
+//                          m3u8 sniffer nhìn thấy URL thật — CHÍNH là lý do
+//                          "bật bảo vệ mà sniffer vẫn dò ra link")
+function streamMode(env) {
   const v = String((env && env.STREAM_MODE) || "").trim().toLowerCase();
-  return v === "proxy" || v === "1" || v === "on" || v === "true";
+  if (v === "proxy" || v === "1" || v === "on" || v === "true") return "proxy";
+  if (v === "direct" || v === "0" || v === "off" || v === "false") return "direct";
+  return "auto";
+}
+function streamProxyEnabled(env) {
+  return streamMode(env) !== "direct";
 }
 
 // ============ BẢO VỆ LUỒNG: mã hoá AES-128 tại proxy + license server ============
@@ -2082,8 +2100,13 @@ async function handleProxy(request, env) {
     const o = String(request.headers.get("X-CHRTV-Upstream-UA") || "").replace(/[\r\n]+/g, " ").trim().slice(0, 300);
     if (o) proxyUA = o;
   } catch {}
+  // Forward Range để video/mp4 đi qua proxy vẫn tua được (shorts, xem lại)
+  const rngHeader = request.headers.get("Range");
   const fetchOpts = {
-    headers: { "User-Agent": proxyUA, "Accept": "*/*", "Referer": target.origin + "/" },
+    headers: {
+      "User-Agent": proxyUA, "Accept": "*/*", "Referer": target.origin + "/",
+      ...(rngHeader ? { Range: rngHeader } : {}),
+    },
     signal: AbortSignal.timeout(8000),
     redirect: "manual",
   };
@@ -2136,7 +2159,14 @@ async function proxyResponse(resp, targetUrl, proxyBase, request, env) {
   const upCT = resp.headers.get("Content-Type");
   if (upCT) headers.set("Content-Type", upCT.split(";")[0]);
 
-  if (!isPlaylist) return new Response(resp.body, { status: resp.status, headers });
+  if (!isPlaylist) {
+    // Giữ lại header range/length — mp4 đi qua proxy vẫn tua được bình thường
+    for (const h of ["Content-Range", "Accept-Ranges", "Content-Length"]) {
+      const v = resp.headers.get(h);
+      if (v) headers.set(h, v);
+    }
+    return new Response(resp.body, { status: resp.status, headers });
+  }
 
   const text = await resp.text();
   const rewritten = rewriteM3U8(text, targetUrl, proxyBase);
@@ -2257,8 +2287,11 @@ async function streamSid(request, env) {
   const ua = (request.headers.get("User-Agent") || "").slice(0, 80);
   return (await sha256hex(ip + "|" + ua + "|" + streamTokenSecret(env))).slice(0, 16);
 }
-function streamErr(obj, status, request, env) {
-  return new Response(JSON.stringify(obj), { status, headers: jsonHeaders(request, env) });
+function streamErr(obj, status, request, env, extraHeaders) {
+  return new Response(JSON.stringify(obj), {
+    status,
+    headers: jsonHeaders(request, env, extraHeaders),
+  });
 }
 
 // ---- GATING theo nhóm kênh (5 gói): Standard=VTV, Recreational=+BOX, Ultimate=+SPORT, Elite=+FILM, Signature=tất cả ----
@@ -2541,6 +2574,29 @@ async function applyUpstreamCredential(env, ch, target) {
   return target.toString();
 }
 
+// ---------- TOKEN KÊNH (.mpd / DASH) ----------
+// Admin cấu hình token riêng cho từng kênh DASH trong Admin → "Token .mpd".
+// Khi phát, server tự ghép ?token=<giá trị> vào URL manifest:
+//   stream_url  = https://host/dashdrm/api/stream/GETdashdrm/abc/manifest.mpd
+//   stream_token= Ken1402@
+//   -> URL phát = https://host/.../manifest.mpd?token=Ken1402@
+// Client không cần biết/cấu hình gì thêm — token nằm trong URL cuối (chế độ
+// direct) hoặc được seal bên trong opaque token (chế độ proxy).
+function isMpdUrl(u) {
+  return /\.mpd(\?|$|#)/i.test(String(u || ""));
+}
+function applyChannelStreamToken(urlStr, channel) {
+  const tok = String((channel && channel.stream_token) || "").trim();
+  if (!tok) return urlStr;
+  if (!isMpdUrl(urlStr)) return urlStr; // chỉ áp cho kênh DASH (.mpd)
+  // Mã hoá TỐI THIỂU — giữ nguyên ký tự an toàn (@ : / ! ~) vì nguồn có thể so
+  // khớp chuỗi gốc; chỉ mã những ký tự phá cấu trúc query.
+  const enc = tok.replace(/[%&#+\s]/g, (c) => ({ "%": "%25", "&": "%26", "#": "%23", "+": "%2B", " ": "%20" }[c]));
+  // URL đã có sẵn ?token=... (admin dán cả token vào link) -> ghi đè giá trị mới
+  if (/(^|[?&])token=/i.test(urlStr)) return urlStr.replace(/([?&])token=[^&]*/i, `$1token=${enc}`);
+  return `${urlStr}${urlStr.includes("?") ? "&" : "?"}token=${enc}`;
+}
+
 async function handleStreamToken(request, env) {
   // 1) BẮT BUỘC phiên JWT (user hoặc guest) — P0-B: X-CHRTV-Client không còn là "xác thực"
   const auth = await getAuth(request, env);
@@ -2574,6 +2630,9 @@ async function handleStreamToken(request, env) {
   const q = new URL(request.url).searchParams;
   const channelId = q.get("channel") || "";
   const uParam = q.get("u") || "";
+  // AUTO MODE: client xin phát trực tiếp sau khi proxy bị nguồn chặn
+  // (UPSTREAM_UNAVAILABLE) — vẫn đi qua ĐẦY ĐỦ các lớp kiểm tra bên dưới.
+  const forceDirect = q.get("direct") === "1";
   const atParam = q.get("at");
   let at = 0;
   if (atParam) {
@@ -2602,6 +2661,10 @@ async function handleStreamToken(request, env) {
   } else {
     return json({ error: "Thiếu tham số channel hoặc u" }, 400, request, env);
   }
+
+  // TOKEN KÊNH (.mpd/DASH): admin cấu hình token riêng (Admin → "Token .mpd")
+  // -> server tự ghép ?token=<giá trị> vào URL phát. Client không cần biết token.
+  if (channel) targetUrl = applyChannelStreamToken(targetUrl, channel);
 
   // (B) VÙNG QUỐC GIA BLOCKLIST — chặn cứng tại nguồn phát
   const geoCountry = viewerCountry(request);
@@ -2646,11 +2709,16 @@ async function handleStreamToken(request, env) {
     previewInfo = st;
   }
 
-  // 3b) CHẾ ĐỘ DIRECT (mặc định): trả thẳng URL gốc sau khi đã qua mọi lớp
-  //     kiểm tra ở trên. Nguồn stream thấy IP của người xem (không phải IP
-  //     Cloudflare) nên hết bị chặn. Xem thử vẫn trừ quota 60s/lần xin và
-  //     client quay lại xin URL mới mỗi phút -> hết 5 phút là chặn như cũ.
-  if (!streamProxyEnabled(env)) {
+  // 3b) DIRECT (STREAM_MODE=direct, hoặc AUTO-FALLBACK ?direct=1): trả thẳng
+  //     URL gốc sau khi đã qua mọi lớp kiểm tra ở trên. Nguồn stream thấy IP
+  //     của người xem (không phải IP Cloudflare) nên hết bị chặn. Xem thử vẫn
+  //     trừ quota 60s/lần xin và client quay lại xin URL mới mỗi phút
+  //     -> hết 5 phút là chặn như cũ.
+  //     Riêng kênh DASH (.mpd) ở chế độ AUTO cũng phát TRỰC TIẾP luôn: proxy chỉ
+  //     rewrite được playlist m3u8, MPD XML đi qua nguyên xi nên segment URL
+  //     tương đối sẽ resolve nhầm về /api/stream/proxy -> vỡ. Phát trực tiếp
+  //     (kèm ?token= nếu admin đã cấu hình) là đường chạy đúng cho DASH.
+  if (!streamProxyEnabled(env) || forceDirect || (streamMode(env) === "auto" && isMpdUrl(targetUrl))) {
     const nowD = Math.floor(Date.now() / 1000);
     let previewOutD = null;
     let rotateAtD = 0;
@@ -2670,6 +2738,7 @@ async function handleStreamToken(request, env) {
     return json({
       success: true,
       direct: true,
+      mode: "direct",
       url: targetUrl,
       exp: nowD + 3600,
       rotate_at: rotateAtD, // 0 = URL gốc không hết hạn, không cần xoay
@@ -2717,6 +2786,9 @@ async function handleStreamToken(request, env) {
     iat: now, exp: payload.exp,
     rotate_at: payload.exp - (previewInfo ? 15 : STREAM_TOKEN_GRACE), ttl,
     proxy_url: `/api/stream/proxy?t=${t}`,
+    mode: streamMode(env),
+    // AUTO: cho client biết nó được phép xin ?direct=1 khi proxy bị nguồn chặn
+    ...(streamMode(env) === "auto" ? { fallback: "direct" } : {}),
     ...(previewOut ? { preview: previewOut } : {}),
   }, 200, request, env);
 }
@@ -2813,9 +2885,16 @@ async function handleStreamProxy(request, env) {
       resp = r2.resp;
       upstreamHeaders["User-Agent"] = r2.ua;
     }
-    if (!resp) return json({ error: "Stream unavailable" }, 502, request, env);
+    if (!resp) return streamErr({ error: "UPSTREAM_UNAVAILABLE", message: "Nguồn phát không phản hồi." }, 502, request, env, { "X-CHRTV-Upstream-Error": "0" });
+    // Nguồn từ chối phục vụ qua IP Cloudflare (403/401/451…) hoặc lỗi phía
+    // nguồn — báo RÕ ràng để client chế độ auto chuyển sang phát trực tiếp,
+    // thay vì trả 403 trông như token hết hạn rồi client xoay token vô ích.
+    if (resp.status >= 400) {
+      try { resp.body && resp.body.cancel && resp.body.cancel().catch(() => {}); } catch {}
+      return streamErr({ error: "UPSTREAM_UNAVAILABLE", upstream: resp.status, message: "Nguồn phát không phục vụ qua proxy — chuyển sang phát trực tiếp." }, 502, request, env, { "X-CHRTV-Upstream-Error": String(resp.status) });
+    }
   } catch {
-    return json({ error: "Stream unavailable" }, 502, request, env);
+    return streamErr({ error: "UPSTREAM_UNAVAILABLE", message: "Không kết nối được nguồn phát." }, 502, request, env, { "X-CHRTV-Upstream-Error": "0" });
   }
 
   const ct = (resp.headers.get("Content-Type") || "").toLowerCase();
@@ -4194,9 +4273,12 @@ async function handleAdmin(path, request, env, ctx) {
   if (path === "/admin/channels" && request.method === "POST") {
     const ch = await request.json().catch(() => ({}));
     if (!ch.channel_id || !ch.name || !ch.stream_url) return json({ error: "Thiếu thông tin kênh" }, 400, request, env);
+    // UPSERT thay vì REPLACE để KHÔNG đè mất stream_token ("Token .mpd") đã cấu
+    // hình sẵn khi body không truyền token (NULLIF giữ giá trị cũ nếu rỗng).
     try {
-      await env.DB.prepare("INSERT OR REPLACE INTO channels (channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days, is_active, user_agent, referer, manifest_type, license_type, clear_key_id, clear_key, blocked_regions, is_sponsored, protect) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(ch.channel_id, ch.name, ch.logo || "", ch.group_title || "", ch.stream_url, ch.catchup_type || "append", ch.catchup_days || 7, ch.is_active !== undefined ? ch.is_active : 1, (ch.user_agent || "").slice(0, 300), (ch.referer || "").slice(0, 300), (ch.manifest_type || "").slice(0, 16), (ch.license_type || "").slice(0, 32), (ch.clear_key_id || ch.clearKeyId || "").slice(0, 64), (ch.clear_key || ch.clearKey || "").slice(0, 64), cleanRegionList(ch.blocked_regions).join(","), ch.is_sponsored ? 1 : 0,
-      (ch.protect === 0 || ch.protect === false || ch.protect === "0") ? 0 : 1).run();
+      await env.DB.prepare("INSERT INTO channels (channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days, is_active, user_agent, referer, manifest_type, license_type, clear_key_id, clear_key, blocked_regions, is_sponsored, protect, stream_token) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(channel_id) DO UPDATE SET name = excluded.name, logo = excluded.logo, group_title = excluded.group_title, stream_url = excluded.stream_url, catchup_type = excluded.catchup_type, catchup_days = excluded.catchup_days, is_active = excluded.is_active, user_agent = excluded.user_agent, referer = excluded.referer, manifest_type = excluded.manifest_type, license_type = excluded.license_type, clear_key_id = excluded.clear_key_id, clear_key = excluded.clear_key, blocked_regions = excluded.blocked_regions, is_sponsored = excluded.is_sponsored, protect = excluded.protect, stream_token = COALESCE(NULLIF(excluded.stream_token, ''), channels.stream_token), created_at = CURRENT_TIMESTAMP").bind(ch.channel_id, ch.name, ch.logo || "", ch.group_title || "", ch.stream_url, ch.catchup_type || "append", ch.catchup_days || 7, ch.is_active !== undefined ? ch.is_active : 1, (ch.user_agent || "").slice(0, 300), (ch.referer || "").slice(0, 300), (ch.manifest_type || "").slice(0, 16), (ch.license_type || "").slice(0, 32), (ch.clear_key_id || ch.clearKeyId || "").slice(0, 64), (ch.clear_key || ch.clearKey || "").slice(0, 64), cleanRegionList(ch.blocked_regions).join(","), ch.is_sponsored ? 1 : 0,
+      (ch.protect === 0 || ch.protect === false || ch.protect === "0") ? 0 : 1,
+      String(ch.stream_token ?? "").replace(/[\r\n\t\u0000-\u001f]+/g, "").trim().slice(0, 300)).run();
     } catch {
       await env.DB.prepare("INSERT OR REPLACE INTO channels (channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").bind(ch.channel_id, ch.name, ch.logo || "", ch.group_title || "", ch.stream_url, ch.catchup_type || "append", ch.catchup_days || 7, ch.is_active !== undefined ? ch.is_active : 1).run();
     }
@@ -4221,6 +4303,64 @@ async function handleAdmin(path, request, env, ctx) {
     try { _chanCache = null; } catch {}
     await logAudit(env, adminUser?.id || 0, "channel.protect", { channel_id, protect: val });
     return json({ success: true, channel_id, protect: val }, 200, request, env);
+  }
+
+  // ========== TOKEN KÊNH (.mpd / DASH) — admin cấu hình ?token= cho từng kênh ==========
+  // Admin → "Token .mpd": chọn kênh có link .mpd, nhập token (vd Ken1402@) —
+  // khi phát, server tự ghép ?token=<giá trị> vào URL manifest (xem
+  // applyChannelStreamToken). Token KHÔNG trả về client/API công khai — endpoint
+  // GET chỉ trả trạng thái + bản preview che bớt (Ke••••2@).
+  if (path === "/admin/channel-token" && request.method === "GET") {
+    try {
+      const { results } = await env.DB.prepare("SELECT channel_id, name, group_title, stream_url, stream_token FROM channels WHERE is_active = 1").all();
+      const maskTok = (t) => {
+        t = String(t || "");
+        if (!t) return "";
+        if (t.length <= 4) return "•".repeat(Math.max(4, t.length));
+        return t.slice(0, 2) + "•".repeat(Math.min(10, t.length - 4)) + t.slice(-2);
+      };
+      const channels = (results || []).map((c) => ({
+        channel_id: c.channel_id,
+        name: c.name,
+        group_title: c.group_title || "",
+        is_mpd: isMpdUrl(c.stream_url),
+        has_token: !!c.stream_token,
+        token_preview: maskTok(c.stream_token),
+      })).sort((a, b) => ((b.is_mpd ? 1 : 0) - (a.is_mpd ? 1 : 0)) || String(a.name).localeCompare(String(b.name), "vi"));
+      return json({ success: true, channels }, 200, request, env);
+    } catch (e) {
+      return json({ error: "Lỗi đọc danh sách kênh" }, 500, request, env);
+    }
+  }
+  if (path === "/admin/channel-token" && request.method === "POST") {
+    const b = await request.json().catch(() => ({}));
+    const channelId = String(b.channel_id || "").trim();
+    if (!channelId) return json({ error: "Thiếu channel_id" }, 400, request, env);
+    // Token: bỏ ký tự điều khiển/dòng mới, tối đa 300 ký tự. Chuỗi rỗng = XOÁ token.
+    const tok = String(b.token || "").replace(/[\r\n\t\u0000-\u001f]+/g, "").trim().slice(0, 300);
+    try {
+      const { results } = await env.DB.prepare("SELECT 1 AS x FROM channels WHERE channel_id = ?").bind(channelId).all();
+      if (!results || results.length === 0) return json({ error: "Không tìm thấy kênh" }, 404, request, env);
+      await env.DB.prepare("UPDATE channels SET stream_token = ? WHERE channel_id = ?").bind(tok, channelId).run();
+    } catch (e) {
+      return json({ error: "Lỗi lưu token" }, 500, request, env);
+    }
+    try { _chanCache = null; } catch {}
+    await logAudit(env, adminUser?.id || 0, "channel.token", { channel_id: channelId, has_token: !!tok });
+    return json({ success: true, channel_id: channelId, has_token: !!tok }, 200, request, env);
+  }
+  if (path === "/admin/channel-token" && request.method === "DELETE") {
+    const b = await request.json().catch(() => ({}));
+    const channelId = String(b.channel_id || "").trim();
+    if (!channelId) return json({ error: "Thiếu channel_id" }, 400, request, env);
+    try {
+      await env.DB.prepare("UPDATE channels SET stream_token = '' WHERE channel_id = ?").bind(channelId).run();
+    } catch (e) {
+      return json({ error: "Lỗi xoá token" }, 500, request, env);
+    }
+    try { _chanCache = null; } catch {}
+    await logAudit(env, adminUser?.id || 0, "channel.token", { channel_id: channelId, has_token: false });
+    return json({ success: true, channel_id: channelId, has_token: false }, 200, request, env);
   }
 
   if (path === "/admin/channels" && request.method === "DELETE") {
@@ -5292,9 +5432,14 @@ async function writeChannels(env, list) {
     const fullValues = list.map(ch => [ch.channel_id, ch.name, ch.logo || "", ch.group_title || "Khác", ch.stream_url, ch.catchup_type || "append", ch.catchup_days || 7, ch.user_agent || "", ch.referer || "", ch.manifest_type || "", ch.license_type || "", ch.clear_key_id || ch.clearKeyId || "", ch.clear_key || ch.clearKey || ""]);
     const baseValues = list.map(ch => [ch.channel_id, ch.name, ch.logo || "", ch.group_title || "Khác", ch.stream_url, ch.catchup_type || "append", ch.catchup_days || 7]);
     let ok = false;
+    // UPSERT (ON CONFLICT DO UPDATE) thay vì INSERT OR REPLACE: REPLACE xoá cả hàng
+    // rồi chèn lại nên các cột ADMIN tự cấu hình (stream_token của "Token .mpd",
+    // protect của "Bảo vệ luồng") bị reset mỗi lần import M3U. DO UPDATE chỉ đè
+    // các cột lấy từ M3U, giữ lại phần còn lại. created_at vẫn cập nhật để bước
+    // "ẩn kênh đã gỡ khỏi M3U" (so created_at < startedAt) hoạt động như cũ.
     // Schema mới: kèm UA + DRM
     try {
-      const stmt = env.DB.prepare("INSERT OR REPLACE INTO channels (channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days, is_active, user_agent, referer, manifest_type, license_type, clear_key_id, clear_key) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)");
+      const stmt = env.DB.prepare("INSERT INTO channels (channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days, is_active, user_agent, referer, manifest_type, license_type, clear_key_id, clear_key) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?) ON CONFLICT(channel_id) DO UPDATE SET name = excluded.name, logo = excluded.logo, group_title = excluded.group_title, stream_url = excluded.stream_url, catchup_type = excluded.catchup_type, catchup_days = excluded.catchup_days, is_active = 1, user_agent = excluded.user_agent, referer = excluded.referer, manifest_type = excluded.manifest_type, license_type = excluded.license_type, clear_key_id = excluded.clear_key_id, clear_key = excluded.clear_key, created_at = CURRENT_TIMESTAMP");
       await runAll(fullValues.map(v => stmt.bind(...v)));
       ok = "full";
     } catch (e) {
@@ -5302,7 +5447,7 @@ async function writeChannels(env, list) {
     }
     if (!ok) {
       try {
-        const stmt = env.DB.prepare("INSERT OR REPLACE INTO channels (channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, 1)");
+        const stmt = env.DB.prepare("INSERT INTO channels (channel_id, name, logo, group_title, stream_url, catchup_type, catchup_days, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, 1) ON CONFLICT(channel_id) DO UPDATE SET name = excluded.name, logo = excluded.logo, group_title = excluded.group_title, stream_url = excluded.stream_url, catchup_type = excluded.catchup_type, catchup_days = excluded.catchup_days, is_active = 1, created_at = CURRENT_TIMESTAMP");
         await runAll(baseValues.map(v => stmt.bind(...v)));
         ok = "base";
       } catch (e2) {

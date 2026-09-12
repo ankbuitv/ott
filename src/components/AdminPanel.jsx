@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Users, BarChart3, Bell, Radio, Send, Eye, TrendingUp, Calendar, Plus, Trash2, Save, X, ScrollText, Ban, KeyRound, ShieldCheck, ChevronDown, Flag, Clapperboard, Crown, PartyPopper, Video } from 'lucide-react';
+import { Settings, Users, BarChart3, Bell, Radio, Send, Eye, TrendingUp, Calendar, Plus, Trash2, Save, X, ScrollText, Ban, KeyRound, ShieldCheck, ChevronDown, Flag, Clapperboard, Crown, PartyPopper, Video, FileKey, Search } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { API_BASE } from '../services/config';
@@ -37,6 +37,12 @@ export default function AdminPanel({ onClose, asPage = false }) {
   const [audit, setAudit] = useState([]);
   const [creds, setCreds] = useState([]);
   const [credForm, setCredForm] = useState({ channel_id: '', upstream_token: '' });
+  // Token kênh .mpd (DASH): danh sách kênh + trạng thái token, form gán token
+  const [chanTokens, setChanTokens] = useState([]);
+  const [chanTokForm, setChanTokForm] = useState({ channel_id: '', token: '' });
+  const [chanTokFilter, setChanTokFilter] = useState('');
+  const [chanTokMpdOnly, setChanTokMpdOnly] = useState(true);
+  const reloadChanTokens = () => fetch(`${BASE}/admin/channel-token`, { headers }).then(r => r.json()).then(d => setChanTokens(d.channels || [])).catch(() => {});
   const [feedback, setFeedback] = useState([]);
   const [shorts, setShorts] = useState([]);
   const [shortCreators, setShortCreators] = useState([]);
@@ -84,6 +90,7 @@ export default function AdminPanel({ onClose, asPage = false }) {
     fetch(`${BASE}/admin/users`, { headers }).then(r => r.json()).then(d => setUsers(d.users || [])).catch(() => {});
     fetch(`${BASE}/admin/audit`, { headers }).then(r => r.json()).then(d => setAudit(d.audit || [])).catch(() => {});
     fetch(`${BASE}/admin/stream-credentials`, { headers }).then(r => r.json()).then(d => setCreds(d.credentials || [])).catch(() => {});
+    reloadChanTokens();
     fetch(`${BASE}/admin/feedback`, { headers }).then(r => r.json()).then(d => setFeedback(d.feedback || [])).catch(() => {});
     fetch(`${BASE}/admin/shorts`, { headers }).then(r => r.json()).then(d => setShorts(d.shorts || [])).catch(() => {});
     fetch(`${BASE}/admin/short-creators`, { headers }).then(r => r.json()).then(d => setShortCreators(d.creators || [])).catch(() => {});
@@ -245,7 +252,7 @@ export default function AdminPanel({ onClose, asPage = false }) {
         </div>
 
         <div className="flex border-b border-slate-800/40 overflow-x-auto">
-          {[{ id: 'stats', label: 'Thống kê', icon: BarChart3 }, ...EXTRA_TABS, { id: 'users', label: 'Người dùng', icon: Users }, { id: 'audit', label: 'Nhật ký', icon: ScrollText }, { id: 'notify', label: 'Thông báo', icon: Bell }, { id: 'broadcast', label: 'Broadcast', icon: Send }, { id: 'epg', label: 'EPG kênh', icon: Calendar }, { id: 'analytics', label: 'Analytics', icon: TrendingUp }, { id: 'credentials', label: 'Chìa khoá stream', icon: KeyRound }, { id: 'feedback', label: 'Báo lỗi', icon: Flag }, { id: 'shorts', label: 'Shorts', icon: Clapperboard }, { id: 'plans', label: 'Gói cước', icon: Crown }, { id: 'events', label: 'Sự kiện', icon: PartyPopper }, { id: 'sportsvids', label: 'Video TT', icon: Video }].map(t => (
+          {[{ id: 'stats', label: 'Thống kê', icon: BarChart3 }, ...EXTRA_TABS, { id: 'users', label: 'Người dùng', icon: Users }, { id: 'audit', label: 'Nhật ký', icon: ScrollText }, { id: 'notify', label: 'Thông báo', icon: Bell }, { id: 'broadcast', label: 'Broadcast', icon: Send }, { id: 'epg', label: 'EPG kênh', icon: Calendar }, { id: 'analytics', label: 'Analytics', icon: TrendingUp }, { id: 'credentials', label: 'Chìa khoá stream', icon: KeyRound }, { id: 'streamtoken', label: 'Token .mpd', icon: FileKey }, { id: 'feedback', label: 'Báo lỗi', icon: Flag }, { id: 'shorts', label: 'Shorts', icon: Clapperboard }, { id: 'plans', label: 'Gói cước', icon: Crown }, { id: 'events', label: 'Sự kiện', icon: PartyPopper }, { id: 'sportsvids', label: 'Video TT', icon: Video }].map(t => (
             <button key={t.id} onClick={() => setTab(t.id)} className={`flex items-center gap-1.5 px-4 py-2 text-[11px] font-semibold transition-all whitespace-nowrap ${tab === t.id ? 'text-[#ff9a3d] border-b-2 border-[#f36f21]' : 'text-slate-500 hover:text-white'}`}>
               <t.icon className="w-3 h-3" /> {t.label}
             </button>
@@ -941,6 +948,127 @@ export default function AdminPanel({ onClose, asPage = false }) {
                   </div>
                 );
               })}
+            </div>
+          )}
+          {tab === 'streamtoken' && (
+            <div className="space-y-3">
+              <div className="rounded-lg border border-[#f36f21]/30 bg-[#f36f21]/[0.06] p-3">
+                <p className="text-[11px] text-amber-200/90 leading-relaxed">
+                  <b>Token cho kênh .mpd (DASH)</b> — chọn kênh có link <code>.mpd</code> rồi nhập token
+                  (vd <code>Ken1402@</code>). Khi có người xem, server <b>tự ghép</b> <code>?token=…</code> vào URL manifest:<br />
+                  <code className="text-[10px] break-all">https://host/.../manifest.mpd?token=Ken1402@</code><br />
+                  Token <b>không trả về</b> app hay API công khai (danh sách dưới chỉ hiện bản che <code>Ke••••2@</code>).
+                  Tính năng chỉ tác dụng với kênh <b>.mpd</b> — kênh .m3u8 bỏ qua.
+                </p>
+              </div>
+
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  const cid = chanTokForm.channel_id;
+                  if (!cid) { addToast('Chọn kênh trước đã.', 'warning'); return; }
+                  if (!chanTokForm.token.trim()) { addToast('Nhập token (vd Ken1402@).', 'warning'); return; }
+                  const ch = chanTokens.find(c => c.channel_id === cid);
+                  if (ch && !ch.is_mpd && !confirm('Kênh này KHÔNG có link .mpd — token sẽ không có tác dụng (chỉ dùng cho kênh DASH). Vẫn lưu?')) return;
+                  const r = await fetch(`${BASE}/admin/channel-token`, { method: 'POST', headers, body: JSON.stringify({ channel_id: cid, token: chanTokForm.token }) });
+                  const d = await r.json();
+                  if (d.success) {
+                    addToast(`Đã lưu token cho ${cid} — phát thử để kiểm tra nhé.`, 'success');
+                    setChanTokForm({ channel_id: '', token: '' });
+                    reloadChanTokens();
+                  } else addToast(d.error || 'Lỗi', 'error');
+                }}
+                className="grid grid-cols-1 sm:grid-cols-[1.4fr_1fr_auto] gap-2 items-stretch"
+              >
+                <select
+                  value={chanTokForm.channel_id}
+                  onChange={(e) => setChanTokForm({ ...chanTokForm, channel_id: e.target.value })}
+                  className="bg-slate-900/60 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-[#f36f21]/50"
+                >
+                  <option value="">— Chọn kênh .mpd —</option>
+                  {chanTokens.filter(c => c.is_mpd).map(c => (
+                    <option key={c.channel_id} value={c.channel_id}>{c.name} · {c.channel_id}{c.has_token ? ' · ✓ có token' : ''}</option>
+                  ))}
+                  {chanTokens.some(c => !c.is_mpd) && (
+                    <optgroup label="Kênh khác (không phải .mpd)">
+                      {chanTokens.filter(c => !c.is_mpd).map(c => (
+                        <option key={c.channel_id} value={c.channel_id}>{c.name} · {c.channel_id}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+                <input
+                  value={chanTokForm.token}
+                  onChange={(e) => setChanTokForm({ ...chanTokForm, token: e.target.value })}
+                  placeholder="Token (vd Ken1402@)"
+                  className="bg-slate-900/60 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-[#f36f21]/50"
+                />
+                <button type="submit" className="flex items-center justify-center gap-1.5 px-4 py-2 bg-[#f36f21] hover:brightness-110 text-white text-xs font-bold rounded-lg">
+                  <Save className="w-3.5 h-3.5" /> Lưu token
+                </button>
+              </form>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative flex-1 min-w-[180px]">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+                  <input
+                    value={chanTokFilter}
+                    onChange={(e) => setChanTokFilter(e.target.value)}
+                    placeholder="Tìm kênh / nhóm..."
+                    className="w-full pl-9 pr-3 py-2 bg-slate-900/60 border border-slate-700/50 rounded-lg text-xs text-white placeholder-slate-600 focus:outline-none focus:border-[#f36f21]/50"
+                  />
+                </div>
+                <label className="flex items-center gap-1.5 text-[11px] text-slate-400 cursor-pointer select-none">
+                  <input type="checkbox" checked={chanTokMpdOnly} onChange={(e) => setChanTokMpdOnly(e.target.checked)} className="accent-[#f36f21]" />
+                  Chỉ kênh .mpd
+                </label>
+                <span className="text-[10px] text-slate-500">
+                  {chanTokens.filter(c => c.is_mpd).length} kênh .mpd · {chanTokens.filter(c => c.has_token).length} đã có token
+                </span>
+              </div>
+
+              <div className="space-y-1.5 max-h-[46vh] overflow-y-auto pr-1">
+                {chanTokens
+                  .filter(c => (!chanTokMpdOnly || c.is_mpd)
+                    && (!chanTokFilter.trim()
+                      || (c.name + ' ' + c.channel_id + ' ' + c.group_title).toLowerCase().includes(chanTokFilter.trim().toLowerCase())))
+                  .map(c => (
+                    <div key={c.channel_id} className={`flex items-center gap-2.5 rounded-lg px-3 py-2 border ${c.has_token ? 'bg-emerald-950/20 border-emerald-700/30' : 'bg-slate-900/40 border-slate-800/30'}`}>
+                      <FileKey className={`w-3.5 h-3.5 shrink-0 ${c.has_token ? 'text-emerald-400' : 'text-slate-600'}`} />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[11px] font-bold text-white truncate">
+                          {c.name}
+                          {c.is_mpd && <span className="ml-1.5 px-1.5 py-0.5 rounded bg-violet-600/25 border border-violet-500/40 text-[8px] font-black text-violet-300 align-middle">MPD</span>}
+                        </p>
+                        <p className="text-[9px] text-slate-500 truncate font-mono">{c.channel_id} · {c.group_title}</p>
+                      </div>
+                      <span className={`shrink-0 text-[10px] font-mono ${c.has_token ? 'text-emerald-300' : 'text-slate-600'}`}>
+                        {c.has_token ? c.token_preview : '— chưa có —'}
+                      </span>
+                      <button
+                        onClick={() => { setChanTokForm({ channel_id: c.channel_id, token: '' }); }}
+                        className="shrink-0 px-2.5 py-1 rounded-md text-[10px] font-bold bg-slate-800 border border-slate-700 text-slate-300 hover:text-white"
+                      >Gán token</button>
+                      {c.has_token && (
+                        <button
+                          onClick={async () => {
+                            if (!confirm('Xoá token của ' + c.channel_id + '?')) return;
+                            await fetch(`${BASE}/admin/channel-token`, { method: 'DELETE', headers, body: JSON.stringify({ channel_id: c.channel_id }) });
+                            addToast('Đã xoá token.', 'success');
+                            reloadChanTokens();
+                          }}
+                          className="p-1.5 text-slate-500 hover:text-red-400 shrink-0" title="Xoá token"
+                        ><Trash2 className="w-3.5 h-3.5" /></button>
+                      )}
+                    </div>
+                  ))}
+                {chanTokens.filter(c => (!chanTokMpdOnly || c.is_mpd)
+                  && (!chanTokFilter.trim() || (c.name + ' ' + c.channel_id + ' ' + c.group_title).toLowerCase().includes(chanTokFilter.trim().toLowerCase()))).length === 0 && (
+                  <p className="text-xs text-slate-500 text-center py-6">
+                    Không có kênh .mpd nào{chanTokFilter.trim() ? ' khớp từ khóa' : ''} — thêm kênh DASH (link .mpd) vào playlist trước nhé.
+                  </p>
+                )}
+              </div>
             </div>
           )}
           {tab === 'credentials' && (

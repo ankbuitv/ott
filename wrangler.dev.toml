@@ -19,8 +19,10 @@ BREVO_SENDER_EMAIL = "noreply@chrtv.app"
 # Ở local chỉ cần domain giả để test plumbing — không phải nguồn thật.
 MOVIE_FRAME_SRC = "https://player.example-partner.test"
 # ---- BẢO VỆ LUỒNG (chỉ local) ----
-# proxy: luồng đi qua worker để thử mã hoá (production đang mặc định DIRECT)
-STREAM_MODE = "proxy"
+# auto: proxy trước (giấu link, mã hoá AES-128) — nguồn chặn IP Cloudflare thì
+# client tự fallback ?direct=1 (đúng như production mặc định từ 2026-09-12).
+# Muốn test tuyệt đối luôn-proxy: đổi thành "proxy".
+STREAM_MODE = "auto"
 PROTECT = "on"
 # "/lic" = relative -> player gọi cùng origin, vite proxy sang worker (xem vite.config.js)
 LICENSE_BASE = "/lic"

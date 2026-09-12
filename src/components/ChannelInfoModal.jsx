@@ -84,7 +84,7 @@ export default function ChannelInfoModal({ channel, epgNow, epgNext, isFavorite,
           </button>
 
           <img
-            src={channel.logo || 'https://i.ibb.co/HDmcxzMK/Gemini-Generated-Image-v7i9yav7i9yav7i9-removebg-preview.png'}
+            src={channel.logo || 'https://i.ibb.co/VcLxwgM2/logo.png'}
             alt={channel.name}
             className="w-20 h-20 object-contain mx-auto rounded-2xl bg-slate-900 p-2 border border-slate-800/50 mb-3"
             onError={e => { e.target.style.display = 'none'; }}

@@ -22,8 +22,8 @@ self.addEventListener('push', (event) => {
     } catch {}
     await self.registration.showNotification(title, {
       body,
-      icon: 'https://i.ibb.co/HDmcxzMK/Gemini-Generated-Image-v7i9yav7i9yav7i9-removebg-preview.png',
-      badge: 'https://i.ibb.co/HDmcxzMK/Gemini-Generated-Image-v7i9yav7i9yav7i9-removebg-preview.png',
+      icon: 'https://i.ibb.co/VcLxwgM2/logo.png',
+      badge: 'https://i.ibb.co/VcLxwgM2/logo.png',
       tag: 'chrtv-' + Date.now(),
       data: { url },
     });

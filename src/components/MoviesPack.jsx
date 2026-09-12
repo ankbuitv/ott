@@ -365,6 +365,7 @@ export function AdvancedFilters({ open, onClose, onApply, onClear, current }) {
 // (#5) Đang hot tại 🇻🇳 (top kênh theo quốc gia từ heartbeat watch_cc)
 // ---------------------------------------------------------------------
 export function HotCountryRow({ onOpenChannel }) {
+  const { t } = useI18n();
   const { addToast } = useToast();
   const [cc] = useState(() => (currentCountry() || 'VN').toUpperCase());
   const [top, setTop] = useState(null);

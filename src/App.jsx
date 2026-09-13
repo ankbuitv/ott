@@ -327,6 +327,7 @@ function AppContent() {
       addToast(`${t('app.watching')} ${channel.name}`, 'channel');
     } catch (e) {
       const code = e?.code || String(e?.message || '');
+      const msg = e?.message || '';
       if (code === 'LOGIN_REQUIRED') {
         promptLogin(catchup
           ? t('app.need_login_catchup')
@@ -337,8 +338,16 @@ function AppContent() {
       } else if (code === 'PLAN_REQUIRED') {
         addToast(t('app.plan_needed', { name: channel.name }), 'error');
         setActiveTab('plans');
+      } else if (code === 'CATCHUP_EXPIRED' || msg.includes('quá') && msg.includes('ngày')) {
+        addToast(msg || `Chương trình đã quá hạn lưu trữ (${channel.catchup_days || 7} ngày)`, 'info');
+      } else if (code === 'CATCHUP_NOT_SUPPORTED') {
+        addToast(msg || 'Kênh này không hỗ trợ xem lại', 'info');
+      } else if (code === 'CATCHUP_FUTURE') {
+        addToast(msg || 'Chương trình chưa phát', 'info');
+      } else if (code === 'TOKEN_ERROR' && catchup) {
+        addToast(msg || 'Không phát được chương trình xem lại — nguồn có thể không hỗ trợ catchup. Thử kênh khác?', 'error');
       } else if (code !== 'NO_SESSION') {
-        addToast(t('app.stream_fail'), 'error');
+        addToast(msg || t('app.stream_fail'), 'error');
       }
     }
   }, [addToast, promptLogin, t, settings.kidBedtimeEnabled, settings.kidBedtimeStart, settings.kidBedtimeEnd]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -416,6 +425,11 @@ function AppContent() {
       promptLogin(t('app.need_login_catchup'));
       return;
     }
+    // Kênh không hỗ trợ catchup
+    if (Number(channel?.catchup_days || 0) <= 0) {
+      addToast('Kênh này không hỗ trợ xem lại — thử kênh khác có nhãn "Xem lại" nhé!', 'info');
+      return;
+    }
     // Catchup cũng phải đúng gói của kênh đó
     if (!planAllows(effPlan, channel?.group_title)) {
       addToast(t('app.plan_needed', { name: channel.name }), 'error');
@@ -424,8 +438,23 @@ function AppContent() {
     }
     let at = 0;
     try { at = Math.floor(parseEpgDate(program?.start).getTime() / 1000); } catch {}
+    if (!at) {
+      addToast('Không xác định được thời gian chương trình — thử chương trình khác', 'error');
+      return;
+    }
+    // Kiểm tra chương trình quá cũ so với catchup_days
+    const days = Number(channel?.catchup_days || 7);
+    const ageSec = Math.floor(Date.now() / 1000) - at;
+    if (ageSec > days * 86400 + 3600) {
+      addToast(`Chương trình đã quá ${days} ngày — không còn lưu trữ để xem lại`, 'info');
+      return;
+    }
+    if (ageSec < -300) {
+      addToast('Chương trình chưa phát — đặt nhắc lịch nhé!', 'info');
+      return;
+    }
     openChannel(channel, { catchup: program, at });
-  }, [addToast, effPlan, guestMode, promptLogin, openChannel]);
+  }, [addToast, effPlan, guestMode, promptLogin, openChannel, t]);
 
   const handleToggleFavorite = useCallback(async (channelId) => {
     const isFav = favorites.includes(channelId);

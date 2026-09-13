@@ -188,13 +188,17 @@ export default function EpgGridTimeline({
     const isLiveNow = prog._startTs <= Date.now() && prog._stopTs >= Date.now();
     const isSoon = !isPast && !isLiveNow && prog._startTs <= Date.now() + 5 * 60 * 1000;
     if (isPast) {
+      if (Number(activeChannel.catchup_days || 0) <= 0) {
+        addToast('Kênh này không hỗ trợ xem lại — thử kênh khác nhé!', 'info');
+        return;
+      }
       if (onPlayCatchup) onPlayCatchup(activeChannel, prog);
     } else if (isLiveNow || isSoon) {
       if (onSelectChannel) onSelectChannel(activeChannel);
     } else {
       toggleRemind(activeChannel, prog);
     }
-  }, [activeChannel, onPlayCatchup, onSelectChannel, toggleRemind]);
+  }, [activeChannel, onPlayCatchup, onSelectChannel, toggleRemind, addToast]);
 
   return (
     <div className="flex flex-col h-full bg-[#0b0b0e] text-slate-100 overflow-hidden">

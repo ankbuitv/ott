@@ -1,14 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import shaka from 'shaka-player';
 import Hls from 'hls.js';
-import { Play, Pause, Volume2, VolumeX, Maximize, Search, Heart, Radio, Clock, AlertTriangle, RefreshCw, Tv, ChevronDown, ChevronUp, LayoutGrid, List, MonitorPlay, Film, Trophy, Boxes, Globe, Star, Filter, X, Zap, Users, Wrench, History, ZoomIn, ChevronsRight } from 'lucide-react';
+import { Play, Pause, Volume2, VolumeX, Maximize, Search, Heart, Radio, Clock, AlertTriangle, RefreshCw, Tv, ChevronDown, ChevronUp, LayoutGrid, List, MonitorPlay, Film, Trophy, Boxes, Globe, Star, Filter, X, Zap, Users, Wrench, History, ZoomIn, ChevronsRight, Settings, Hd, Languages, Captions, Monitor } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { PartyModal } from './Pack48Ui';
 import { useI18n } from '../contexts/I18nContext';
 import { getHomePrefs } from '../services/prefs';
 import { parseEpgDate, formatTimeHHMM, calculateProgramProgress } from '../utils/dateUtils';
 import { maskScores } from '../utils/spoiler';
-import { isHlsUrl, isProxiedStreamUrl, getRotateAtMs, refreshStreamToken, makeStreamRequestFilter, applyStreamClientHeaders, fallbackToDirectUrl, isDashChannel } from '../services/streamGuard';
+import { isHlsUrl, isProxiedStreamUrl, getRotateAtMs, getCatchupAt, refreshStreamToken, makeStreamRequestFilter, applyStreamClientHeaders, fallbackToDirectUrl, isDashChannel } from '../services/streamGuard';
 import { isCriticalShakaError } from '../services/telemetry';
 import useVideoZoom from '../hooks/useVideoZoom';
 import StreamWatermark from './StreamWatermark';
@@ -37,18 +37,27 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
   const [vol, setVol] = useState(100);
   const [buffering, setBuffering] = useState(true);
   const [error, setError] = useState(null);
-  // Phóng to: Vừa khung / Phóng to (lấp khung) / Kéo giãn — lưu theo máy
   const zoom = useVideoZoom();
-  // Bảng điều khiển: hiện khi hover (CSS), khi focus bàn phím, và khi chạm
-  // vào video (TV/remote + mobile không có hover) — tự ẩn sau 3.5s
   const [ctrlOn, setCtrlOn] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingsTab, setSettingsTab] = useState('quality');
   const ctrlTimer = useRef(null);
   const flashCtrl = useCallback(() => {
     setCtrlOn(true);
     if (ctrlTimer.current) clearTimeout(ctrlTimer.current);
-    ctrlTimer.current = setTimeout(() => setCtrlOn(false), 3500);
+    ctrlTimer.current = setTimeout(() => setCtrlOn(false), 4000);
   }, []);
   useEffect(() => () => { if (ctrlTimer.current) clearTimeout(ctrlTimer.current); }, []);
+
+  // quality/audio/subtitle
+  const [hlsLevels, setHlsLevels] = useState([]);
+  const [hlsLevel, setHlsLevel] = useState(-1);
+  const [shakaTracks, setShakaTracks] = useState([]);
+  const [selectedTrack, setSelectedTrack] = useState(-1);
+  const [audioTracks, setAudioTracks] = useState([]);
+  const [selectedAudio, setSelectedAudio] = useState(-1);
+  const [textTracks, setTextTracks] = useState([]);
+  const [selectedText, setSelectedText] = useState(-1);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -58,17 +67,14 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
     setBuffering(true);
     const proxied = isProxiedStreamUrl(streamUrl);
     const isHls = isHlsUrl(streamUrl) || proxied;
-    // Kênh DASH (.mpd): lỗi shaka RECOVERABLE là chuyện thường (token/segment),
-    // không phải kênh chết -> đừng hiện màn "lỗi" cho người xem.
     const dash = isDashChannel(channel, streamUrl);
     let rotateTimer = null;
-    // AUTO MODE: proxy bị NGUỒN chặn (502 UPSTREAM_UNAVAILABLE) -> xin URL gốc
-    // phát trực tiếp cho kênh này (đúng 1 lần mỗi lần mở, nhớ cả phiên)
     let directTried = false;
     const tryDirectFallback = async (hlsOrNull) => {
       if (directTried || !proxied || !channel) return false;
       directTried = true;
-      const fresh = await fallbackToDirectUrl(channel).catch(() => "");
+      const atStored = getCatchupAt(channel.channel_id) || 0;
+      const fresh = await fallbackToDirectUrl(channel, atStored).catch(() => "");
       if (cancelled || !fresh) return false;
       if (hlsOrNull) hlsOrNull.loadSource(fresh);
       else { video.src = fresh; video.play().catch(() => {}); }
@@ -79,17 +85,16 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
       try { if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; } } catch {}
       try { if (shakaRef.current) { shakaRef.current.destroy(); shakaRef.current = null; } } catch {}
     };
-    // Xoay URL phát trước khi hết hạn (phiên xem thử / URL proxy TTL ngắn;
-    // URL direct thông thường rotate_at = 0 -> thoát ngay)
     const scheduleRotate = () => {
       if (!channel) return;
-      const at = getRotateAtMs(channel.channel_id);
-      if (!at) return;
+      const rotateAt = getRotateAtMs(channel.channel_id);
+      if (!rotateAt) return;
       if (rotateTimer) clearTimeout(rotateTimer);
       rotateTimer = setTimeout(async () => {
         if (cancelled) return;
         try {
-          const fresh = await refreshStreamToken(channel, 0);
+          const atStored = getCatchupAt(channel.channel_id) || 0;
+          const fresh = await refreshStreamToken(channel, atStored);
           if (cancelled || !fresh) return;
           if (hlsRef.current) hlsRef.current.loadSource(fresh);
           else if (shakaRef.current) await shakaRef.current.load(fresh);
@@ -101,7 +106,7 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
           }
           if (!cancelled) rotateTimer = setTimeout(scheduleRotate, 20000);
         }
-      }, Math.max(15000, at - Date.now()));
+      }, Math.max(15000, rotateAt - Date.now()));
     };
     const loadShaka = async () => {
       try {
@@ -114,7 +119,6 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
             if (filter) player.getNetworkingEngine()?.registerRequestFilter(filter);
           } catch {}
           player.configure({
-            // Buffer đậm + tắt low-latency — hết đứng hình trên nguồn dao động mạnh
             streaming: {
               rebufferingGoal: 6,
               bufferingGoal: 30,
@@ -137,17 +141,38 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
           player.addEventListener('buffering', (e) => { if (!cancelled) setBuffering(e.buffering); });
           player.addEventListener('error', (e) => {
             if (cancelled) return;
-            // Kênh .mpd: lỗi RECOVERABLE (shaka tự retry) thì bỏ qua — đừng báo lỗi
-            if (dash && !isCriticalShakaError(e.detail)) {
-              console.warn('[CHRTV] kênh .mpd — bỏ qua lỗi shaka không nghiêm trọng:', e.detail?.code, e.detail?.message || '');
-              return;
-            }
+            if (dash && !isCriticalShakaError(e.detail)) return;
             const msg = e.detail?.message || 'Không phát được kênh này';
             setError(msg); setBuffering(false); onError && onError(msg);
           });
           await player.load(streamUrl);
           if (!cancelled) {
             scheduleRotate();
+            try {
+              const all = player.getVariantTracks();
+              setShakaTracks(all || []);
+              const active = all.find(t => t.active);
+              if (active) setSelectedTrack(active.id);
+              const audios = [];
+              const seen = new Set();
+              (all || []).forEach((tr, idx) => {
+                const lang = tr.language || '';
+                if (!seen.has(lang)) {
+                  seen.add(lang);
+                  audios.push({ id: idx, lang: lang || 'und', label: lang ? lang.toUpperCase() : `Audio ${idx+1}`, active: !!tr.active });
+                }
+              });
+              try {
+                const langs = player.getAudioLanguages();
+                if (langs && langs.length) {
+                  setAudioTracks(langs.map((l,i)=>({ id:i, lang:l, label:l.toUpperCase(), active: all.some(t=>t.active && t.language===l) })));
+                } else setAudioTracks(audios);
+              } catch { setAudioTracks(audios); }
+              const txt = player.getTextTracks() || [];
+              setTextTracks(txt.map((tr,i)=>({ id: tr.id ?? i, lang: tr.language || 'und', label: tr.label || tr.language || `Sub ${i+1}`, active: !!tr.active })));
+              const activeTxt = txt.find(t=>t.active);
+              setSelectedText(activeTxt ? (activeTxt.id ?? -1) : -1);
+            } catch {}
             try { await video.play(); setPlaying(true); } catch { setPlaying(false); }
             setBuffering(false);
           }
@@ -155,11 +180,7 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
           video.src = streamUrl;
           video.addEventListener('waiting', () => !cancelled && setBuffering(true));
           video.addEventListener('playing', () => !cancelled && setBuffering(false));
-          // AUTO MODE: phát native qua proxy mà lỗi nguồn -> xin URL gốc (1 lần)
-          video.addEventListener('error', () => {
-            if (cancelled || !proxied) return;
-            tryDirectFallback(null);
-          });
+          video.addEventListener('error', () => { if (cancelled || !proxied) return; tryDirectFallback(null); });
           try { await video.play(); setPlaying(true); } catch { setPlaying(false); }
           setBuffering(false);
         }
@@ -175,9 +196,9 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
         if (isHls && Hls.isSupported()) {
           const hls = new Hls({
             enableWorker: true,
-            lowLatencyMode: false, // nguồn thường (non-LL-HLS): LL mode gây đứng hình
+            lowLatencyMode: false,
             backBufferLength: 60,
-            maxBufferLength: 30,   // đệm 30s (mặc định 18s mỏng quá -> lag)
+            maxBufferLength: 30,
             maxMaxBufferLength: 120,
             maxBufferSize: 60 * 1000 * 1000,
             liveSyncDurationCount: 3,
@@ -197,30 +218,37 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
           hls.on(Hls.Events.MEDIA_ATTACHED, () => { if (!cancelled) hls.loadSource(streamUrl); });
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
             if (cancelled) return;
+            const lvls = (hls.levels || []).map((l,i)=>({ id:i, height:l.height||0, width:l.width||0, bitrate:l.bitrate||0, label: l.height ? `${l.height}p` : `${Math.round((l.bitrate||0)/1000)}k` })).sort((a,b)=>b.height-a.height);
+            setHlsLevels(lvls);
+            setHlsLevel(hls.currentLevel ?? -1);
+            try {
+              const aTracks = (hls.audioTracks || []).map((at,i)=>({ id: at.id ?? i, lang: at.lang || at.name || 'und', label: at.name || at.lang || `Audio ${i+1}`, active: i===hls.audioTrack }));
+              setAudioTracks(aTracks);
+              setSelectedAudio(hls.audioTrack ?? -1);
+            } catch {}
+            try {
+              const sTracks = (hls.subtitleTracks || []).map((st,i)=>({ id: st.id ?? i, lang: st.lang || st.name || 'und', label: st.name || st.lang || `Sub ${i+1}`, active: i===hls.subtitleTrack }));
+              setTextTracks(sTracks);
+              setSelectedText(hls.subtitleTrack ?? -1);
+            } catch {}
             setBuffering(false);
             scheduleRotate();
             video.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
           });
+          hls.on(Hls.Events.LEVEL_SWITCHED, (evt,data)=>{ if (!cancelled) setHlsLevel(data.level ?? hls.currentLevel ?? -1); });
+          hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, (evt,data)=>{ if (!cancelled) { setSelectedAudio(data.id ?? hls.audioTrack ?? -1); setAudioTracks(prev=>prev.map((at,idx)=>({ ...at, active: idx===(data.id ?? hls.audioTrack) }))); } });
+          hls.on(Hls.Events.SUBTITLE_TRACK_SWITCH, (evt,data)=>{ if (!cancelled) { setSelectedText(data.id ?? hls.subtitleTrack ?? -1); setTextTracks(prev=>prev.map((st,idx)=>({ ...st, active: idx===(data.id ?? hls.subtitleTrack) }))); } });
           hls.on(Hls.Events.ERROR, (evt, data) => {
             if (cancelled) return;
             const st = data?.response?.code || 0;
-            // AUTO MODE: NGUỒN chặn IP Cloudflare -> proxy trả 502
-            // UPSTREAM_UNAVAILABLE -> xin URL gốc phát trực tiếp (nhớ cả phiên)
-            if (proxied && (st === 502 || st === 504)) {
-              tryDirectFallback(hls).then((ok) => { if (!ok && !cancelled) hls.startLoad(); });
-              return;
-            }
+            if (proxied && (st === 502 || st === 504)) { tryDirectFallback(hls).then((ok) => { if (!ok && !cancelled) hls.startLoad(); }); return; }
             if (proxied && (st === 401 || st === 403)) {
-              refreshStreamToken(channel, 0)
-                .then((fresh) => { if (!cancelled && fresh) { hls.loadSource(fresh); scheduleRotate(); } })
-                .catch(() => {});
+              const atStored = getCatchupAt(channel.channel_id) || 0;
+              refreshStreamToken(channel, atStored).then((fresh) => { if (!cancelled && fresh) { hls.loadSource(fresh); scheduleRotate(); } }).catch(() => {});
               return;
             }
             if (data.fatal) {
-              if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-                // Proxy chết hoàn toàn (CORS/mạng) -> thử direct 1 lần rồi mới retry
-                tryDirectFallback(hls).then((ok) => { if (!ok && !cancelled) hls.startLoad(); });
-              }
+              if (data.type === Hls.ErrorTypes.NETWORK_ERROR) { tryDirectFallback(hls).then((ok) => { if (!ok && !cancelled) hls.startLoad(); }); }
               else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
               else { cleanup(); loadShaka(); }
             }
@@ -259,6 +287,54 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
     else document.exitFullscreen().catch(() => {});
   }, []);
 
+  const selectQuality = useCallback((id) => {
+    if (hlsRef.current) {
+      try { hlsRef.current.currentLevel = id; setHlsLevel(id); } catch {}
+    }
+    if (shakaRef.current) {
+      try {
+        const player = shakaRef.current;
+        if (id === -1) { player.configure({ abr:{ enabled:true } }); setSelectedTrack(-1); }
+        else {
+          const tr = shakaTracks.find(t=>t.id===id);
+          if (tr) { player.configure({ abr:{ enabled:false } }); player.selectVariantTrack(tr,true); setSelectedTrack(id); }
+        }
+      } catch {}
+    }
+    setShowSettings(false); flashCtrl();
+  }, [shakaTracks, flashCtrl]);
+
+  const selectAudio = useCallback((id) => {
+    if (hlsRef.current) { try { hlsRef.current.audioTrack = id; setSelectedAudio(id); } catch {} }
+    if (shakaRef.current) {
+      try {
+        const target = audioTracks.find(a=>a.id===id);
+        if (target && target.lang) { shakaRef.current.selectAudioLanguage(target.lang); setSelectedAudio(id); }
+      } catch {}
+    }
+    setShowSettings(false); flashCtrl();
+  }, [audioTracks, flashCtrl]);
+
+  const selectSub = useCallback((id) => {
+    if (hlsRef.current) { try { hlsRef.current.subtitleTrack = id; setSelectedText(id); } catch {} }
+    if (shakaRef.current) {
+      try {
+        const player = shakaRef.current;
+        if (id===-1) { player.setTextTrackVisibility(false); setSelectedText(-1); }
+        else {
+          const all = player.getTextTracks() || [];
+          const tr = all.find(t=>(t.id ?? -1)===id) || all[id];
+          if (tr) { player.selectTextTrack(tr); player.setTextTrackVisibility(true); setSelectedText(id); }
+        }
+      } catch {}
+    }
+    setShowSettings(false); flashCtrl();
+  }, [flashCtrl]);
+
+  const hasQuality = hlsLevels.length>0 || shakaTracks.length>0;
+  const hasAudio = audioTracks.length>1;
+  const hasSubs = textTracks.length>0;
+
   return (
     <div ref={stageRef} className="relative w-full h-full bg-black group/video">
       <video
@@ -274,7 +350,6 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
         onClick={() => { togglePlay(); flashCtrl(); }}
         onDoubleClick={goFullscreen}
       />
-      {/* Logo watermark của web trên trang TV — Admin → "Logo khi phát" */}
       <StreamWatermark channel={channel} page="tv" containerRef={stageRef} buffering={buffering} />
       {buffering && !error && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 z-10">
@@ -285,9 +360,7 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
       {error && (
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/85 p-6 text-center">
           <div className="max-w-sm">
-            <div className="w-14 h-14 mx-auto rounded-full bg-[#f36f21]/15 border border-[#f36f21]/30 flex items-center justify-center mb-3">
-              <AlertTriangle className="w-7 h-7 text-[#ff9a3d]" />
-            </div>
+            <div className="w-14 h-14 mx-auto rounded-full bg-[#f36f21]/15 border border-[#f36f21]/30 flex items-center justify-center mb-3"><AlertTriangle className="w-7 h-7 text-[#ff9a3d]" /></div>
             <h3 className="text-white font-black text-[15px] mb-1">Không xem được</h3>
             <p className="text-stone-400 text-xs mb-1">{channel?.name}</p>
             <p className="text-stone-500 text-[11px] mb-4 line-clamp-3">{String(error).slice(0, 160)}</p>
@@ -297,13 +370,86 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
           </div>
         </div>
       )}
+
+      {/* Settings panel */}
+      {showSettings && (
+        <div className="absolute top-3 right-3 w-[300px] max-w-[90vw] bg-[#0f0f12]/95 backdrop-blur-md rounded-2xl border border-white/10 overflow-hidden z-30 shadow-2xl">
+          <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/10">
+            <span className="text-[12px] font-black text-white flex items-center gap-1.5"><Settings className="w-3.5 h-3.5 text-[#ff9a3d]" /> Cài đặt</span>
+            <button onClick={() => setShowSettings(false)} className="p-1 rounded-full hover:bg-white/10"><X className="w-4 h-4 text-white/60" /></button>
+          </div>
+          <div className="flex gap-1 px-2 py-2 bg-black/30">
+            {[
+              { id:'quality', label:'Chất lượng', icon:Hd, show:hasQuality },
+              { id:'audio', label:'Âm thanh', icon:Languages, show:hasAudio },
+              { id:'subtitle', label:'Phụ đề', icon:Captions, show:true },
+              { id:'size', label:'Khung', icon:Monitor, show:true },
+            ].filter(t=>t.show).map(tab=>(
+              <button key={tab.id} onClick={()=>setSettingsTab(tab.id)} className={`flex-1 flex flex-col items-center gap-1 px-2 py-2 rounded-xl text-[10px] font-bold transition ${settingsTab===tab.id ? 'bg-[#f36f21] text-white' : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'}`}>
+                <tab.icon className="w-4 h-4" />{tab.label}
+              </button>
+            ))}
+          </div>
+          <div className="max-h-[300px] overflow-y-auto p-2">
+            {settingsTab==='quality' && (
+              <div className="space-y-1">
+                <button onClick={()=>selectQuality(-1)} className={`w-full text-left px-3 py-2.5 rounded-xl text-xs flex items-center justify-between ${(hlsLevel===-1 && selectedTrack===-1) ? 'bg-[#f36f21] text-white font-bold' : 'text-white/70 hover:bg-white/10'}`}>
+                  <span className="flex items-center gap-2"><Hd className="w-3.5 h-3.5" /> Tự động</span>
+                </button>
+                {hlsLevels.map(lv=>(
+                  <button key={lv.id} onClick={()=>selectQuality(lv.id)} className={`w-full text-left px-3 py-2.5 rounded-xl text-xs flex justify-between ${hlsLevel===lv.id ? 'bg-[#f36f21] text-white font-bold' : 'text-white/70 hover:bg-white/10'}`}>
+                    <span>{lv.label}</span><span className="text-[10px] opacity-60">{lv.bitrate ? `${Math.round(lv.bitrate/1000)}k` : ''}</span>
+                  </button>
+                ))}
+                {hlsLevels.length===0 && shakaTracks.map(tr=>(
+                  <button key={tr.id} onClick={()=>selectQuality(tr.id)} className={`w-full text-left px-3 py-2.5 rounded-xl text-xs flex justify-between ${selectedTrack===tr.id ? 'bg-[#f36f21] text-white font-bold' : 'text-white/70 hover:bg-white/10'}`}>
+                    <span>{tr.height ? `${tr.height}p` : `Track ${tr.id}`}</span><span className="text-[10px] opacity-60">{Math.round((tr.bandwidth||0)/1000)}k</span>
+                  </button>
+                ))}
+                {!hasQuality && <p className="text-[11px] text-stone-500 px-3 py-4 text-center">Chỉ có 1 chất lượng</p>}
+              </div>
+            )}
+            {settingsTab==='audio' && (
+              <div className="space-y-1">
+                {audioTracks.map((at,idx)=>(
+                  <button key={idx} onClick={()=>selectAudio(at.id)} className={`w-full text-left px-3 py-2.5 rounded-xl text-xs flex justify-between ${(selectedAudio===at.id || at.active) ? 'bg-[#f36f21] text-white font-bold' : 'text-white/70 hover:bg-white/10'}`}>
+                    <span className="flex items-center gap-2"><Languages className="w-3.5 h-3.5" /> {at.label}</span><span className="text-[10px] opacity-60">{at.lang}</span>
+                  </button>
+                ))}
+                {audioTracks.length===0 && <p className="text-[11px] text-stone-500 px-3 py-4 text-center">Không có audio khác</p>}
+              </div>
+            )}
+            {settingsTab==='subtitle' && (
+              <div className="space-y-1">
+                <button onClick={()=>selectSub(-1)} className={`w-full text-left px-3 py-2.5 rounded-xl text-xs flex items-center gap-2 ${selectedText===-1 ? 'bg-[#f36f21] text-white font-bold' : 'text-white/70 hover:bg-white/10'}`}><X className="w-3.5 h-3.5" /> Tắt phụ đề</button>
+                {textTracks.map((st,idx)=>(
+                  <button key={idx} onClick={()=>selectSub(st.id)} className={`w-full text-left px-3 py-2.5 rounded-xl text-xs flex justify-between ${(selectedText===st.id || st.active) ? 'bg-[#f36f21] text-white font-bold' : 'text-white/70 hover:bg-white/10'}`}>
+                    <span className="flex items-center gap-2"><Captions className="w-3.5 h-3.5" /> {st.label}</span><span className="text-[10px] opacity-60">{st.lang}</span>
+                  </button>
+                ))}
+                {textTracks.length===0 && <p className="text-[11px] text-stone-500 px-3 py-4 text-center">Không có phụ đề</p>}
+              </div>
+            )}
+            {settingsTab==='size' && (
+              <div className="space-y-1">
+                {zoom.modes.map(m=>(
+                  <button key={m.id} onClick={()=>{ zoom.setMode(m.id); setShowSettings(false); flashCtrl(); }} className={`w-full text-left px-3 py-2.5 rounded-xl text-xs flex justify-between ${zoom.mode===m.id ? 'bg-[#f36f21] text-white font-bold' : 'text-white/70 hover:bg-white/10'}`}>
+                    <span className="flex items-center gap-2"><ZoomIn className="w-3.5 h-3.5" /> {m.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className={`absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/90 via-black/40 to-transparent transition-opacity flex items-center gap-2 ${ctrlOn ? 'opacity-100' : 'opacity-0 pointer-events-none group-hover/video:opacity-100 group-hover/video:pointer-events-auto group-focus-within/video:opacity-100 group-focus-within/video:pointer-events-auto'}`}>
         <button onClick={togglePlay} className="p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur">{playing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 fill-current" />}</button>
         <button onClick={toggleMute} className="p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur">{muted || vol === 0 ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}</button>
         <input type="range" min={0} max={100} value={muted ? 0 : vol} onChange={changeVol} className="w-24 accent-[#f36f21]" />
         <div className="ml-auto flex items-center gap-2">
-          {/* Phóng to: Vừa khung -> Phóng to (lấp khung, cắt mép) -> Kéo giãn */}
-          <button onClick={() => { zoom.cycle(); flashCtrl(); }} title={`Chế độ hình: ${zoom.label}`} className="flex items-center gap-1.5 px-3 py-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur">
+          <button onClick={()=>{ setShowSettings(v=>!v); setSettingsTab('quality'); flashCtrl(); }} className={`p-2.5 rounded-full backdrop-blur ${showSettings ? 'bg-[#f36f21] text-white' : 'bg-white/10 hover:bg-white/20 text-white'}`}><Settings className="w-4 h-4" /></button>
+          <button onClick={() => { zoom.cycle(); flashCtrl(); }} title={`Khung hình: ${zoom.label}`} className="flex items-center gap-1.5 px-3 py-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur">
             <ZoomIn className="w-4 h-4" />
             <span className="text-[10px] font-bold hidden sm:inline">{zoom.label}</span>
           </button>

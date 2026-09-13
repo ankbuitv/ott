@@ -88,7 +88,9 @@ export function isProxiedStreamUrl(u) {
   return /\/api\/stream\/proxy\?/.test(String(u || ""));
 }
 
-// ---- Thông tin xoay token theo từng kênh: { url, exp, rotateAt, canFallback } ----
+// ---- Thông tin xoay token theo từng kênh: { url, exp, rotateAt, canFallback, at } ----
+// at = timestamp catchup (giây) nếu đang xem lại, 0 = live. Cần giữ để xoay token
+// không bị rớt về live.
 const rotateInfo = new Map();
 
 // AUTO MODE: kênh mà NGUỒN chặn IP Cloudflare (proxy trả UPSTREAM_UNAVAILABLE)
@@ -110,6 +112,12 @@ export function streamPrefersDirect(channelId) {
 export function getRotateAtMs(channelId) {
   const info = rotateInfo.get(channelId);
   return info && info.rotateAt ? info.rotateAt : 0;
+}
+
+/** Lấy timestamp catchup (giây) đang lưu cho kênh, 0 = live. */
+export function getCatchupAt(channelId) {
+  const info = rotateInfo.get(channelId);
+  return info && info.at ? Number(info.at) || 0 : 0;
 }
 
 /** Kênh này server xác nhận là luồng DASH (.mpd)? (dùng khi URL phát là URL proxy) */
@@ -140,7 +148,7 @@ function err(code, message) {
   return Object.assign(new Error(message || code), { code });
 }
 
-function localCatchupUrl(baseUrl, atSec, catchupType = "append") {
+export function localCatchupUrl(baseUrl, atSec, catchupType = "append") {
   if (!baseUrl || !atSec) return baseUrl;
   const d = new Date(atSec * 1000);
   const pad = (n) => String(n).padStart(2, "0");
@@ -234,13 +242,23 @@ export async function requestStreamAccess(channel, { at = 0, forceDirect = false
     canFallback: !directUrl && data.fallback === "direct",
     // Server cho biết luồng gốc là DASH (.mpd) — kể cả khi ta đang cầm URL proxy
     mpd: isMpdUrl(url) || !!data.mpd,
+    // Giữ timestamp catchup để xoay token không bị rớt về live
+    at: at || 0,
   });
   return url;
 }
 
 /** Xin token mới cho cùng kênh (gọi trước khi token hết hạn để phát liền mạch). */
 export async function refreshStreamToken(channel, at = 0) {
-  return requestStreamAccess(channel, { at });
+  let useAt = at;
+  if (!useAt) {
+    try {
+      const cid = channel?.channel_id || channel?.stream_url || channel?.url || "";
+      const stored = rotateInfo.get(cid);
+      if (stored && stored.at) useAt = stored.at;
+    } catch {}
+  }
+  return requestStreamAccess(channel, { at: useAt || 0 });
 }
 
 /**
@@ -248,11 +266,19 @@ export async function refreshStreamToken(channel, at = 0) {
  * này phát direct cho cả phiên rồi xin lại URL gốc (chạy đủ các lớp kiểm tra
  * phía server). Trả "" nếu không xin được — player giữ nguyên nguồn cũ.
  */
-export async function fallbackToDirectUrl(channel) {
+export async function fallbackToDirectUrl(channel, at = 0) {
   if (!channel) return "";
   markStreamDirect(channel.channel_id);
+  let useAt = at;
+  if (!useAt) {
+    try {
+      const cid = channel?.channel_id || channel?.stream_url || channel?.url || "";
+      const stored = rotateInfo.get(cid);
+      if (stored && stored.at) useAt = stored.at;
+    } catch {}
+  }
   try {
-    return await requestStreamAccess(channel, { forceDirect: true });
+    return await requestStreamAccess(channel, { forceDirect: true, at: useAt || 0 });
   } catch {
     return "";
   }

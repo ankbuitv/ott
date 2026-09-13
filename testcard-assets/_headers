@@ -1,6 +1,11 @@
 # Header cho static assets của kênh TEST CARD (Cloudflare đọc file này lúc deploy)
 # /seg/* không chạy worker -> request miễn phí, không tính quota Workers.
 
+/keyk/*
+  Access-Control-Allow-Origin: *
+  Access-Control-Allow-Methods: GET, HEAD, OPTIONS
+  Cache-Control: public, max-age=31536000, immutable
+
 /seg/*
   Access-Control-Allow-Origin: *
   Access-Control-Allow-Methods: GET, HEAD, OPTIONS

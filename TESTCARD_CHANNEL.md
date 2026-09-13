@@ -13,20 +13,60 @@ serve qua Cloudflare Worker + static assets.
 
 | Link | Kênh |
 |---|---|
-| `https://<worker>/test.m3u8` | **HLS** — VLC, hls.js, Safari, Smart TV... |
+| `https://<worker>/test.m3u8` | **HLS mở** — VLC, hls.js, Safari, Smart TV... |
 | `https://<worker>/live.m3u8` | HLS biến thể `PROGRAM-DATE-TIME: 1970-01-01` (tương thích player cũ) |
-| `https://<worker>/test.mpd` | **DASH** — dash.js, VLC... |
-| `https://<worker>/` | Trang web xem thử (HLS/DASH toggle) |
+| `https://<worker>/test-clear.mpd` | **DASH mở** (không mã hoá) |
+| `https://<worker>/test.mpd` | **DASH MÃ HOÁ CENC + ClearKey** — cần license key mới xem được 🔒 |
+| `https://<worker>/license` | License server ClearKey chuẩn EME (`POST {"kids":[...]}`) + `GET` tra cứu key & snippet Kodi |
+| `https://<worker>/` | Trang web xem thử (HLS / DASH mở / DASH ClearKey) |
 | `https://<worker>/healthz` | Kiểm tra worker sống |
 
-## Xem bằng VLC
+## Kênh ClearKey (DASH mã hoá)
 
-Media → Open Network Stream → dán `https://<worker>/test.m3u8`.
-Muốn lặp liên tục: bật **Loop** (VLC tự lặp hết playlist), hoặc chạy lệnh:
+Media mã hoá **CENC (AES-128-CTR)** bằng Bento4, MPD có đầy đủ `ContentProtection`
+(`cenc:default_KID` + ClearKey signaling). Không có key → decoder báo lỗi hình (đã test).
+
+### Xem bằng Kodi (inputstream.adaptive)
+
+Đặt file `.strm`/`.m3u` với nội dung (xem key thật tại `GET /license`):
+
+```
+#KODIPROP:inputstream.adaptive.manifest_type=mpd
+#KODIPROP:inputstream.adaptive.license_type=clearkey
+#KODIPROP:inputstream.adaptive.license_key=<KID>:<KEY>
+https://<worker>/test.mpd
+```
+
+### Xem bằng trình duyệt
+
+Trang `/` có nút **"🔒 DASH ClearKey (/test.mpd)"** — dash.js tự gọi `/license` (chuẩn EME) rồi phát.
+
+### Đổi key (custom license key)
+
+1. Sửa `CLEARKEY = "KID:KEY"` trong `wrangler.testcard-channel.toml`
+   (hoặc giấu đi: `npx wrangler secret put CLEARKEY`)
+2. Mã hoá lại media với cùng cặp key:
 
 ```bash
-vlc --loop https://<worker>/test.m3u8
+cd worker/testcard-tools
+bash build-bento4.sh /tmp/bin          # lần đầu (cần g++, python3, git)
+node encode-key.mjs --seconds 3600 \
+  --kid <32hex> --key <32hex> \
+  --ffmpeg /duong/dan/ffmpeg --exec-dir /tmp/bin
 ```
+
+3. `npx wrangler deploy -c wrangler.testcard-channel.toml`
+
+Chạy `encode-key.mjs` **không có** `--kid/--key` sẽ tự sinh key ngẫu nhiên (in ra log + `keyk/key.json`).
+
+> ⚠️ Đổi key ở config mà **không** mã hoá lại segment → key không khớp media → không player nào giải được (đó là lý do phải chạy cả 2 bước).
+> KID/KEY phải là 32 ký tự hex mỗi bên (`0-9a-f`), đúng dạng Kodi dùng.
+
+## Xem bằng VLC (kênh HLS/DASH mở)
+
+Media → Open Network Stream → dán `https://<worker>/test.m3u8` (hoặc `/test-clear.mpd`).
+Muốn lặp liên tục: bật **Loop**, hoặc: `vlc --loop https://<worker>/test.m3u8`.
+(VLC chưa hỗ trợ ClearKey — kênh mã hoá xem bằng Kodi/dash.js.)
 
 ## Deploy
 

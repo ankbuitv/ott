@@ -9,6 +9,9 @@ compatibility_date = "2024-09-23"
 [vars]
 # Tên thương hiệu hiện trên trang xem thử (đồng hồ in trong VIDEO phải tái sinh segment để đổi)
 BRAND = "CHRTV"
+# ClearKey của kênh DASH mã hoá /test.mpd (định dạng KID:KEY, 32 hex mỗi bên).
+# ĐỔI KEY: sửa đây + chạy lại worker/testcard-tools/encode-key.mjs với cùng --kid/--key.
+CLEARKEY = "0123456789abcdef0123456789abcdef:c7ba46086dda345a929e29bf155e459c"
 
 [assets]
 directory = "./testcard-assets"

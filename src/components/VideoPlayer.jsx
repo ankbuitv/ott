@@ -6,7 +6,7 @@ import { formatTimeHHMM, calculateProgramProgress } from '../utils/dateUtils';
 import { maskScores } from '../utils/spoiler';
 import { useToast } from '../contexts/ToastContext';
 import { useI18n } from '../contexts/I18nContext';
-import { isHlsUrl, isProxiedStreamUrl, getRotateAtMs, refreshStreamToken, makeStreamRequestFilter, applyStreamClientHeaders, fallbackToDirectUrl, isDashChannel } from '../services/streamGuard';
+import { isHlsUrl, isProxiedStreamUrl, getRotateAtMs, getCatchupAt, refreshStreamToken, makeStreamRequestFilter, applyStreamClientHeaders, fallbackToDirectUrl, isDashChannel } from '../services/streamGuard';
 import { logPlayerError, isCriticalShakaError } from '../services/telemetry';
 import StreamWatermark from './StreamWatermark';
 import useNetworkQuality, { heightCapFor } from '../hooks/useNetworkQuality';
@@ -116,7 +116,9 @@ export default function VideoPlayer({
     const tryDirectFallback = async (hlsOrNull) => {
       if (directTried || !proxied || !channel) return false;
       directTried = true;
-      const fresh = await fallbackToDirectUrl(channel).catch(() => "");
+      // Giữ mốc catchup khi fallback sang direct
+      const atForFallback = isCatchupMode ? (getCatchupAt(channel.channel_id) || 0) : 0;
+      const fresh = await fallbackToDirectUrl(channel, atForFallback).catch(() => "");
       if (cancelled || !fresh) return false;
       if (hlsOrNull) hlsOrNull.loadSource(fresh);
       else { video.src = fresh; video.play().catch(() => {}); }
@@ -130,18 +132,20 @@ export default function VideoPlayer({
     };
 
     // Xoay token phát: xin URL mới rồi nạp lại nguồn (live tiếp tục ở mép sóng).
+    // FIX CATCHUP: phải giữ mốc thời gian catchup khi xoay, không rớt về live.
     const scheduleRotate = () => {
       // URL trực tiếp (direct) thường không cần xoay (rotate_at = 0, thoát ngay);
       // chỉ phiên XEM THỬ và URL proxy mới có rotate_at > 0.
       if (!channel) return;
-      const at = getRotateAtMs(channel.channel_id);
-      if (!at) return;
-      const delay = Math.max(15000, at - Date.now());
+      const rotateAt = getRotateAtMs(channel.channel_id);
+      if (!rotateAt) return;
+      const delay = Math.max(15000, rotateAt - Date.now());
       if (rotateTimer) clearTimeout(rotateTimer);
       rotateTimer = setTimeout(async () => {
         if (cancelled) return;
         try {
-          const fresh = await refreshStreamToken(channel, 0);
+          const atForRotate = isCatchupMode ? (getCatchupAt(channel.channel_id) || 0) : 0;
+          const fresh = await refreshStreamToken(channel, atForRotate);
           if (cancelled || !fresh) return;
           if (hlsRef.current) hlsRef.current.loadSource(fresh);
           else if (shakaRef.current) await shakaRef.current.load(fresh);
@@ -301,7 +305,8 @@ export default function VideoPlayer({
               return;
             }
             if (proxied && (st === 401 || st === 403)) {
-              refreshStreamToken(channel, 0)
+              const atForRetry = isCatchupMode ? (getCatchupAt(channel.channel_id) || 0) : 0;
+              refreshStreamToken(channel, atForRetry)
                 .then((fresh) => { if (!cancelled && fresh) { hls.loadSource(fresh); scheduleRotate(); } })
                 .catch(() => {});
               return;
@@ -451,7 +456,11 @@ export default function VideoPlayer({
           <div className="min-w-0">
             <h2 className="text-[13px] font-bold text-white leading-tight truncate">{channelName}</h2>
             <div className="flex items-center gap-1.5 mt-0.5">
-              <span className="px-1.5 py-0.5 rounded bg-red-600 text-white text-[9px] font-black flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>LIVE</span>
+              {isCatchupMode ? (
+                <span className="px-1.5 py-0.5 rounded bg-purple-600 text-white text-[9px] font-black flex items-center gap-1"><Clock className="w-3 h-3" />XEM LẠI</span>
+              ) : (
+                <span className="px-1.5 py-0.5 rounded bg-red-600 text-white text-[9px] font-black flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>LIVE</span>
+              )}
               {channel?.group_title && <span className="text-[10px] text-white/60 truncate">{channel.group_title}</span>}
             </div>
           </div>

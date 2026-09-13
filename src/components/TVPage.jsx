@@ -8,7 +8,7 @@ import { useI18n } from '../contexts/I18nContext';
 import { getHomePrefs } from '../services/prefs';
 import { parseEpgDate, formatTimeHHMM, calculateProgramProgress } from '../utils/dateUtils';
 import { maskScores } from '../utils/spoiler';
-import { isHlsUrl, isProxiedStreamUrl, getRotateAtMs, refreshStreamToken, makeStreamRequestFilter, applyStreamClientHeaders, fallbackToDirectUrl, isDashChannel } from '../services/streamGuard';
+import { isHlsUrl, isProxiedStreamUrl, getRotateAtMs, getCatchupAt, refreshStreamToken, makeStreamRequestFilter, applyStreamClientHeaders, fallbackToDirectUrl, isDashChannel } from '../services/streamGuard';
 import { isCriticalShakaError } from '../services/telemetry';
 import useVideoZoom from '../hooks/useVideoZoom';
 import StreamWatermark from './StreamWatermark';
@@ -68,7 +68,8 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
     const tryDirectFallback = async (hlsOrNull) => {
       if (directTried || !proxied || !channel) return false;
       directTried = true;
-      const fresh = await fallbackToDirectUrl(channel).catch(() => "");
+      const atStored = getCatchupAt(channel.channel_id) || 0;
+      const fresh = await fallbackToDirectUrl(channel, atStored).catch(() => "");
       if (cancelled || !fresh) return false;
       if (hlsOrNull) hlsOrNull.loadSource(fresh);
       else { video.src = fresh; video.play().catch(() => {}); }
@@ -83,13 +84,14 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
     // URL direct thông thường rotate_at = 0 -> thoát ngay)
     const scheduleRotate = () => {
       if (!channel) return;
-      const at = getRotateAtMs(channel.channel_id);
-      if (!at) return;
+      const rotateAt = getRotateAtMs(channel.channel_id);
+      if (!rotateAt) return;
       if (rotateTimer) clearTimeout(rotateTimer);
       rotateTimer = setTimeout(async () => {
         if (cancelled) return;
         try {
-          const fresh = await refreshStreamToken(channel, 0);
+          const atStored = getCatchupAt(channel.channel_id) || 0;
+          const fresh = await refreshStreamToken(channel, atStored);
           if (cancelled || !fresh) return;
           if (hlsRef.current) hlsRef.current.loadSource(fresh);
           else if (shakaRef.current) await shakaRef.current.load(fresh);
@@ -101,7 +103,7 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
           }
           if (!cancelled) rotateTimer = setTimeout(scheduleRotate, 20000);
         }
-      }, Math.max(15000, at - Date.now()));
+      }, Math.max(15000, rotateAt - Date.now()));
     };
     const loadShaka = async () => {
       try {
@@ -211,7 +213,8 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
               return;
             }
             if (proxied && (st === 401 || st === 403)) {
-              refreshStreamToken(channel, 0)
+              const atStored = getCatchupAt(channel.channel_id) || 0;
+              refreshStreamToken(channel, atStored)
                 .then((fresh) => { if (!cancelled && fresh) { hls.loadSource(fresh); scheduleRotate(); } })
                 .catch(() => {});
               return;

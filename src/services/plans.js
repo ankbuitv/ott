@@ -99,16 +99,21 @@ function normGroup(s) {
 // Phân loại kênh theo group_title: 'VTV' | 'BOX' | 'SPORT' | 'FILM' | 'OTHER'
 // Khớp với playlist thực tế:
 //   "TH - Truyền hình Việt" -> VTV | "BOX - Giải trí" -> BOX | "SPORTS - Thể thao" -> SPORT
+//   HTV, THVL, VTC, VTV... đều là truyền hình Việt -> VTV (free)
 // (giữ đồng bộ 1:1 với classifyGroupChrtv trong worker/worker.js)
 export function classifyGroup(groupTitle = "") {
   const g = normGroup(groupTitle);
   if (!g) return "VTV"; // nhóm trống = FTA mặc định
   if (/\b(th\s*truyen\s*hinh\s*viet|truyen\s*hinh\s*viet)\b/.test(g)) return "VTV";
-  if (/\bvtv\w*/.test(g)) return "VTV";
+  if (/\b(vtv\w*|htv\w*|thvl\w*|vtc\w*|th\s*qg|qpv?|quoc\s*hoi|thong\s*tan)\b/.test(g)) return "VTV";
+  if (/\b(hanoi|ha\s*noi|danang|da\s*nang|can\s*tho|binh\s*duong|dong\s*nai|nghe\s*an|hai\s*phong)\b/.test(g)) return "VTV";
   if (/\bbox\b/.test(g)) return "BOX";
   if (/(\bsport|the\s*thao|bong\s*da|\bespn\b|\bbein\b)/.test(g)) return "SPORT";
   if (/(phim|movie|cinema|film|hollywood|classic|series|drama|\bhbo\b|\baxn\b|warner|cinemax|discovery|nat\s*geo)/.test(g)) return "FILM";
   if (/(cartoon|\banim\b|\bkids\b|thieu\s*nhi|giai\s*tri)/.test(g)) return "BOX";
+  // Mặc định: nếu tên nhóm chứa chữ "truyền hình" hoặc là đài địa phương 2-4 ký tự + số -> VTV
+  if (/\btruyen\s*hinh\b/.test(g)) return "VTV";
+  if (/^(htv|thvl|vtc|vtv|th)\d*$/i.test(g.replace(/\s+/g, ""))) return "VTV";
   return "OTHER";
 }
 

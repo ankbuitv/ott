@@ -2296,6 +2296,7 @@ function streamErr(obj, status, request, env, extraHeaders) {
 
 // ---- GATING theo nhóm kênh (5 gói): Standard=VTV, Recreational=+BOX, Ultimate=+SPORT, Elite=+FILM, Signature=tất cả ----
 // Khớp playlist thực tế: "TH - Truyền hình Việt"->VTV, "BOX - Giải trí"->BOX, "SPORTS"->SPORT
+// HTV, THVL, VTC, đài địa phương... cũng là TH Việt Nam -> VTV (free)
 function normGroupChrtv(s) {
   return String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
 }
@@ -2303,7 +2304,10 @@ function classifyGroupChrtv(g) {
   const n = normGroupChrtv(g);
   if (!n) return "VTV"; // nhóm trống = FTA mặc định
   if (/\b(th\s*truyen\s*hinh\s*viet|truyen\s*hinh\s*viet)\b/.test(n)) return "VTV";
-  if (/\bvtv\w*/.test(n)) return "VTV";
+  if (/\b(vtv\w*|htv\w*|thvl\w*|vtc\w*|th\s*qg|qpv?|quoc\s*hoi|thong\s*tan)\b/.test(n)) return "VTV";
+  if (/\b(hanoi|ha\s*noi|danang|da\s*nang|can\s*tho|binh\s*duong|dong\s*nai|nghe\s*an|hai\s*phong)\b/.test(n)) return "VTV";
+  if (/\btruyen\s*hinh\b/.test(n)) return "VTV";
+  if (/^(htv|thvl|vtc|vtv|th)\d*$/i.test(n.replace(/\s+/g, ""))) return "VTV";
   if (/\bbox\b/.test(n)) return "BOX";
   if (/(\bsport|the\s*thao|bong\s*da|\bespn\b|\bbein\b)/.test(n)) return "SPORT";
   if (/(phim|movie|cinema|film|hollywood|classic|series|drama|\bhbo\b|\baxn\b|warner|cinemax|discovery|nat\s*geo)/.test(n)) return "FILM";
@@ -2647,6 +2651,15 @@ async function handleStreamToken(request, env) {
     const cat = await channelCatalog(env);
     channel = cat ? (cat.byId.get(channelId) || null) : null;
     if (!channel) return json({ error: "CHANNEL_NOT_FOUND" }, 404, request, env);
+    // Catchup: kiểm tra kênh có hỗ trợ và mốc thời gian còn trong hạn lưu trữ
+    if (isCatchup) {
+      const days = Number(channel.catchup_days || 0);
+      if (days <= 0) return json({ error: "CATCHUP_NOT_SUPPORTED", message: "Kênh này không hỗ trợ xem lại." }, 400, request, env);
+      const age = Math.floor(Date.now() / 1000) - at;
+      // Cho phép lệch 1h, quá hạn thì báo rõ
+      if (age > days * 86400 + 3600) return json({ error: "CATCHUP_EXPIRED", message: `Chương trình đã quá ${days} ngày — không còn lưu trữ.`, catchup_days: days }, 400, request, env);
+      if (age < -600) return json({ error: "CATCHUP_FUTURE", message: "Chương trình chưa phát — không thể xem lại." }, 400, request, env);
+    }
     targetUrl = isCatchup ? generateCatchupServerUrl(channel.stream_url, at, channel.catchup_type || "append") : channel.stream_url;
     if (isCatchup && auth.guest) return json({ error: "LOGIN_REQUIRED", message: "Xem chương trình đã phát cần đăng nhập." }, 401, request, env);
   } else if (uParam) {
@@ -2954,12 +2967,33 @@ async function handleStreamProxy(request, env) {
 
 // Playlist rewrite: mỗi URI con được seal thành 1 opaque token riêng.
 // (async vì mỗi URI = 1 lần AES-GCM với IV ngẫu nhiên)
+// FIX CATCHUP: khi manifest gốc có ?utc= / ?shift= / ?catchup_start= (xem lại),
+// các segment tương đối (seg.ts) khi resolve qua `new URL(seg, manifest)` sẽ
+// MẤT query -> server trả về live thay vì catchup. Ta phải giữ lại query catchup
+// cho segment nếu segment chưa có.
 async function rewriteM3U8Sealed(text, targetUrl, proxyBase, ctx, env) {
   const nowS = Math.floor(Date.now() / 1000);
   const cache = new Map(); // cùng URI trong 1 playlist => dùng chung token
+  const targetSearch = targetUrl.search || "";
+  const needPreserve = /utc=|lutc=|catchup_start=|shift=/i.test(targetSearch);
   const toProxy = async (raw) => {
     try {
-      const abs = new URL(raw, targetUrl).toString();
+      let absUrl = new URL(raw, targetUrl);
+      if (needPreserve) {
+        const hasCatchup = /utc=|lutc=|catchup_start=|shift=/i.test(absUrl.search || "");
+        if (!hasCatchup) {
+          // Merge query: giữ search của segment (nếu có) + thêm các param catchup từ manifest
+          const segParams = new URLSearchParams(absUrl.search);
+          const tgtParams = new URLSearchParams(targetSearch);
+          for (const [k, v] of tgtParams.entries()) {
+            if (/^(utc|lutc|catchup_start|shift)$/i.test(k) && !segParams.has(k)) {
+              segParams.set(k, v);
+            }
+          }
+          absUrl.search = segParams.toString();
+        }
+      }
+      const abs = absUrl.toString();
       if (!/^https?:\/\//i.test(abs)) return raw;
       if (!cache.has(abs)) {
         const t = await sealStreamToken({

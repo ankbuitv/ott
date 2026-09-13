@@ -6,7 +6,7 @@ import { useToast } from '../contexts/ToastContext';
 import { PartyModal } from './Pack48Ui';
 import { useI18n } from '../contexts/I18nContext';
 import { getHomePrefs } from '../services/prefs';
-import { parseEpgDate, formatTimeHHMM } from '../utils/dateUtils';
+import { parseEpgDate, formatTimeHHMM, calculateProgramProgress } from '../utils/dateUtils';
 import { maskScores } from '../utils/spoiler';
 import { isHlsUrl, isProxiedStreamUrl, getRotateAtMs, refreshStreamToken, makeStreamRequestFilter, applyStreamClientHeaders, fallbackToDirectUrl, isDashChannel } from '../services/streamGuard';
 import { isCriticalShakaError } from '../services/telemetry';
@@ -297,7 +297,7 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
           </div>
         </div>
       )}
-      <div className={`absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/90 via-black/40 to-transparent transition-opacity flex items-center gap-2 ${ctrlOn ? 'opacity-100' : 'opacity-0 group-hover/video:opacity-100 group-focus-within/video:opacity-100'}`}>
+      <div className={`absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/90 via-black/40 to-transparent transition-opacity flex items-center gap-2 ${ctrlOn ? 'opacity-100' : 'opacity-0 pointer-events-none group-hover/video:opacity-100 group-hover/video:pointer-events-auto group-focus-within/video:opacity-100 group-focus-within/video:pointer-events-auto'}`}>
         <button onClick={togglePlay} className="p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur">{playing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 fill-current" />}</button>
         <button onClick={toggleMute} className="p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur">{muted || vol === 0 ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}</button>
         <input type="range" min={0} max={100} value={muted ? 0 : vol} onChange={changeVol} className="w-24 accent-[#f36f21]" />
@@ -527,25 +527,72 @@ export default function TVPage({
                 )}
               </div>
             )}
-            {tvChannel && tvStreamUrl && (
-              <div className="absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/90 via-black/40 to-transparent pointer-events-none z-10">
-                <div className="flex items-center gap-3">
-                  {tvChannel.logo ? <img src={tvChannel.logo} alt="" className="w-11 h-11 rounded-xl object-contain bg-black/60 p-1 border border-white/10" onError={e => e.target.style.display='none'} /> : <span className="w-11 h-11 rounded-xl bg-white/10 flex items-center justify-center text-sm font-black">{(tvChannel.name||'?')[0]}</span>}
-                  <div className="min-w-0">
-                    <p className="text-[15px] md:text-[17px] font-black text-white leading-tight truncate flex items-center gap-2">{tvChannel.name} {favSet.has(tvChannel.channel_id) && <Heart className="w-4 h-4 fill-[#f36f21] text-[#f36f21]" />}</p>
-                    <p className="text-[11px] text-white/70 truncate flex items-center gap-1.5"><span className="px-1.5 py-0.5 rounded bg-white/10 border border-white/10 text-[9px] font-bold">{tvChannel.group_title}</span>{tvChannel.sponsored && <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-[9px] font-black text-emerald-300">★ TÀI TRỢ</span>} • {epgNowNext?.now ? maskScores(epgNowNext.now.title) : 'LIVE'}</p>
-                    {(epgNowNext?.now || epgNowNext?.next) && (
-                      <p className="text-[10px] text-white/55 truncate flex items-center gap-1.5 mt-0.5">
-                        {epgNowNext?.now && <><Clock className="w-3 h-3 shrink-0" />{formatTimeHHMM(epgNowNext.now.start)} - {formatTimeHHMM(epgNowNext.now.stop)}</>}
-                        {epgNowNext?.next && <><ChevronsRight className="w-3 h-3 shrink-0" /><span className="truncate">Tiếp: {maskScores(epgNowNext.next.title)}</span></>}
-                      </p>
-                    )}
+          </div>
+
+          {/* Thông tin kênh + nhãn LIVE: đặt NGOÀI khung hình để không che video */}
+          {tvChannel && (
+            <div className="rounded-[20px] bg-white/[0.04] border border-white/10 backdrop-blur overflow-hidden">
+              {/* Dòng 1 — nhận diện kênh */}
+              <div className="flex items-center gap-3 px-3 sm:px-4 py-3 flex-wrap">
+                {tvChannel.logo
+                  ? <img src={tvChannel.logo} alt="" className="w-11 h-11 rounded-xl object-contain bg-black/50 p-1 border border-white/10 shrink-0" onError={e => e.target.style.display='none'} />
+                  : <span className="w-11 h-11 rounded-xl bg-white/10 border border-white/10 flex items-center justify-center text-sm font-black shrink-0">{(tvChannel.name || '?')[0]}</span>}
+                <div className="min-w-0 flex-1 basis-[160px]">
+                  <p className="text-[15px] md:text-[17px] font-black text-white leading-tight flex items-center gap-2">
+                    <span className="truncate">{tvChannel.name}</span>
+                    {favSet.has(tvChannel.channel_id) && <Heart className="w-4 h-4 shrink-0 fill-[#f36f21] text-[#f36f21]" />}
+                  </p>
+                  <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                    {tvChannel.group_title && <span className="px-1.5 py-0.5 rounded bg-white/[0.08] border border-white/10 text-[9px] font-bold text-stone-300">{tvChannel.group_title}</span>}
+                    {tvChannel.sponsored && <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-[9px] font-black text-emerald-300">★ TÀI TRỢ</span>}
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-600/15 border border-red-500/30 text-red-300 text-[9px] font-black tracking-widest">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>LIVE
+                    </span>
                   </div>
-                  <span className="ml-auto px-2.5 py-1 rounded-full bg-red-600 text-white text-[10px] font-black tracking-widest animate-pulse shadow-lg shadow-red-600/20">LIVE</span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0 ml-auto">
+                  {onToggleFavorite && (
+                    <button onClick={() => onToggleFavorite(tvChannel.channel_id)} title="Yêu thích" className={`px-2.5 sm:px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1 border ${favSet.has(tvChannel.channel_id) ? 'bg-[#f36f21]/20 border-[#f36f21]/30 text-[#ffb37a]' : 'bg-white/5 border-white/10 text-stone-300 hover:text-white'}`}>
+                      <Heart className={`w-3.5 h-3.5 ${favSet.has(tvChannel.channel_id) ? 'fill-current' : ''}`} />
+                      <span className="hidden sm:inline">{favSet.has(tvChannel.channel_id) ? 'Đã thích' : 'Yêu thích'}</span>
+                    </button>
+                  )}
+                  {onCloseTv && (
+                    <button onClick={onCloseTv} title="Đóng" className="px-2.5 sm:px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs font-bold text-stone-400 hover:text-white flex items-center gap-1">
+                      <X className="w-3.5 h-3.5" /><span className="hidden sm:inline">Đóng</span>
+                    </button>
+                  )}
                 </div>
               </div>
-            )}
-          </div>
+
+              {/* Dòng 2 — EPG đang phát / tiếp theo */}
+              <div className="px-3 sm:px-4 py-3 border-t border-white/[0.06] bg-black/20">
+                <div className="flex items-center gap-2">
+                  <span className="flex items-center gap-1.5 text-[10px] font-black tracking-widest text-[#ff9a3d] shrink-0"><span className="w-2 h-2 rounded-full bg-[#f36f21] animate-pulse"></span>ĐANG PHÁT</span>
+                  <p className="min-w-0 flex-1 text-[14px] font-bold text-white truncate">{epgNowNext?.now ? maskScores(epgNowNext.now.title) : tvChannel.name}</p>
+                  {epgNowNext?.now && <span className="hidden sm:inline text-[11px] text-stone-500 tabular-nums shrink-0">{formatTimeHHMM(epgNowNext.now.start)} - {formatTimeHHMM(epgNowNext.now.stop)}</span>}
+                </div>
+                {epgNowNext?.now && (
+                  <div className="mt-2 h-1 rounded-full bg-white/10 overflow-hidden">
+                    <div className="h-full rounded-full bg-gradient-to-r from-[#f36f21] to-[#ff9a3d]" style={{ width: `${calculateProgramProgress(epgNowNext.now.start, epgNowNext.now.stop)}%` }}></div>
+                  </div>
+                )}
+                <div className="mt-2 flex items-center gap-3 flex-wrap">
+                  {epgNowNext?.now && (
+                    <span className="sm:hidden text-[11px] text-stone-500 tabular-nums flex items-center gap-1"><Clock className="w-3 h-3" />{formatTimeHHMM(epgNowNext.now.start)} - {formatTimeHHMM(epgNowNext.now.stop)}</span>
+                  )}
+                  {epgNowNext?.next && (
+                    <span className="text-[11px] text-stone-500 flex items-center gap-1 min-w-0">
+                      <ChevronsRight className="w-3.5 h-3.5 shrink-0 text-stone-600" />
+                      <span className="text-stone-400 shrink-0">Tiếp:</span>
+                      <span className="truncate text-stone-300">{maskScores(epgNowNext.next.title)}</span>
+                      {epgNowNext.next.start && <span className="shrink-0 text-stone-500 tabular-nums">{formatTimeHHMM(epgNowNext.next.start)}</span>}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* (#22) Timeshift: quay lại X giờ qua mốc EPG (cần kênh hỗ trợ catchup) */}
           {tvChannel && onPlayCatchup && Number(tvChannel.catchup_days || 0) > 0 && (
@@ -561,22 +608,6 @@ export default function TVPage({
                 ))}
               </div>
               <span className="ml-auto text-[9px] text-stone-600 hidden sm:inline">Chương trình trong ngày → tua lại đúng giờ phát</span>
-            </div>
-          )}
-          {tvChannel && (
-            <div className="rounded-2xl bg-white/[0.04] border border-white/[0.07] px-4 py-2.5 backdrop-blur flex items-center gap-3 flex-wrap">
-              <span className="flex items-center gap-1.5 text-[10px] font-black tracking-widest text-[#ff9a3d] shrink-0"><span className="w-2 h-2 rounded-full bg-[#f36f21] animate-pulse"></span>ĐANG PHÁT</span>
-              <div className="min-w-0 flex-1 basis-[220px]">
-                <p className="text-[14px] font-bold text-white truncate">{epgNowNext?.now ? maskScores(epgNowNext.now.title) : tvChannel.name}</p>
-                <p className="text-[11px] text-stone-500 truncate flex items-center gap-1.5">
-                  {epgNowNext?.now && <><Clock className="w-3 h-3 shrink-0" />{formatTimeHHMM(epgNowNext.now.start)} - {formatTimeHHMM(epgNowNext.now.stop)}</>}
-                  {epgNowNext?.next && <><span className="text-stone-600">·</span><span className="text-stone-400 shrink-0">Tiếp:</span><span className="truncate">{maskScores(epgNowNext.next.title)}</span></>}
-                </p>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {onToggleFavorite && <button onClick={() => onToggleFavorite(tvChannel.channel_id)} className={`px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1 border ${favSet.has(tvChannel.channel_id) ? 'bg-[#f36f21]/20 border-[#f36f21]/30 text-[#ffb37a]' : 'bg-white/5 border-white/10 text-stone-300 hover:text-white'}`}><Heart className={`w-3.5 h-3.5 ${favSet.has(tvChannel.channel_id) ? 'fill-current' : ''}`} />{favSet.has(tvChannel.channel_id) ? 'Đã thích' : 'Yêu thích'}</button>}
-                {onCloseTv && <button onClick={onCloseTv} className="px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs font-bold text-stone-400 hover:text-white"><X className="w-3.5 h-3.5 inline mr-1" />Đóng</button>}
-              </div>
             </div>
           )}
 

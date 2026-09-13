@@ -8,7 +8,8 @@ import { useI18n } from '../contexts/I18nContext';
 import { getHomePrefs } from '../services/prefs';
 import { parseEpgDate, formatTimeHHMM } from '../utils/dateUtils';
 import { maskScores } from '../utils/spoiler';
-import { isHlsUrl, isProxiedStreamUrl, getRotateAtMs, refreshStreamToken, makeStreamRequestFilter, applyStreamClientHeaders, fallbackToDirectUrl } from '../services/streamGuard';
+import { isHlsUrl, isProxiedStreamUrl, getRotateAtMs, refreshStreamToken, makeStreamRequestFilter, applyStreamClientHeaders, fallbackToDirectUrl, isDashChannel } from '../services/streamGuard';
+import { isCriticalShakaError } from '../services/telemetry';
 import useVideoZoom from '../hooks/useVideoZoom';
 import StreamWatermark from './StreamWatermark';
 
@@ -57,6 +58,9 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
     setBuffering(true);
     const proxied = isProxiedStreamUrl(streamUrl);
     const isHls = isHlsUrl(streamUrl) || proxied;
+    // Kênh DASH (.mpd): lỗi shaka RECOVERABLE là chuyện thường (token/segment),
+    // không phải kênh chết -> đừng hiện màn "lỗi" cho người xem.
+    const dash = isDashChannel(channel, streamUrl);
     let rotateTimer = null;
     // AUTO MODE: proxy bị NGUỒN chặn (502 UPSTREAM_UNAVAILABLE) -> xin URL gốc
     // phát trực tiếp cho kênh này (đúng 1 lần mỗi lần mở, nhớ cả phiên)
@@ -133,6 +137,11 @@ function SimpleHlsPlayer({ streamUrl, channel, onError, onRetry }) {
           player.addEventListener('buffering', (e) => { if (!cancelled) setBuffering(e.buffering); });
           player.addEventListener('error', (e) => {
             if (cancelled) return;
+            // Kênh .mpd: lỗi RECOVERABLE (shaka tự retry) thì bỏ qua — đừng báo lỗi
+            if (dash && !isCriticalShakaError(e.detail)) {
+              console.warn('[CHRTV] kênh .mpd — bỏ qua lỗi shaka không nghiêm trọng:', e.detail?.code, e.detail?.message || '');
+              return;
+            }
             const msg = e.detail?.message || 'Không phát được kênh này';
             setError(msg); setBuffering(false); onError && onError(msg);
           });

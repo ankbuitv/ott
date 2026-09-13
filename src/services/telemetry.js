@@ -37,6 +37,19 @@ export function reportChannel({ channel, code = 'other', note = '' }) {
 // Chống spam: mỗi (kênh + mã lỗi) chỉ gửi 1 lần / 2 phút, tối đa 20 lần mỗi phiên.
 const sent = new Map();
 let budget = 20;
+// shaka.util.Error.Severity.CRITICAL = 2 (RECOVERABLE = 1).
+// Lỗi RECOVERABLE là lỗi shaka TỰ retry được — không phải "kênh chết". Kênh DASH
+// (.mpd) bắn loại lỗi này liên tục (token/DRM/segment) trong khi hình vẫn chạy,
+// nên player phải phân biệt được để khỏi báo động giả (VideoPlayer.jsx, TVPage.jsx).
+export const SHAKA_CRITICAL_SEVERITY = 2;
+
+/** Lỗi shaka này có phải lỗi nặng (không tự hồi phục) không? */
+export function isCriticalShakaError(d) {
+  if (!d) return true; // không đọc được chi tiết -> cứ coi là nặng, đừng bỏ sót kênh chết
+  if (d.severity === undefined && d.fatal === undefined) return true;
+  return d.severity === SHAKA_CRITICAL_SEVERITY || d.fatal === true;
+}
+
 export function logPlayerError({ channel, engine = 'hls', code = 'unknown', detail = '', fatal = false, platform = '' }) {
   try {
     if (budget <= 0) return;

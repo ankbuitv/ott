@@ -81,3 +81,36 @@ Upsert kênh (POST /admin/channels không truyền token) → GIỮ token ✅
 Import lại M3U (refresh) → token KHÔNG bị wipe                    ✅
 DELETE    : xoá token → URL phát không còn ?token=                ✅
 ```
+
+## 6. Kênh `.mpd` KHÔNG bị "báo lỗi shaka" (2026-09-12)
+
+Luồng DASH đi qua token/DRM làm shaka-player bắn lỗi **RECOVERABLE** (severity 1)
+liên tục — segment retry, đổi period, key chưa về kịp… — trong khi hình vẫn chạy
+bình thường. Trước đây mỗi lỗi như vậy đều:
+
+- gửi lên `/api/telemetry/player` → làm nhiễu tab **Admin → "Lỗi player"**, và
+- phủ màn hình "Không phát được" lên người xem.
+
+Nay với kênh `.mpd`:
+
+| Tình huống | Client (player) | Server (`player_errors`) |
+|---|---|---|
+| Kênh `.mpd` + lỗi shaka RECOVERABLE | im lặng (chỉ `console.warn`) | **không ghi** |
+| Kênh `.mpd` + lỗi shaka CRITICAL | hiện màn lỗi (kênh chết thật) | **không ghi** |
+| Kênh `.mpd` mà phải qua hls.js (`STREAM_MODE=proxy`) | vẫn tự rơi xuống shaka | **không ghi** `manifestParseError` |
+| Kênh `.m3u8` | như cũ | như cũ (`fatal` giờ đúng theo severity, không luôn `true`) |
+
+- Nhận diện kênh DASH ở client: `isDashChannel()` (`src/services/streamGuard.js`) —
+  theo đuôi `.mpd` của URL phát, `stream_url` của kênh tự import, hoặc cờ `mpd`
+  mà `/api/stream/token` trả kèm (cần khi phát qua URL proxy opaque).
+- Server lọc thêm lần nữa trong `handlePlayerTelemetry` (bỏ qua `engine=shaka` của
+  kênh có `stream_url` là `.mpd`) → mấy bản **APK cũ** vẫn gửi lên cũng không làm
+  bẩn bảng.
+- Health check kênh (`checkOneChannel`) nay ping **đúng URL có `?token=`** cho kênh
+  `.mpd` — trước đây ping URL trần bị nguồn trả 403 nên kênh bị gắn cờ "chết" oan
+  và bắn cảnh báo "🔴 Kênh chết" cho vận hành.
+- Người xem vẫn **báo lỗi thủ công** được (nút 🚩 "Báo kênh lỗi") — chỉ có báo cáo
+  tự động của shaka là bị bỏ qua.
+
+Kiểm chứng: `npm run test:mpd` (mount `VideoPlayer` thật trong jsdom + gọi handler
+thật của worker) — 28/28 pass.

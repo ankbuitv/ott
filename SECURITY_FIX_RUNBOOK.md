@@ -67,6 +67,31 @@ wrangler secret put PASSWORD_PEPPER       # dán $PEPPER_S  (xem cảnh báo ⚠
 wrangler secret put BREVO_API_KEY         # key Brevo hiện có (nếu đã có)
 ```
 
+### 1b. Secret nằm ở đâu trong repo? → `.dev.vars` (KHÔNG commit)
+
+File **`.dev.vars`** ở thư mục gốc giữ secret cho **local** (`wrangler dev` tự đọc,
+giá trị ở đó **đè** lên `[vars]` dev-only của `wrangler.dev.toml`) và cũng là nguồn
+để đẩy lên production:
+
+```bash
+# .dev.vars  (đã nằm trong .gitignore — đừng bỏ ignore, đừng commit)
+ADMIN_MASTER_TOKEN=<token admin — docs/script gọi tắt là ADMIN_TOKEN>
+LICENSE_SECRET=<secret giải mã AES-128, PHẢI giống hệt ở 2 worker>
+ADMIN_SECRET=<token admin của license worker>
+
+npm run dev:api        # wrangler dev đọc .dev.vars -> log in "Using vars defined in .dev.vars"
+npm run secrets:put    # đẩy lên Cloudflare: worker chính + chrtv-license (cần `npx wrangler login`)
+```
+
+`npm run secrets:put` chạy `wrangler secret put` cho từng biến (worker chính:
+`ADMIN_MASTER_TOKEN` + `LICENSE_SECRET`; license worker: `LICENSE_SECRET` +
+`ADMIN_SECRET` qua `-c wrangler.license.toml`). Muốn đẩy lẻ:
+`npm run secrets:put -- main` hoặc `-- lic`.
+
+> ⚠️ KHÔNG đưa mấy giá trị này vào `wrangler.toml`/`wrangler.dev.toml` (`[vars]`)
+> hay `.env` — hai file đó **đang được commit**, secret sẽ nằm vĩnh viễn trong lịch
+> sử git và phải xoay lại toàn bộ.
+
 > ⚠️ **CỰC KỲ QUAN TRỌNG — mật khẩu user và việc xoay `JWT_SECRET`:**
 > Bản cũ hash mật khẩu bằng `sha256(password + JWT_SECRET)`, nên **xoay
 > `JWT_SECRET` là mọi user gõ đúng mật khẩu vẫn bị báo “Sai mật khẩu”.**

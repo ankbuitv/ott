@@ -7,6 +7,10 @@ dist
 .DS_Store
 .env
 .env.local
+# Secret local cho `wrangler dev` (ADMIN_MASTER_TOKEN / LICENSE_SECRET / ADMIN_SECRET)
+# — tuyệt đối không commit
+.dev.vars
+.dev.vars.*
 
 # Video mẫu sinh ra để demo Shorts (không đưa vào repo)
 /public/_demo/

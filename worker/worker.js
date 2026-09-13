@@ -2740,6 +2740,9 @@ async function handleStreamToken(request, env) {
       direct: true,
       mode: "direct",
       url: targetUrl,
+      // Client dùng cờ này để biết đây là luồng DASH: kênh .mpd KHÔNG báo lỗi
+      // shaka (shaka hay bắn lỗi RECOVERABLE vì token/segment mà hình vẫn chạy).
+      mpd: isMpdUrl(targetUrl),
       exp: nowD + 3600,
       rotate_at: rotateAtD, // 0 = URL gốc không hết hạn, không cần xoay
       ...(previewOutD ? { preview: previewOutD } : {}),
@@ -2787,6 +2790,9 @@ async function handleStreamToken(request, env) {
     rotate_at: payload.exp - (previewInfo ? 15 : STREAM_TOKEN_GRACE), ttl,
     proxy_url: `/api/stream/proxy?t=${t}`,
     mode: streamMode(env),
+    // URL proxy opaque nên client không tự biết luồng gốc là DASH — phải báo kèm
+    // để client khỏi gửi báo cáo lỗi shaka cho kênh .mpd (xem VideoPlayer.jsx).
+    mpd: isMpdUrl(targetUrl),
     // AUTO: cho client biết nó được phép xin ?direct=1 khi proxy bị nguồn chặn
     ...(streamMode(env) === "auto" ? { fallback: "direct" } : {}),
     ...(previewOut ? { preview: previewOut } : {}),
@@ -5640,13 +5646,17 @@ async function checkOneChannel(ch) {
   const t0 = Date.now();
   const headers = { "User-Agent": ch.user_agent || UA_DALVIK };
   if (ch.referer) headers.Referer = ch.referer;
+  // Kênh .mpd có token riêng (Admin → "Token .mpd"): phải ping ĐÚNG URL mà player
+  // dùng (đã ghép ?token=…). Ping URL trần thì nguồn trả 403 → kênh bị gắn cờ
+  // "chết" oan và bắn cảnh báo "🔴 Kênh chết" cho vận hành (báo động giả).
+  const url = applyChannelStreamToken(ch.stream_url, ch);
   try {
-    const res = await fetch(ch.stream_url, { headers, redirect: "follow", signal: AbortSignal.timeout(6000) });
+    const res = await fetch(url, { headers, redirect: "follow", signal: AbortSignal.timeout(6000) });
     const latency = Date.now() - t0;
     const code = res.status;
     let ok = res.ok;
     let note = "";
-    if (ok && /\.m3u8(\?|$)/i.test(ch.stream_url)) {
+    if (ok && /\.m3u8(\?|$)/i.test(url)) {
       const text = (await res.text().catch(() => "")).slice(0, 4000);
       if (!text.includes("#EXTM3U")) { ok = false; note = "không phải m3u8 hợp lệ"; }
     } else {
@@ -5664,12 +5674,12 @@ async function runChannelHealthCheck(env, limit = 12, onlyIds = null) {
   let rows = [];
   if (onlyIds && onlyIds.length) {
     const marks = onlyIds.map(() => "?").join(",");
-    const r = await env.DB.prepare(`SELECT channel_id, name, stream_url, user_agent, referer FROM channels WHERE channel_id IN (${marks})`).bind(...onlyIds).all();
+    const r = await env.DB.prepare(`SELECT channel_id, name, stream_url, user_agent, referer, stream_token FROM channels WHERE channel_id IN (${marks})`).bind(...onlyIds).all();
     rows = r.results || [];
   } else {
     const nowSq = Math.floor(Date.now() / 1000);
     const r = await env.DB.prepare(
-      `SELECT c.channel_id, c.name, c.stream_url, c.user_agent, c.referer
+      `SELECT c.channel_id, c.name, c.stream_url, c.user_agent, c.referer, c.stream_token
        FROM channels c LEFT JOIN channel_health h ON h.channel_id = c.channel_id
        WHERE c.is_active = 1 AND COALESCE(h.maintenance_until, 0) <= ?
        ORDER BY COALESCE(h.checked_at, 0) ASC LIMIT ?`
@@ -5790,6 +5800,18 @@ async function handlePlayerTelemetry(request, env) {
   const rl = await rateLimitCheck(env, `plerr:${uid || ip}`, 60, 3600);
   if (!rl.allowed) return json({ success: true, throttled: true }, 200, request, env);
   const b = await request.json().catch(() => ({}));
+  // KÊNH DASH (.mpd): KHÔNG ghi lỗi engine=shaka vào player_errors.
+  // Luồng .mpd (token/DRM/segment rời) làm shaka bắn lỗi RECOVERABLE liên tục dù
+  // người xem vẫn thấy hình — gửi lên chỉ làm nhiễu tab Admin "Lỗi player" và làm
+  // kênh bị hiểu nhầm là chết. Client bản mới đã tự bỏ qua; lọc thêm ở đây để mấy
+  // bản APK cũ (vẫn gửi) không làm bẩn bảng.
+  if (String(b.engine || "").toLowerCase() === "shaka" && String(b.channel_id || "").trim()) {
+    try {
+      const ch = await env.DB.prepare("SELECT stream_url FROM channels WHERE channel_id = ?")
+        .bind(String(b.channel_id).slice(0, 80)).first();
+      if (ch && isMpdUrl(ch.stream_url)) return json({ success: true, skipped: "mpd" }, 200, request, env);
+    } catch { /* không tra được thì cứ ghi như cũ */ }
+  }
   try {
     await env.DB.prepare(
       "INSERT INTO player_errors (channel_id, channel_name, engine, code, detail, fatal, platform, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"

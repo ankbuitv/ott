@@ -6,8 +6,8 @@ import { formatTimeHHMM, calculateProgramProgress } from '../utils/dateUtils';
 import { maskScores } from '../utils/spoiler';
 import { useToast } from '../contexts/ToastContext';
 import { useI18n } from '../contexts/I18nContext';
-import { isHlsUrl, isProxiedStreamUrl, getRotateAtMs, refreshStreamToken, makeStreamRequestFilter, applyStreamClientHeaders, fallbackToDirectUrl } from '../services/streamGuard';
-import { logPlayerError } from '../services/telemetry';
+import { isHlsUrl, isProxiedStreamUrl, getRotateAtMs, refreshStreamToken, makeStreamRequestFilter, applyStreamClientHeaders, fallbackToDirectUrl, isDashChannel } from '../services/streamGuard';
+import { logPlayerError, isCriticalShakaError } from '../services/telemetry';
 import StreamWatermark from './StreamWatermark';
 import useNetworkQuality, { heightCapFor } from '../hooks/useNetworkQuality';
 import { useSettings } from '../contexts/SettingsContext';
@@ -104,6 +104,11 @@ export default function VideoPlayer({
 
     const proxied = isProxiedStreamUrl(streamUrl);
     const isHls = isHlsUrl(streamUrl) || proxied;
+    // Kênh DASH (.mpd): KHÔNG gửi báo cáo lỗi shaka lên server. Luồng .mpd (token/DRM)
+    // khiến shaka bắn lỗi liên tục ("báo trigger") trong khi hình vẫn chạy bình
+    // thường — gửi lên chỉ làm nhiễu tab Admin "Lỗi player". Chỉ còn hiện màn hình
+    // lỗi khi shaka báo CRITICAL (kênh chết thật, không tự hồi phục được).
+    const dash = isDashChannel(channel, streamUrl);
     let rotateTimer = null;
     // AUTO MODE: proxy bị NGUỒN chặn (502 UPSTREAM_UNAVAILABLE) -> chuyển kênh
     // này sang phát trực tiếp, thử đúng 1 lần cho mỗi lần mở kênh.
@@ -192,10 +197,19 @@ export default function VideoPlayer({
           player.addEventListener('buffering', (e) => { if (!cancelled) setBuffering(e.buffering); });
           player.addEventListener('error', (e) => {
             if (cancelled) return;
+            const d = e.detail || {};
+            const critical = isCriticalShakaError(d);
             console.error('shaka error', e.detail);
-            logPlayerError({ channel, engine: 'shaka', code: `shaka_${e.detail?.code || 'err'}`, detail: e.detail?.message || '', fatal: true });
-            setError(e.detail?.message || 'Không phát được');
-            setBuffering(false);
+            // Kênh .mpd: bỏ qua hoàn toàn việc báo lỗi shaka (chỉ log ra console)
+            if (dash) console.warn('[CHRTV] kênh .mpd — không gửi báo cáo lỗi shaka:', d.code, d.message || '');
+            else logPlayerError({ channel, engine: 'shaka', code: `shaka_${d.code || 'err'}`, detail: d.message || '', fatal: critical });
+            // Kênh .mpd chỉ hiện màn hình lỗi khi CRITICAL (chết thật) — lỗi
+            // RECOVERABLE do token/segment là chuyện thường ngày của DASH, shaka tự
+            // retry nên đừng phủ màn "Không phát được" lên người xem.
+            if (!dash || critical) {
+              setError(d.message || 'Không phát được');
+              setBuffering(false);
+            }
           });
           await player.load(streamUrl);
           if (!cancelled) {
@@ -223,7 +237,9 @@ export default function VideoPlayer({
         }
       } catch (e) {
         if (!cancelled) {
-          logPlayerError({ channel, engine: 'shaka', code: 'load_failed', detail: String(e?.message || e), fatal: true });
+          // Kênh .mpd: không báo lỗi shaka (kể cả load thất bại) — vẫn hiện màn lỗi
+          // để người xem còn bấm "Thử lại" / "Báo kênh lỗi" bằng tay.
+          if (!dash) logPlayerError({ channel, engine: 'shaka', code: 'load_failed', detail: String(e?.message || e), fatal: true });
           setError(String(e?.message || e || 'Lỗi tải kênh'));
           setBuffering(false);
         }
@@ -290,7 +306,10 @@ export default function VideoPlayer({
                 .catch(() => {});
               return;
             }
-            logPlayerError({
+            // Kênh .mpd mà phải đi qua hls.js (chế độ STREAM_MODE=proxy) thì chắc
+            // chắn văng manifestParseError rồi mới rơi xuống shaka — loại báo cáo đó
+            // chỉ là nhiễu, không gửi lên.
+            if (!dash) logPlayerError({
               channel,
               engine: 'hls',
               code: data?.details || data?.type || 'hls_error',

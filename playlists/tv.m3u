@@ -493,3 +493,10 @@ https://vmttv.dpdns.org/tv360/?id=tv360-11
 #KODIPROP:inputstream.adaptive.license_type=clearkey
 #KODIPROP:inputstream.adaptive.license_key=29b3e7c5de895bfa8850f16dad16e378:72a9e1be1d94ad66207f1ac61bcf7681
 https://vmttv.dpdns.org/tv360/?id=tv360-12
+
+#EXTINF:-1 tvg-id="boxhits" group-title="BOX" tvg-logo="https://vietanhtv.id.vn/logo/boxhits.png", Box Hits HD
+#EXTVLCOPT:http-user-agent=Dalvik/2.1.0
+#KODIPROP:inputstream.adaptive.manifest_type=mpd
+#KODIPROP:inputstream.adaptive.license_type=clearkey
+#KODIPROP:inputstream.adaptive.license_key=a7c942778e874d43be92b8d0a0cd11b4:6d54358306571658ffdb952c6560688b
+https://livevlisctcdnw.seenow.vn/mean/BOXHIT/manifest.mpd

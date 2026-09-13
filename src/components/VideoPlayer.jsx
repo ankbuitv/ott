@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import shaka from 'shaka-player';
 import Hls from 'hls.js';
-import { Play, Pause, Volume2, VolumeX, Maximize, Minimize, AlertTriangle, Radio, Clock, ArrowLeft, ChevronUp, ChevronDown, RefreshCw, List, X, Settings, Flag, Signal, ZoomIn } from 'lucide-react';
+import { Play, Pause, Volume2, VolumeX, Maximize, Minimize, AlertTriangle, Radio, Clock, ArrowLeft, ChevronUp, ChevronDown, RefreshCw, List, X, Settings, Flag, Signal, ZoomIn, Monitor, Languages, Captions, Hd } from 'lucide-react';
 import { formatTimeHHMM, calculateProgramProgress } from '../utils/dateUtils';
 import { maskScores } from '../utils/spoiler';
 import { useToast } from '../contexts/ToastContext';
@@ -13,12 +13,6 @@ import useNetworkQuality, { heightCapFor } from '../hooks/useNetworkQuality';
 import { useSettings } from '../contexts/SettingsContext';
 import useVideoZoom from '../hooks/useVideoZoom';
 import ReportChannelModal from './ReportChannelModal';
-
-function hexToUint8(hex) {
-  const arr = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < hex.length; i += 2) arr[i / 2] = parseInt(hex.substring(i, i + 2), 16);
-  return arr;
-}
 
 export default function VideoPlayer({
   channel,
@@ -41,7 +35,7 @@ export default function VideoPlayer({
   const { addToast } = useToast();
   const { t } = useI18n();
   const { settings } = useSettings();
-  const zoom = useVideoZoom(); // Vừa khung / Phóng to / Kéo giãn — lưu theo máy
+  const zoom = useVideoZoom();
 
   const [playing, setPlaying] = useState(true);
   const [muted, setMuted] = useState(false);
@@ -52,11 +46,20 @@ export default function VideoPlayer({
   const [error, setError] = useState(null);
   const [loadKey, setLoadKey] = useState(0);
   const [showList, setShowList] = useState(false);
-  const [showQuality, setShowQuality] = useState(false);
-  const [tracks, setTracks] = useState([]);
-  const [selectedTrack, setSelectedTrack] = useState(-1);
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingsTab, setSettingsTab] = useState('quality'); // quality | audio | subtitle | size
   const [showReport, setShowReport] = useState(false);
   const overlayTimer = useRef(null);
+
+  // Quality / Audio / Subtitle states
+  const [tracks, setTracks] = useState([]); // shaka variant tracks (quality)
+  const [selectedTrack, setSelectedTrack] = useState(-1);
+  const [hlsLevels, setHlsLevels] = useState([]); // hls.js levels
+  const [hlsLevel, setHlsLevel] = useState(-1); // -1 = auto
+  const [audioTracks, setAudioTracks] = useState([]); // unified: {id, label, lang, name, active}
+  const [selectedAudio, setSelectedAudio] = useState(-1);
+  const [textTracks, setTextTracks] = useState([]); // {id, label, lang, kind, active}
+  const [selectedText, setSelectedText] = useState(-1); // -1 = off
 
   // (13) Mạng yếu / chuyển sang 4G -> cảnh báo + tự hạ bitrate
   const net = useNetworkQuality((info) => {
@@ -75,8 +78,8 @@ export default function VideoPlayer({
     overlayTimer.current = setTimeout(() => {
       setShowOverlay(false);
       setShowList(false);
-      setShowQuality(false);
-    }, 4000);
+      setShowSettings(false);
+    }, 5000);
   }, []);
 
   useEffect(() => {
@@ -93,8 +96,6 @@ export default function VideoPlayer({
 
   const hlsRef = useRef(null);
 
-  // Phát qua proxy có token (streamGuard) — URL proxy không có đuôi .m3u8 nên
-  // phải nhận diện riêng, và phải XOAY TOKEN trước khi hết hạn để không đứng hình.
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !streamUrl) return;
@@ -104,19 +105,12 @@ export default function VideoPlayer({
 
     const proxied = isProxiedStreamUrl(streamUrl);
     const isHls = isHlsUrl(streamUrl) || proxied;
-    // Kênh DASH (.mpd): KHÔNG gửi báo cáo lỗi shaka lên server. Luồng .mpd (token/DRM)
-    // khiến shaka bắn lỗi liên tục ("báo trigger") trong khi hình vẫn chạy bình
-    // thường — gửi lên chỉ làm nhiễu tab Admin "Lỗi player". Chỉ còn hiện màn hình
-    // lỗi khi shaka báo CRITICAL (kênh chết thật, không tự hồi phục được).
     const dash = isDashChannel(channel, streamUrl);
     let rotateTimer = null;
-    // AUTO MODE: proxy bị NGUỒN chặn (502 UPSTREAM_UNAVAILABLE) -> chuyển kênh
-    // này sang phát trực tiếp, thử đúng 1 lần cho mỗi lần mở kênh.
     let directTried = false;
     const tryDirectFallback = async (hlsOrNull) => {
       if (directTried || !proxied || !channel) return false;
       directTried = true;
-      // Giữ mốc catchup khi fallback sang direct
       const atForFallback = isCatchupMode ? (getCatchupAt(channel.channel_id) || 0) : 0;
       const fresh = await fallbackToDirectUrl(channel, atForFallback).catch(() => "");
       if (cancelled || !fresh) return false;
@@ -131,11 +125,7 @@ export default function VideoPlayer({
       try { if (shakaRef.current) { shakaRef.current.destroy(); shakaRef.current = null; } } catch {}
     };
 
-    // Xoay token phát: xin URL mới rồi nạp lại nguồn (live tiếp tục ở mép sóng).
-    // FIX CATCHUP: phải giữ mốc thời gian catchup khi xoay, không rớt về live.
     const scheduleRotate = () => {
-      // URL trực tiếp (direct) thường không cần xoay (rotate_at = 0, thoát ngay);
-      // chỉ phiên XEM THỬ và URL proxy mới có rotate_at > 0.
       if (!channel) return;
       const rotateAt = getRotateAtMs(channel.channel_id);
       if (!rotateAt) return;
@@ -151,12 +141,10 @@ export default function VideoPlayer({
           else if (shakaRef.current) await shakaRef.current.load(fresh);
           scheduleRotate();
         } catch (e) {
-          // Hết 5 phút xem thử -> dừng hẳn, không thử lại
           if (e?.code === "PREVIEW_EXPIRED") {
             if (!cancelled) { setError(e.message || "Hết thời gian xem thử — nâng gói để xem tiếp."); setBuffering(false); }
             return;
           }
-          // hết hạn mà xin lại lỗi -> thử lại sau 20s (mạng chập chờn)
           if (!cancelled) rotateTimer = setTimeout(scheduleRotate, 20000);
         }
       }, delay);
@@ -173,19 +161,15 @@ export default function VideoPlayer({
             if (filter) player.getNetworkingEngine()?.registerRequestFilter(filter);
           } catch {}
           player.configure({
-            // Buffer đậm hơn + TẮT low-latency: nguồn IPTV VN vốn dao động mạnh,
-            // buffer mỏng 12s + lowLatencyMode trước đây làm đứng hình liên tục
-            // ("xem lag"). Cứ lấy trước 30s, chấp nhận trễ vài giây cho mượt.
             streaming: {
-              rebufferingGoal: 6,   // đã cạn buffer -> nạp đủ 6s mới phát tiếp
-              bufferingGoal: 30,    // đệm trước tới 30s
-              bufferBehind: 60,     // giữ lại 60s sau lượt xem (tua lại nhanh)
-              lowLatencyMode: false, // LL-HLS chỉ hợp nguồn hỗ trợ, nguồn thường = rebuffer
+              rebufferingGoal: 6,
+              bufferingGoal: 30,
+              bufferBehind: 60,
+              lowLatencyMode: false,
               retryParameters: { maxAttempts: 6, baseDelay: 800, timeout: 15000 },
             },
             abr: { enabled: true, defaultBandwidthEstimate: 2000000 },
           });
-          // (13) Mạng yếu / 4G / bật tiết kiệm dữ liệu -> chặn trần độ phân giải
           if (capRef.current) {
             try { player.configure({ restrictions: { maxHeight: capRef.current } }); } catch {}
           }
@@ -204,12 +188,8 @@ export default function VideoPlayer({
             const d = e.detail || {};
             const critical = isCriticalShakaError(d);
             console.error('shaka error', e.detail);
-            // Kênh .mpd: bỏ qua hoàn toàn việc báo lỗi shaka (chỉ log ra console)
             if (dash) console.warn('[CHRTV] kênh .mpd — không gửi báo cáo lỗi shaka:', d.code, d.message || '');
             else logPlayerError({ channel, engine: 'shaka', code: `shaka_${d.code || 'err'}`, detail: d.message || '', fatal: critical });
-            // Kênh .mpd chỉ hiện màn hình lỗi khi CRITICAL (chết thật) — lỗi
-            // RECOVERABLE do token/segment là chuyện thường ngày của DASH, shaka tự
-            // retry nên đừng phủ màn "Không phát được" lên người xem.
             if (!dash || critical) {
               setError(d.message || 'Không phát được');
               setBuffering(false);
@@ -223,6 +203,54 @@ export default function VideoPlayer({
               setTracks(all || []);
               const active = all.find(t => t.active);
               if (active) setSelectedTrack(active.id);
+
+              // Audio tracks (shaka)
+              const audios = [];
+              const seenLang = new Set();
+              (all || []).forEach((tr, idx) => {
+                const lang = tr.language || tr.audioId || '';
+                const key = `${lang}||${tr.audioRoles || ''}`;
+                if (!seenLang.has(key)) {
+                  seenLang.add(key);
+                  audios.push({
+                    id: idx,
+                    lang: lang || 'und',
+                    label: lang ? `${lang.toUpperCase()}${tr.audioRoles ? ` (${tr.audioRoles})` : ''}` : `Audio ${idx + 1}`,
+                    name: tr.label || '',
+                    active: !!tr.active,
+                  });
+                }
+              });
+              // Dùng getAudioLanguages nếu có
+              try {
+                const langs = player.getAudioLanguages();
+                if (langs && langs.length) {
+                  setAudioTracks(langs.map((l, i) => ({
+                    id: i,
+                    lang: l,
+                    label: l.toUpperCase(),
+                    name: '',
+                    active: all.some(t => t.active && t.language === l),
+                  })));
+                } else {
+                  setAudioTracks(audios);
+                }
+              } catch {
+                setAudioTracks(audios);
+              }
+
+              // Text tracks (subtitle)
+              const txt = player.getTextTracks() || [];
+              setTextTracks(txt.map((tr, i) => ({
+                id: tr.id ?? i,
+                rawId: tr,
+                lang: tr.language || 'und',
+                label: tr.label || tr.language || `Sub ${i + 1}`,
+                kind: tr.kind || 'subtitle',
+                active: !!tr.active,
+              })));
+              const activeTxt = txt.find(t => t.active);
+              setSelectedText(activeTxt ? (activeTxt.id ?? -1) : -1);
             } catch {}
             video.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
             setBuffering(false);
@@ -231,7 +259,6 @@ export default function VideoPlayer({
           video.src = streamUrl;
           video.addEventListener('waiting', () => !cancelled && setBuffering(true));
           video.addEventListener('playing', () => !cancelled && setBuffering(false));
-          // AUTO MODE: phát native qua proxy mà lỗi nguồn -> xin URL gốc (1 lần)
           video.addEventListener('error', () => {
             if (cancelled || !proxied) return;
             tryDirectFallback(null);
@@ -241,8 +268,6 @@ export default function VideoPlayer({
         }
       } catch (e) {
         if (!cancelled) {
-          // Kênh .mpd: không báo lỗi shaka (kể cả load thất bại) — vẫn hiện màn lỗi
-          // để người xem còn bấm "Thử lại" / "Báo kênh lỗi" bằng tay.
           if (!dash) logPlayerError({ channel, engine: 'shaka', code: 'load_failed', detail: String(e?.message || e), fatal: true });
           setError(String(e?.message || e || 'Lỗi tải kênh'));
           setBuffering(false);
@@ -253,25 +278,21 @@ export default function VideoPlayer({
     const load = async () => {
       try {
         if (isHls && Hls.isSupported()) {
-          const cap = capRef.current; // trần chiều cao (px), 0 = không giới hạn
+          const cap = capRef.current;
           const hls = new Hls({
             enableWorker: true,
-            lowLatencyMode: false, // nguồn thường (non-LL-HLS): LL mode gây đứng hình
+            lowLatencyMode: false,
             backBufferLength: 60,
-            // Đệm đậm hơn mặc định (18s) — nguồn VN dao động mạnh, buffer dày = mượt
             maxBufferLength: 30,
             maxMaxBufferLength: 120,
-            maxBufferSize: 60 * 1000 * 1000, // trần 60MB/tầng
-            liveSyncDurationCount: 3, // lệch live ~3 segment (~9-18s) cho ổn định
-            abrEwmaDefaultEstimate: 800000, // khởi động mức vừa -> lên hình nhanh
-            // Mạng chập chờn: thử lại nhiều hơn trước khi báo lỗi
+            maxBufferSize: 60 * 1000 * 1000,
+            liveSyncDurationCount: 3,
+            abrEwmaDefaultEstimate: 800000,
             fragLoadingMaxRetry: 6,
             levelLoadingMaxRetry: 4,
             manifestLoadingMaxRetry: 4,
             fragLoadingMaxRetryTimeout: 8000,
-            // (13) Mạng yếu/4G: chặn trần bitrate + khởi động ở mức thấp cho lên hình nhanh
             ...(cap ? { maxStarvationDelay: 6 } : {}),
-            // Gắn header định danh client cho request tới proxy CHRTV
             xhrSetup: (xhr, url) => {
               if (!isProxiedStreamUrl(url)) return;
               const h = applyStreamClientHeaders({}, channel);
@@ -281,7 +302,7 @@ export default function VideoPlayer({
           hlsRef.current = hls;
           hls.attachMedia(video);
           hls.on(Hls.Events.MEDIA_ATTACHED, () => { if (!cancelled) hls.loadSource(streamUrl); });
-          hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          hls.on(Hls.Events.MANIFEST_PARSED, (evt, data) => {
             if (cancelled) return;
             if (cap) {
               try {
@@ -289,17 +310,68 @@ export default function VideoPlayer({
                 if (idx.length) hls.autoLevelCapping = idx[idx.length - 1];
               } catch {}
             }
+            // Quality levels
+            const lvls = (hls.levels || []).map((l, i) => ({
+              id: i,
+              height: l.height || 0,
+              width: l.width || 0,
+              bitrate: l.bitrate || 0,
+              label: l.height ? `${l.height}p` : (l.bitrate ? `${Math.round(l.bitrate / 1000)}k` : `Level ${i}`),
+            })).sort((a, b) => b.height - a.height);
+            setHlsLevels(lvls);
+            setHlsLevel(hls.currentLevel ?? -1);
+
+            // Audio tracks
+            try {
+              const aTracks = (hls.audioTracks || []).map((at, i) => ({
+                id: at.id ?? i,
+                lang: at.lang || at.name || 'und',
+                label: at.name || at.lang || `Audio ${i + 1}`,
+                name: at.name || '',
+                active: i === hls.audioTrack,
+              }));
+              setAudioTracks(aTracks);
+              setSelectedAudio(hls.audioTrack ?? -1);
+            } catch {}
+
+            // Subtitle tracks
+            try {
+              const sTracks = (hls.subtitleTracks || []).map((st, i) => ({
+                id: st.id ?? i,
+                lang: st.lang || st.name || 'und',
+                label: st.name || st.lang || `Sub ${i + 1}`,
+                kind: 'subtitle',
+                active: i === hls.subtitleTrack,
+              }));
+              setTextTracks(sTracks);
+              setSelectedText(hls.subtitleTrack ?? -1);
+            } catch {}
+
             setBuffering(false);
             scheduleRotate();
             video.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
           });
+
+          // Level switched -> update UI
+          hls.on(Hls.Events.LEVEL_SWITCHED, (evt, data) => {
+            if (cancelled) return;
+            setHlsLevel(data.level ?? hls.currentLevel ?? -1);
+          });
+          hls.on(Hls.Events.AUDIO_TRACK_SWITCHED, (evt, data) => {
+            if (cancelled) return;
+            setSelectedAudio(data.id ?? hls.audioTrack ?? -1);
+            // Update active flag
+            setAudioTracks(prev => prev.map((at, idx) => ({ ...at, active: idx === (data.id ?? hls.audioTrack) })));
+          });
+          hls.on(Hls.Events.SUBTITLE_TRACK_SWITCH, (evt, data) => {
+            if (cancelled) return;
+            setSelectedText(data.id ?? hls.subtitleTrack ?? -1);
+            setTextTracks(prev => prev.map((st, idx) => ({ ...st, active: idx === (data.id ?? hls.subtitleTrack) })));
+          });
+
           hls.on(Hls.Events.ERROR, (evt, data) => {
             if (cancelled) return;
-            // Token phát hết hạn (403/401 từ proxy) -> xin token mới ngay thay vì báo lỗi
             const st = data?.response?.code || 0;
-            // AUTO MODE: proxy bị NGUỒN chặn IP Cloudflare -> trả 502
-            // UPSTREAM_UNAVAILABLE (kèm header X-CHRTV-Upstream-Error) -> xin
-            // URL gốc phát trực tiếp cho kênh này (đúng 1 lần, nhớ cả phiên)
             if (proxied && (st === 502 || st === 504)) {
               tryDirectFallback(hls).then((ok) => { if (!ok && !cancelled) hls.startLoad(); });
               return;
@@ -311,9 +383,6 @@ export default function VideoPlayer({
                 .catch(() => {});
               return;
             }
-            // Kênh .mpd mà phải đi qua hls.js (chế độ STREAM_MODE=proxy) thì chắc
-            // chắn văng manifestParseError rồi mới rơi xuống shaka — loại báo cáo đó
-            // chỉ là nhiễu, không gửi lên.
             if (!dash) logPlayerError({
               channel,
               engine: 'hls',
@@ -323,8 +392,6 @@ export default function VideoPlayer({
             });
             if (data.fatal) {
               if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-                // Mạng/manifest qua proxy chết hoàn toàn -> thử phát trực tiếp 1
-                // lần trước khi retry vô hạn (nguồn chặn IP Cloudflare, CORS…)
                 tryDirectFallback(hls).then((ok) => { if (!ok && !cancelled) hls.startLoad(); });
               }
               else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
@@ -347,7 +414,7 @@ export default function VideoPlayer({
       cancelled = true;
       cleanup();
     };
-  }, [streamUrl, loadKey, channel]);
+  }, [streamUrl, loadKey, channel, isCatchupMode]);
 
   const togglePlay = useCallback(() => {
     const v = videoRef.current;
@@ -381,22 +448,106 @@ export default function VideoPlayer({
     else { document.exitFullscreen().catch(() => {}); setFullscreen(false); }
   }, []);
 
-  const selectTrack = useCallback((id) => {
-    const p = shakaRef.current;
-    if (!p) return;
-    try {
-      if (id === -1) p.configure({ abr: { enabled: true } });
-      else {
-        const tr = tracks.find(t => t.id === id);
-        if (tr) p.selectVariantTrack(tr);
-      }
-      setSelectedTrack(id);
-    } catch {}
-    setShowQuality(false);
+  // Quality selection
+  const selectQuality = useCallback((id) => {
+    // HLS.js
+    if (hlsRef.current) {
+      try {
+        const hls = hlsRef.current;
+        if (id === -1) {
+          hls.currentLevel = -1; // auto
+        } else {
+          hls.currentLevel = id;
+        }
+        setHlsLevel(id);
+      } catch {}
+    }
+    // Shaka
+    if (shakaRef.current) {
+      try {
+        const player = shakaRef.current;
+        if (id === -1) {
+          player.configure({ abr: { enabled: true } });
+          setSelectedTrack(-1);
+        } else {
+          const tr = tracks.find(t => t.id === id);
+          if (tr) {
+            player.configure({ abr: { enabled: false } });
+            player.selectVariantTrack(tr, true);
+            setSelectedTrack(id);
+          }
+        }
+      } catch {}
+    }
+    setShowSettings(false);
     resetOverlay();
   }, [tracks, resetOverlay]);
 
+  const selectAudioTrack = useCallback((id) => {
+    if (hlsRef.current) {
+      try {
+        hlsRef.current.audioTrack = id;
+        setSelectedAudio(id);
+      } catch {}
+    }
+    if (shakaRef.current) {
+      try {
+        const player = shakaRef.current;
+        const all = player.getVariantTracks() || [];
+        // Tìm track có language tương ứng
+        const target = audioTracks.find(a => a.id === id);
+        if (target && target.lang) {
+          player.selectAudioLanguage(target.lang);
+          setSelectedAudio(id);
+          // Update variant active for UI
+          const act = player.getVariantTracks().find(t => t.active);
+          if (act) setSelectedTrack(act.id);
+        }
+      } catch {}
+    }
+    setShowSettings(false);
+    resetOverlay();
+  }, [audioTracks, resetOverlay]);
+
+  const selectSubtitle = useCallback((id) => {
+    if (hlsRef.current) {
+      try {
+        hlsRef.current.subtitleTrack = id;
+        setSelectedText(id);
+      } catch {}
+    }
+    if (shakaRef.current) {
+      try {
+        const player = shakaRef.current;
+        if (id === -1) {
+          player.setTextTrackVisibility(false);
+          setSelectedText(-1);
+        } else {
+          const all = player.getTextTracks() || [];
+          const tr = all.find(t => (t.id ?? -1) === id) || all[id];
+          if (tr) {
+            player.selectTextTrack(tr);
+            player.setTextTrackVisibility(true);
+            setSelectedText(id);
+          }
+        }
+      } catch {}
+    }
+    setShowSettings(false);
+    resetOverlay();
+  }, [resetOverlay]);
+
+  const selectZoom = useCallback((id) => {
+    try { zoom.setMode(id); } catch {}
+    setShowSettings(false);
+    resetOverlay();
+  }, [zoom, resetOverlay]);
+
   const progress = epgNow ? calculateProgramProgress(epgNow.start, epgNow.stop) : 0;
+
+  const hasQuality = (hlsLevels && hlsLevels.length > 0) || (tracks && tracks.length > 0);
+  const hasAudio = audioTracks && audioTracks.length > 1;
+  const hasSubs = textTracks && textTracks.length > 0;
 
   return (
     <div ref={containerRef} className="relative w-full h-full bg-black flex items-center justify-center overflow-hidden select-none">
@@ -409,7 +560,6 @@ export default function VideoPlayer({
 
       <video ref={videoRef} className={`w-full h-full ${zoom.cls}`} playsInline autoPlay controlsList="nodownload noplaybackrate noremoteplayback" disablePictureInPicture disableRemotePlayback onContextMenu={(e) => e.preventDefault()} />
 
-      {/* Logo watermark của web đắp lên khung hình — cấu hình ở Admin → "Logo khi phát" */}
       <StreamWatermark
         channel={channel}
         page={mini ? 'mini' : 'player'}
@@ -422,26 +572,26 @@ export default function VideoPlayer({
       {buffering && !error && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/60">
           <div className="w-10 h-10 border-[3px] border-[#f36f21] border-t-transparent rounded-full animate-spin"></div>
-          <span className="mt-2 text-[11px] text-white/60 font-bold tracking-widest">ĐANG TẢI</span>
+          <span className="mt-2 text-[11px] text-white/60 font-bold tracking-widest\">ĐANG TẢI</span>
         </div>
       )}
 
       {error && (
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/85 p-6 text-center">
           <div className="max-w-sm w-full">
-            <div className="w-14 h-14 mx-auto rounded-full bg-[#f36f21]/15 border border-[#f36f21]/30 flex items-center justify-center mb-3">
+            <div className="w-14 h-14 mx-auto rounded-full bg-[#f36f21]/15 border border-[#f36f21]/30 flex items-center justify-center mb-3\">
               <AlertTriangle className="w-7 h-7 text-[#ff9a3d]" />
             </div>
-            <h3 className="text-white font-black text-[15px] mb-1">{channelName}</h3>
-            <p className="text-stone-400 text-xs mb-4 line-clamp-3">{String(error).slice(0, 180)}</p>
+            <h3 className="text-white font-black text-[15px] mb-1\">{channelName}</h3>
+            <p className="text-stone-400 text-xs mb-4 line-clamp-3\">{String(error).slice(0, 180)}</p>
             <div className="flex gap-2 justify-center">
-              <button onClick={() => { setError(null); setLoadKey(k => k + 1); }} className="px-4 py-2 rounded-full bg-[#f36f21] text-white text-xs font-bold flex items-center gap-1.5">
+              <button onClick={() => { setError(null); setLoadKey(k => k + 1); }} className="px-4 py-2 rounded-full bg-[#f36f21] text-white text-xs font-bold flex items-center gap-1.5\">
                 <RefreshCw className="w-3.5 h-3.5" /> Thử lại
               </button>
-              <button onClick={() => setShowReport(true)} className="px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-bold flex items-center gap-1.5">
+              <button onClick={() => setShowReport(true)} className="px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-bold flex items-center gap-1.5\">
                 <Flag className="w-3.5 h-3.5" /> Báo kênh lỗi
               </button>
-              {onClose && <button onClick={onClose} className="px-4 py-2 rounded-full bg-white/10 text-white text-xs font-bold">Đóng</button>}
+              {onClose && <button onClick={onClose} className="px-4 py-2 rounded-full bg-white/10 text-white text-xs font-bold\">Đóng</button>}
             </div>
           </div>
         </div>
@@ -451,46 +601,49 @@ export default function VideoPlayer({
       <div className={`absolute inset-0 z-20 transition-opacity duration-300 pointer-events-none ${showOverlay ? 'opacity-100' : 'opacity-0'}`}>
         {/* Top */}
         <div className="absolute top-0 left-0 right-0 p-3 bg-gradient-to-b from-black/80 to-transparent flex items-center gap-2 pointer-events-auto">
-          {onClose && <button onClick={onClose} className="p-2 rounded-full bg-black/50 hover:bg-white/15 text-white"><ArrowLeft className="w-5 h-5" /></button>}
+          {onClose && <button onClick={onClose} className="p-2 rounded-full bg-black/50 hover:bg-white/15 text-white\"><ArrowLeft className="w-5 h-5" /></button>}
           {channel?.logo && <img src={channel.logo} alt="" className="w-8 h-8 rounded-lg object-contain bg-black/40 p-0.5" onError={e => e.target.style.display='none'} />}
           <div className="min-w-0">
-            <h2 className="text-[13px] font-bold text-white leading-tight truncate">{channelName}</h2>
-            <div className="flex items-center gap-1.5 mt-0.5">
+            <h2 className="text-[13px] font-bold text-white leading-tight truncate\">{channelName}</h2>
+            <div className="flex items-center gap-1.5 mt-0.5\">
               {isCatchupMode ? (
-                <span className="px-1.5 py-0.5 rounded bg-purple-600 text-white text-[9px] font-black flex items-center gap-1"><Clock className="w-3 h-3" />XEM LẠI</span>
+                <span className="px-1.5 py-0.5 rounded bg-purple-600 text-white text-[9px] font-black flex items-center gap-1\"><Clock className="w-3 h-3" />XEM LẠI</span>
               ) : (
-                <span className="px-1.5 py-0.5 rounded bg-red-600 text-white text-[9px] font-black flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>LIVE</span>
+                <span className="px-1.5 py-0.5 rounded bg-red-600 text-white text-[9px] font-black flex items-center gap-1\"><span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse\"></span>LIVE</span>
               )}
-              {channel?.group_title && <span className="text-[10px] text-white/60 truncate">{channel.group_title}</span>}
+              {channel?.group_title && <span className="text-[10px] text-white/60 truncate\">{channel.group_title}</span>}
+              {hlsLevel !== -1 && hlsLevels.length > 0 && (
+                <span className="hidden sm:inline-flex px-1.5 py-0.5 rounded bg-white/10 text-[9px] font-bold text-white/70\">{hlsLevels.find(l => l.id === hlsLevel)?.label || `${hlsLevel}`}</span>
+              )}
             </div>
           </div>
-          <div className="ml-auto flex items-center gap-1.5">
+          <div className="ml-auto flex items-center gap-1.5\">
             {(net.cellular || net.slow) && (
-              <span className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[10px] font-bold">
+              <span className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[10px] font-bold\">
                 <Signal className="w-3 h-3" />{net.cellular ? 'Đang dùng 4G' : 'Mạng yếu'}
               </span>
             )}
-            <button onClick={() => { setShowReport(true); resetOverlay(); }} title="Báo kênh lỗi" className="p-2 rounded-full bg-black/50 text-white/70 hover:text-white hover:bg-white/15"><Flag className="w-4 h-4" /></button>
-            <button onClick={() => { setShowQuality(v => !v); resetOverlay(); }} className={`p-2 rounded-full ${showQuality ? 'bg-[#f36f21] text-white' : 'bg-black/50 text-white/70 hover:text-white'}`}><Settings className="w-4 h-4" /></button>
+            <button onClick={() => { setShowReport(true); resetOverlay(); }} title="Báo kênh lỗi" className="p-2 rounded-full bg-black/50 text-white/70 hover:text-white hover:bg-white/15\"><Flag className="w-4 h-4" /></button>
+            <button onClick={() => { setShowSettings(v => !v); setSettingsTab('quality'); resetOverlay(); }} className={`p-2 rounded-full ${showSettings ? 'bg-[#f36f21] text-white' : 'bg-black/50 text-white/70 hover:text-white'}`}><Settings className="w-4 h-4" /></button>
             <button onClick={() => { setShowList(v => !v); resetOverlay(); }} className={`p-2 rounded-full ${showList ? 'bg-[#f36f21] text-white' : 'bg-black/50 text-white/70 hover:text-white'}`}><List className="w-4 h-4" /></button>
-            {onMinimize && !mini && <button onClick={onMinimize} className="p-2 rounded-full bg-black/50 text-white/70 hover:text-white text-[10px] font-bold">Thu nhỏ</button>}
+            {onMinimize && !mini && <button onClick={onMinimize} className="p-2 rounded-full bg-black/50 text-white/70 hover:text-white text-[10px] font-bold\">Thu nhỏ</button>}
           </div>
         </div>
 
         {/* Channel list side */}
         {showList && (
           <div className="absolute top-14 right-3 bottom-20 w-[300px] bg-black/90 backdrop-blur-md rounded-2xl border border-white/10 flex flex-col overflow-hidden pointer-events-auto">
-            <div className="p-3 border-b border-white/10 flex items-center justify-between">
-              <span className="text-xs font-bold text-white/70">Danh sách kênh</span>
-              <button onClick={() => setShowList(false)} className="p-1 rounded-full hover:bg-white/10"><X className="w-4 h-4 text-white/60" /></button>
+            <div className="p-3 border-b border-white/10 flex items-center justify-between\">
+              <span className="text-xs font-bold text-white/70\">Danh sách kênh</span>
+              <button onClick={() => setShowList(false)} className="p-1 rounded-full hover:bg-white/10\"><X className="w-4 h-4 text-white/60" /></button>
             </div>
             <div className="flex-1 overflow-y-auto">
               {allChannels.slice(0, 120).map(ch => (
                 <button key={ch.channel_id} onClick={() => { window.__chrtv_select_channel && window.__chrtv_select_channel(ch); setShowList(false); }} className={`w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-white/5 text-left ${channel?.channel_id === ch.channel_id ? 'bg-[#f36f21]/15' : ''}`}>
                   <img src={ch.logo || ''} alt="" className="w-8 h-8 rounded-lg object-contain bg-black/40 p-0.5" onError={e => e.target.style.display='none'} />
                   <div className="min-w-0 flex-1">
-                    <p className="text-[12px] font-bold text-white truncate">{ch.name}</p>
-                    <p className="text-[10px] text-white/40 truncate">{ch.group_title}</p>
+                    <p className="text-[12px] font-bold text-white truncate\">{ch.name}</p>
+                    <p className="text-[10px] text-white/40 truncate\">{ch.group_title}</p>
                   </div>
                   {channel?.channel_id === ch.channel_id && <Radio className="w-3 h-3 text-[#f36f21] animate-pulse" />}
                 </button>
@@ -499,59 +652,145 @@ export default function VideoPlayer({
           </div>
         )}
 
-        {/* Quality */}
-        {showQuality && (
-          <div className="absolute top-14 right-3 w-[220px] bg-black/90 backdrop-blur-md rounded-2xl border border-white/10 p-2 pointer-events-auto">
-            <p className="text-[11px] font-bold text-white/60 px-2 py-1">Chất lượng</p>
-            <button onClick={() => selectTrack(-1)} className={`w-full text-left px-3 py-2 rounded-xl text-xs ${selectedTrack === -1 ? 'bg-[#f36f21] text-white font-bold' : 'text-white/70 hover:bg-white/10'}`}>Tự động</button>
-            {tracks.map(tr => (
-              <button key={tr.id} onClick={() => selectTrack(tr.id)} className={`w-full text-left px-3 py-2 rounded-xl text-xs ${selectedTrack === tr.id ? 'bg-[#f36f21] text-white font-bold' : 'text-white/70 hover:bg-white/10'}`}>
-                {tr.height ? `${tr.height}p` : `Track ${tr.id}`} • {Math.round((tr.bandwidth||0)/1000)}k
-              </button>
-            ))}
+        {/* Settings panel — Quality / Audio / Subtitle / Size */}
+        {showSettings && (
+          <div className="absolute top-14 right-3 w-[320px] max-w-[90vw] bg-[#0f0f12]/95 backdrop-blur-md rounded-2xl border border-white/10 overflow-hidden pointer-events-auto shadow-2xl">
+            <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/10\">
+              <span className="text-[12px] font-black text-white flex items-center gap-1.5\"><Settings className="w-3.5 h-3.5 text-[#ff9a3d]" /> Cài đặt phát</span>
+              <button onClick={() => setShowSettings(false)} className="p-1 rounded-full hover:bg-white/10\"><X className="w-4 h-4 text-white/60" /></button>
+            </div>
+            <div className="flex gap-1 px-2 py-2 bg-black/30\">
+              {[
+                { id: 'quality', label: 'Chất lượng', icon: Hd, show: hasQuality },
+                { id: 'audio', label: 'Âm thanh', icon: Languages, show: hasAudio },
+                { id: 'subtitle', label: 'Phụ đề', icon: Captions, show: true },
+                { id: 'size', label: 'Khung hình', icon: Monitor, show: true },
+              ].filter(t => t.show).map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setSettingsTab(tab.id)}
+                  className={`flex-1 flex flex-col items-center gap-1 px-2 py-2 rounded-xl text-[10px] font-bold transition ${settingsTab === tab.id ? 'bg-[#f36f21] text-white' : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'}`}
+                >
+                  <tab.icon className="w-4 h-4" />
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            <div className="max-h-[320px] overflow-y-auto p-2\">
+              {settingsTab === 'quality' && (
+                <div className="space-y-1">
+                  <p className="text-[10px] font-bold text-white/40 px-2 py-1 uppercase tracking-widest\">Độ phân giải</p>
+                  {/* Auto */}
+                  <button onClick={() => selectQuality(-1)} className={`w-full text-left px-3 py-2.5 rounded-xl text-xs flex items-center justify-between ${ (hlsLevel === -1 && selectedTrack === -1) ? 'bg-[#f36f21] text-white font-bold' : 'text-white/70 hover:bg-white/10'}`}>
+                    <span className="flex items-center gap-2\"><Hd className="w-3.5 h-3.5" /> Tự động (ABR)</span>
+                    {(hlsLevel === -1 && selectedTrack === -1) && <span className="w-1.5 h-1.5 rounded-full bg-white"></span>}
+                  </button>
+                  {/* HLS levels */}
+                  {hlsLevels.map(lv => (
+                    <button key={`hls-${lv.id}`} onClick={() => selectQuality(lv.id)} className={`w-full text-left px-3 py-2.5 rounded-xl text-xs flex items-center justify-between ${hlsLevel === lv.id ? 'bg-[#f36f21] text-white font-bold' : 'text-white/70 hover:bg-white/10'}`}>
+                      <span>{lv.label} {lv.width ? `• ${lv.width}x${lv.height}` : ''}</span>
+                      <span className="text-[10px] opacity-60\">{lv.bitrate ? `${Math.round(lv.bitrate/1000)}k` : ''}</span>
+                    </button>
+                  ))}
+                  {/* Shaka tracks (fallback when no hls) */}
+                  {hlsLevels.length === 0 && tracks.map(tr => (
+                    <button key={tr.id} onClick={() => selectQuality(tr.id)} className={`w-full text-left px-3 py-2.5 rounded-xl text-xs flex items-center justify-between ${selectedTrack === tr.id ? 'bg-[#f36f21] text-white font-bold' : 'text-white/70 hover:bg-white/10'}`}>
+                      <span>{tr.height ? `${tr.height}p` : `Track ${tr.id}`} {tr.width ? `• ${tr.width}x${tr.height}` : ''}</span>
+                      <span className="text-[10px] opacity-60\">{Math.round((tr.bandwidth||0)/1000)}k</span>
+                    </button>
+                  ))}
+                  {!hasQuality && <p className="text-[11px] text-stone-500 px-3 py-4 text-center\">Kênh này chỉ có 1 chất lượng</p>}
+                </div>
+              )}
+              {settingsTab === 'audio' && (
+                <div className="space-y-1">
+                  <p className="text-[10px] font-bold text-white/40 px-2 py-1 uppercase tracking-widest\">Ngôn ngữ / Audio</p>
+                  {audioTracks.length === 0 && <p className="text-[11px] text-stone-500 px-3 py-4 text-center\">Không có lựa chọn audio khác</p>}
+                  {audioTracks.map((at, idx) => (
+                    <button key={`audio-${at.id}-${idx}`} onClick={() => selectAudioTrack(at.id)} className={`w-full text-left px-3 py-2.5 rounded-xl text-xs flex items-center justify-between ${ (selectedAudio === at.id || at.active) ? 'bg-[#f36f21] text-white font-bold' : 'text-white/70 hover:bg-white/10'}`}>
+                      <span className="flex items-center gap-2\"><Languages className="w-3.5 h-3.5" /> {at.label} {at.name ? `— ${at.name}` : ''}</span>
+                      <span className="text-[10px] opacity-60\">{at.lang}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {settingsTab === 'subtitle' && (
+                <div className="space-y-1">
+                  <p className="text-[10px] font-bold text-white/40 px-2 py-1 uppercase tracking-widest\">Phụ đề</p>
+                  <button onClick={() => selectSubtitle(-1)} className={`w-full text-left px-3 py-2.5 rounded-xl text-xs flex items-center gap-2 ${selectedText === -1 ? 'bg-[#f36f21] text-white font-bold' : 'text-white/70 hover:bg-white/10'}`}>
+                    <X className="w-3.5 h-3.5" /> Tắt phụ đề
+                  </button>
+                  {textTracks.map((st, idx) => (
+                    <button key={`sub-${st.id}-${idx}`} onClick={() => selectSubtitle(st.id)} className={`w-full text-left px-3 py-2.5 rounded-xl text-xs flex items-center justify-between ${ (selectedText === st.id || st.active) ? 'bg-[#f36f21] text-white font-bold' : 'text-white/70 hover:bg-white/10'}`}>
+                      <span className="flex items-center gap-2\"><Captions className="w-3.5 h-3.5" /> {st.label}</span>
+                      <span className="text-[10px] opacity-60\">{st.lang}</span>
+                    </button>
+                  ))}
+                  {textTracks.length === 0 && <p className="text-[11px] text-stone-500 px-3 py-4 text-center\">Kênh này không có phụ đề</p>}
+                </div>
+              )}
+              {settingsTab === 'size' && (
+                <div className="space-y-1">
+                  <p className="text-[10px] font-bold text-white/40 px-2 py-1 uppercase tracking-widest\">Kích thước khung hình</p>
+                  {zoom.modes.map(m => (
+                    <button key={m.id} onClick={() => selectZoom(m.id)} className={`w-full text-left px-3 py-2.5 rounded-xl text-xs flex items-center justify-between ${zoom.mode === m.id ? 'bg-[#f36f21] text-white font-bold' : 'text-white/70 hover:bg-white/10'}`}>
+                      <span className="flex items-center gap-2\"><ZoomIn className="w-3.5 h-3.5" /> {m.label}</span>
+                      <span className="text-[10px] opacity-60\">{m.id === 'fit' ? 'Giữ tỉ lệ' : m.id === 'fill' ? 'Lấp khung, cắt mép' : 'Kéo giãn'}</span>
+                    </button>
+                  ))}
+                  <div className="mt-3 p-2.5 rounded-xl bg-white/[0.04] border border-white/5\">
+                    <p className="text-[10px] text-stone-500\">Mẹo: bấm nút <ZoomIn className="w-3 h-3 inline" /> ở thanh điều khiển để đổi nhanh giữa 3 chế độ. Lựa chọn được lưu theo máy.</p>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
         {/* Bottom */}
         <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/90 via-black/50 to-transparent pointer-events-auto">
-          {/* EPG */}
-          <div className="mb-3 bg-black/60 backdrop-blur-sm rounded-xl p-3 border border-white/10">
+          <div className="mb-3 bg-black/60 backdrop-blur-sm rounded-xl p-3 border border-white/10\">
             <div className="flex gap-4">
               <div className="flex-1 min-w-0">
-                <p className="text-[10px] font-black tracking-widest text-[#ff9a3d] flex items-center gap-1"><Clock className="w-3 h-3" /> {isCatchupMode ? 'XEM LẠI' : 'ĐANG PHÁT'}</p>
-                <p className="text-[13px] font-bold text-white truncate mt-1">{isCatchupMode && catchupProgram ? maskScores(catchupProgram.title) : (epgNow ? maskScores(epgNow.title) : channelName)}</p>
-                <p className="text-[11px] text-white/50 truncate">{epgNow ? `${formatTimeHHMM(epgNow.start)} - ${formatTimeHHMM(epgNow.stop)}` : ''}</p>
-                {progress > 0 && <div className="mt-2 h-1 bg-white/10 rounded-full overflow-hidden"><div className="h-full bg-[#f36f21]" style={{ width: `${progress}%` }}></div></div>}
+                <p className="text-[10px] font-black tracking-widest text-[#ff9a3d] flex items-center gap-1\"><Clock className="w-3 h-3" /> {isCatchupMode ? 'XEM LẠI' : 'ĐANG PHÁT'}</p>
+                <p className="text-[13px] font-bold text-white truncate mt-1\">{isCatchupMode && catchupProgram ? maskScores(catchupProgram.title) : (epgNow ? maskScores(epgNow.title) : channelName)}</p>
+                <p className="text-[11px] text-white/50 truncate\">{epgNow ? `${formatTimeHHMM(epgNow.start)} - ${formatTimeHHMM(epgNow.stop)}` : ''}</p>
+                {progress > 0 && <div className="mt-2 h-1 bg-white/10 rounded-full overflow-hidden\"><div className="h-full bg-[#f36f21]" style={{ width: `${progress}%` }}></div></div>}
               </div>
               {epgNext && !isCatchupMode && (
-                <div className="w-[160px] border-l border-white/10 pl-3">
-                  <p className="text-[10px] text-white/40 font-bold tracking-widest">TIẾP THEO</p>
-                  <p className="text-xs font-semibold text-white/80 line-clamp-2 mt-1">{maskScores(epgNext.title)}</p>
-                  <p className="text-[10px] text-white/40 mt-1">{formatTimeHHMM(epgNext.start)}</p>
+                <div className="w-[160px] border-l border-white/10 pl-3\">
+                  <p className="text-[10px] text-white/40 font-bold tracking-widest\">TIẾP THEO</p>
+                  <p className="text-xs font-semibold text-white/80 line-clamp-2 mt-1\">{maskScores(epgNext.title)}</p>
+                  <p className="text-[10px] text-white/40 mt-1\">{formatTimeHHMM(epgNext.start)}</p>
                 </div>
               )}
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button onClick={togglePlay} className="p-2.5 rounded-full bg-[#f36f21] text-white hover:brightness-110">
+          <div className="flex items-center gap-2\">
+            <button onClick={togglePlay} className="p-2.5 rounded-full bg-[#f36f21] text-white hover:brightness-110\">
               {playing ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 fill-current" />}
             </button>
-            <button onClick={toggleMute} className="p-2.5 rounded-full bg-white/10 hover:bg-white/15 text-white">
+            <button onClick={toggleMute} className="p-2.5 rounded-full bg-white/10 hover:bg-white/15 text-white\">
               {muted || vol === 0 ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
             </button>
             <input type="range" min={0} max={100} value={muted ? 0 : vol} onChange={onVolChange} className="w-24 accent-[#f36f21]" />
-            <div className="flex items-center gap-1 ml-2">
-              {onPrevChannel && <button onClick={onPrevChannel} className="p-2 rounded-full bg-white/10 hover:bg-white/15 text-white"><ChevronUp className="w-4 h-4" /></button>}
-              {onNextChannel && <button onClick={onNextChannel} className="p-2 rounded-full bg-white/10 hover:bg-white/15 text-white"><ChevronDown className="w-4 h-4" /></button>}
+            <div className="flex items-center gap-1 ml-2\">
+              {onPrevChannel && <button onClick={onPrevChannel} className="p-2 rounded-full bg-white/10 hover:bg-white/15 text-white\"><ChevronUp className="w-4 h-4" /></button>}
+              {onNextChannel && <button onClick={onNextChannel} className="p-2 rounded-full bg-white/10 hover:bg-white/15 text-white\"><ChevronDown className="w-4 h-4" /></button>}
             </div>
-            {/* Phóng to: Vừa khung -> Phóng to (lấp khung, cắt mép) -> Kéo giãn */}
-            <button onClick={() => { zoom.cycle(); resetOverlay(); }} title={`Chế độ hình: ${zoom.label}`} className="hidden sm:flex items-center gap-1.5 px-3 py-2.5 rounded-full bg-white/10 hover:bg-white/15 text-white">
+            <button onClick={() => { zoom.cycle(); resetOverlay(); }} title={`Khung hình: ${zoom.label}`} className="hidden sm:flex items-center gap-1.5 px-3 py-2.5 rounded-full bg-white/10 hover:bg-white/15 text-white\">
               <ZoomIn className="w-4 h-4" />
-              <span className="text-[10px] font-bold">{zoom.label}</span>
+              <span className="text-[10px] font-bold\">{zoom.label}</span>
             </button>
-            <div className="ml-auto">
-              <button onClick={toggleFullscreen} className="p-2.5 rounded-full bg-white/10 hover:bg-white/15 text-white">
+            <div className="ml-auto flex items-center gap-1.5\">
+              {(hasAudio || hasSubs) && (
+                <div className="hidden md:flex items-center gap-1 px-2 py-1 rounded-full bg-black/60 border border-white/10 text-[10px] text-white/60\">
+                  {hasAudio && <span className="flex items-center gap-1\"><Languages className="w-3 h-3" />{audioTracks.length}</span>}
+                  {hasSubs && <span className="flex items-center gap-1\"><Captions className="w-3 h-3" />{textTracks.length}</span>}
+                </div>
+              )}
+              <button onClick={toggleFullscreen} className="p-2.5 rounded-full bg-white/10 hover:bg-white/15 text-white\">
                 {fullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
               </button>
             </div>

@@ -36,5 +36,5 @@ export default function useVideoZoom() {
   }, []);
 
   const cur = ZOOM_MODES.find((m) => m.id === mode) || ZOOM_MODES[0];
-  return { mode, cycle, label: cur.label, cls: cur.cls };
+  return { mode, modes: ZOOM_MODES, setMode, cycle, label: cur.label, cls: cur.cls };
 }

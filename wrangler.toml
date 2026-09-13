@@ -63,7 +63,7 @@ BREVO_SENDER_EMAIL = "noreply@chrtv.app"
 #           Cloudflare thì client tự xin ?direct=1 phát trực tiếp
 #   proxy = luôn proxy (giấu link tuyệt đối, kênh bị nguồn chặn sẽ không xem được)
 #   direct= luôn trả URL gốc ngay (link lộ rõ trên DevTools/sniffer)
-STREAM_MODE = "auto"
+STREAM_MODE = "direct"
 
 # Note: worker/worker.js degrades gracefully when DB / EPG_KV are not bound
 # (M3U/default channel list, per-request EPG fetch, localStorage fallbacks),

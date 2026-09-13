@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- KENH TEST CARD - VONG LAP 1 GIO (00:00 -> 59:59 PHUT:GIAY) | HLS: /test.m3u8 -->
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="urn:mpeg:dash:profile:isoff-live:2011" type="static" mediaPresentationDuration="PT3600.128S" minBufferTime="2.0">
+  <Period id="0" start="PT0S" duration="PT3600.128S">
+    <AdaptationSet id="0" contentType="video" mimeType="video/mp4" segmentAlignment="true" startWithSAP="1" maxWidth="384" maxHeight="216" maxFrameRate="1" par="16:9">
+      <SegmentTemplate timescale="90000" media="/seg/$Number%04d$.ts" startNumber="0" presentationTimeOffset="0">
+        <SegmentTimeline><S t="0" d="101520" /><S d="90000" r="3598" /></SegmentTimeline>
+      </SegmentTemplate>
+      <Representation id="testcard" bandwidth="73000" width="384" height="216" codecs="avc1.42c01e" audioSamplingRate="8000" />
+    </AdaptationSet>
+    <AdaptationSet id="1" contentType="audio" mimeType="audio/mp4" segmentAlignment="true" startWithSAP="1">
+      <SegmentTemplate timescale="90000" media="/seg/$Number%04d$.ts" startNumber="0" presentationTimeOffset="0">
+        <SegmentTimeline><S t="0" d="101520" /><S d="90000" r="3598" /></SegmentTimeline>
+      </SegmentTemplate>
+      <Representation id="tone" bandwidth="8000" audioSamplingRate="8000" codecs="mp4a.40.2">
+        <AudioChannelConfiguration schemeIdUri="urn:mpeg:dash:23003:3:audio_channel_configuration:2011" value="1" />
+      </Representation>
+    </AdaptationSet>
+  </Period>
+</MPD>

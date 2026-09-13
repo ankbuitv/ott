@@ -11,7 +11,9 @@
     "dev:api": "wrangler dev -c wrangler.dev.toml --local --ip 0.0.0.0 --port 8787",
     "test:release": "node scripts/release-state-test.mjs",
     "test:protect": "node scripts/protect-test.mjs",
-    "test:protect-e2e": "node scripts/protect-e2e.mjs"
+    "test:protect-e2e": "node scripts/protect-e2e.mjs",
+    "test:mpd": "node scripts/mpd-shaka-error-check.mjs",
+    "secrets:put": "bash scripts/put-secrets.sh"
   },
   "dependencies": {
     "@capacitor/android": "^7.0.0",

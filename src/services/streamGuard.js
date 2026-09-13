@@ -74,8 +74,13 @@ export function isHlsUrl(u) {
   return /\.m3u8(\?|$|#)/i.test(u || "");
 }
 
+/** true nếu URL là manifest DASH `.mpd` (kể cả khi đã nối `?token=…`). */
+export function isMpdUrl(u) {
+  return /\.mpd(\?|$|#)/i.test(String(u || ""));
+}
+
 export function isStreamableUrl(u) {
-  return !!u && isHttpUrl(u) && (isHlsUrl(u) || /\.mpd(\?|$|#)/i.test(u || ""));
+  return !!u && isHttpUrl(u) && (isHlsUrl(u) || isMpdUrl(u));
 }
 
 /** true nếu URL đang phát là URL proxy của CHRTV (player nên coi như HLS). */
@@ -105,6 +110,30 @@ export function streamPrefersDirect(channelId) {
 export function getRotateAtMs(channelId) {
   const info = rotateInfo.get(channelId);
   return info && info.rotateAt ? info.rotateAt : 0;
+}
+
+/** Kênh này server xác nhận là luồng DASH (.mpd)? (dùng khi URL phát là URL proxy) */
+export function streamIsMpd(channelId) {
+  const info = rotateInfo.get(channelId);
+  return !!(info && info.mpd);
+}
+
+/**
+ * Kênh đang phát có phải DASH (.mpd) không?
+ *
+ * Cần cho việc "không báo lỗi shaka cho kênh .mpd": luồng DASH qua token/DRM hay
+ * khiến shaka bắn lỗi RECOVERABLE liên tục dù hình vẫn chạy, nên phải nhận diện
+ * được cả 3 trường hợp:
+ *   - URL phát lộ đuôi `.mpd` (chế độ direct — mặc định của kênh DASH ở auto mode)
+ *   - kênh do người dùng tự import (còn giữ `stream_url` gốc)
+ *   - URL phát là URL proxy opaque (chế độ STREAM_MODE=proxy) -> nhớ từ response
+ *     của /api/stream/token (server trả kèm cờ `mpd`)
+ */
+export function isDashChannel(channel, url) {
+  if (isMpdUrl(url)) return true;
+  if (!channel) return false;
+  if (isMpdUrl(channel.stream_url || channel.url)) return true;
+  return streamIsMpd(channel.channel_id || channel.stream_url || channel.url);
 }
 
 function err(code, message) {
@@ -203,6 +232,8 @@ export async function requestStreamAccess(channel, { at = 0, forceDirect = false
     rotateAt: rotateAtS > 0 ? Math.max(Date.now() + 15000, rotateAtS * 1000) : 0,
     // AUTO: server cho phép xin ?direct=1 khi proxy bị nguồn chặn
     canFallback: !directUrl && data.fallback === "direct",
+    // Server cho biết luồng gốc là DASH (.mpd) — kể cả khi ta đang cầm URL proxy
+    mpd: isMpdUrl(url) || !!data.mpd,
   });
   return url;
 }

@@ -1079,6 +1079,14 @@ export function ProtectTab({ BASE, headers, addToast }) {
         luồng fMP4/CMAF hoặc đã có DRM cũng tự bỏ qua.
       </div>
 
+      <div className="rounded-xl border border-amber-500/25 bg-amber-500/[0.06] px-3 py-2.5 text-[11px] text-amber-200/90 leading-relaxed">
+        <b className="text-amber-300">⚠️ Hệ thống đang chạy <code className="text-amber-100">STREAM_MODE=direct</code>:</b> kênh
+        phát trực tiếp từ URL gốc nên <b className="text-amber-300">lớp mã hoá AES-128 ở trên KHÔNG có tác dụng</b>
+        (kênh premium DASH <code className="text-amber-100">.mpd</code> không đi qua proxy được). Muốn bật lại: sửa
+        <code className="text-amber-100">STREAM_MODE</code> trong <code className="text-amber-100">wrangler.toml</code> thành
+        <code className="text-amber-100">auto</code> hoặc <code className="text-amber-100">proxy</code> rồi deploy lại.
+      </div>
+
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />

@@ -58,12 +58,17 @@ database_id = "6beab015-333c-45a2-8062-41d1fd3f066f"
 [vars]
 BREVO_SENDER_NAME = "NO REPLY - CHRTV PL▷Y"
 BREVO_SENDER_EMAIL = "noreply@chrtv.app"
-# Chế độ phát luồng (mặc định từ 2026-09-12):
-#   auto  = proxy trước (giấu link gốc khỏi m3u8 sniffer), nguồn nào chặn IP
-#           Cloudflare thì client tự xin ?direct=1 phát trực tiếp
-#   proxy = luôn proxy (giấu link tuyệt đối, kênh bị nguồn chặn sẽ không xem được)
-#   direct= luôn trả URL gốc ngay (link lộ rõ trên DevTools/sniffer)
-STREAM_MODE = "auto"
+# Chế độ phát luồng (ĐỔI TỪ 2026-09-13):
+#   direct = LUÔN trả URL gốc ngay, phát trực tiếp từ trình duyệt/app (mặc định
+#            hiện tại). Lý do: toàn bộ kênh premium đã chuyển sang DASH (.mpd) mà
+#            proxy không rewrite được MPD XML -> đi proxy là vỡ; phát trực tiếp
+#            cũng cho chất lượng/tốc độ tốt hơn và không tốn băng thông Worker.
+#            ĐÁNH ĐỔI: link gốc lộ trên DevTools/m3u8 sniffer và lớp mã hoá
+#            AES-128 của proxy (PROTECT=on) KHÔNG còn tác dụng.
+#   auto   = proxy trước (giấu link gốc), kênh .mpd + kênh bị nguồn chặn IP
+#            Cloudflare thì client tự xin ?direct=1 (chế độ cũ 2026-09-12)
+#   proxy  = luôn proxy (giấu link tuyệt đối, kênh bị nguồn chặn sẽ không xem được)
+STREAM_MODE = "direct"
 
 # Note: worker/worker.js degrades gracefully when DB / EPG_KV are not bound
 # (M3U/default channel list, per-request EPG fetch, localStorage fallbacks),

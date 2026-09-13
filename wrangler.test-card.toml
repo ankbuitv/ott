@@ -1,0 +1,10 @@
+# CHRTV TEST CARD — worker trang test link m3u8/mpd
+# Deploy riêng, KHÔNG đụng worker chính của app:
+#   npx wrangler deploy -c wrangler.test-card.toml
+name = "test-card"
+main = "worker/test-card-worker.js"
+compatibility_date = "2024-09-23"
+
+[vars]
+# Tên hiện trên trang test card (đổi tùy ý)
+BRAND = "CHRTV"

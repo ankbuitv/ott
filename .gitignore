@@ -14,3 +14,6 @@ dist
 
 # Video mẫu sinh ra để demo Shorts (không đưa vào repo)
 /public/_demo/
+
+# Bento4 source clone (dung tam de build tool sinh ke nh ma hoa)
+worker/testcard-tools/bento4/

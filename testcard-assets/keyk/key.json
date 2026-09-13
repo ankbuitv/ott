@@ -1,0 +1,5 @@
+{
+  "kid": "0123456789abcdef0123456789abcdef",
+  "key": "c7ba46086dda345a929e29bf155e459c",
+  "note": "ClearKey của kênh test — đổi bằng cách chạy lại encode-key.mjs với --kid/--key, và cập nhật CLEARKEY trong wrangler.testcard-channel.toml"
+}

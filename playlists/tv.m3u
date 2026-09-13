@@ -318,7 +318,7 @@ https://devda.undo.it/Stream/index.php?id=tv&ext=.m3u8
 #EXTVLCOPT:http-user-agent=Dalvik/2.1.0
 #KODIPROP:inputstream.adaptive.manifest_type=mpd
 #KODIPROP:inputstream.adaptive.license_type=clearkey
-#KODIPROP:inputstream.adaptive.license_key=a7c942778e874d43be92b8d0a0cd11b4:6d54358306571658ffdb952c6560688b
+#KODIPROP:inputstream.adaptive.license_key=2942ed303e0d40c9b99c94c587bbf509:96cda24109734fb7920d799d58d1a9ae
 https://livevlisctcdnw.seenow.vn/mean/MUSICBOX/manifest.mpd
 #EXTINF:-1 tvg-id="woman" group-title="🎬 BOX - International Channels" tvg-logo="https://vietanhtv.id.vn/logo/woman.png", WOMAN HD
 #EXTVLCOPT:http-user-agent=Dalvik/2.1.0

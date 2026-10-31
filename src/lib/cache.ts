@@ -1,0 +1,4 @@
+export type RemoteResult<T>={status:'success';data:T}|{status:'error';message:string};
+export function reconcile<T>(result:RemoteResult<T>,cached:T|null):{data:T;freshness:'fresh'|'stale'}|null {return result.status==='success'?{data:result.data,freshness:'fresh'}:cached===null?null:{data:cached,freshness:'stale'};}
+export function scopeKey(account:string,profile:string,kind:string){return ['veo','v1',account,profile,kind].map(encodeURIComponent).join(':');}
+export class ScopedCache { constructor(private storage:Pick<Storage,'getItem'|'setItem'|'removeItem'>,private account:string,private profile:string){} get<T>(kind:string):T|null{try{const v=this.storage.getItem(scopeKey(this.account,this.profile,kind));return v===null?null:JSON.parse(v) as T;}catch{return null;}} set<T>(kind:string,value:T){try{this.storage.setItem(scopeKey(this.account,this.profile,kind),JSON.stringify(value));}catch{/* optional */}} }

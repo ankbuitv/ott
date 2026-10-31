@@ -1,16 +1,12 @@
-node_modules
-dist
-.vite
-.wrangler
-.data
-*.log
-.DS_Store
+node_modules/
+dist/
+.wrangler/
+.cache/
+.toolhome/
 .env
-.env.local
-# Secret local cho `wrangler dev` (ADMIN_MASTER_TOKEN / LICENSE_SECRET / ADMIN_SECRET)
-# — tuyệt đối không commit
-.dev.vars
-.dev.vars.*
-
-# Video mẫu sinh ra để demo Shorts (không đưa vào repo)
-/public/_demo/
+.env.*
+!.env.example
+*.log
+*.tsbuildinfo
+# Báo cáo rà soát nội bộ, không đưa vào repository công khai.
+docs/veo-discovery/

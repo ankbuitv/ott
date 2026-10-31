@@ -1,0 +1,4 @@
+import type {ReactNode} from 'react';import type {StudioChannel,StudioStatus} from './data';
+export function StationMark({channel}:{channel:StudioChannel}){return <span className={`studio-station ${channel.tone}`} aria-hidden="true"><small>VEO</small><strong>{channel.number}</strong></span>;}
+export function ChannelStatus({status}:{status:StudioStatus}){return <span className={`studio-status ${status}`}><span/>{status==='sample'?'Kênh mẫu':'Bản nháp'}</span>;}
+export function PageHeading({eyebrow,title,description,action}:{eyebrow:string;title:string;description:string;action?:ReactNode}){return <div className="studio-page-heading"><div><p className="studio-eyebrow">{eyebrow}</p><h1>{title}</h1><p className="studio-page-description">{description}</p></div>{action&&<div className="studio-page-actions">{action}</div>}</div>;}

@@ -20,3 +20,6 @@
 .email-field{display:flex;align-items:center;gap:10px;padding:0 13px;border:1px solid #425045;border-radius:8px;background:#101712;color:#b6c6b2}.email-field:focus-within{outline:2px solid #d8f87a;outline-offset:2px}.email-field input{min-height:46px;min-width:0;width:100%;border:0;outline:0;background:transparent;font-size:13px;color:#f2f4ed}.email-field input::placeholder{color:#a5afa5;opacity:1}
 
 .email-field.is-invalid{border-color:#f0aa91}.form-message.is-error{color:#ffd0bf}
+
+/* Tài khoản chỉ dành cho preview local. */
+.auth-tabs{display:flex;gap:4px;margin-top:22px;padding:4px;background:#0f1711;border:1px solid #344438;border-radius:9px}.auth-tabs button{flex:1;min-height:40px;padding:9px;border-radius:6px;background:transparent;color:#bbcbb7;font-size:12px;font-weight:600}.auth-tabs button.active{background:#2c4130;color:#f2f9eb}.auth-form .auth-form-row+ .auth-form-row{margin-top:16px}.auth-form-row label{display:block;font-weight:600;font-size:12px;margin:0 0 9px}.auth-form-row small{display:block;color:#b5c4b1;font-size:10px;line-height:1.6;margin-top:8px}.account-retry{margin-top:20px}.account-user-email{overflow-wrap:anywhere;color:#e7f3df!important;font-weight:600}.account-status{display:flex;flex-wrap:wrap;gap:8px;margin-top:15px}.account-status span{padding:6px 9px;border-radius:6px;background:#2c4030;color:#dcebd5;font-size:10px}

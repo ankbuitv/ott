@@ -1,3 +1,4 @@
+if(process.env.VEO_TEST_ISOLATED!=='1')throw new Error('Browser tests cần bản preview D1 tách biệt; chạy qua npm script.');
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {existsSync,mkdirSync,readFileSync,writeFileSync} from 'node:fs';
@@ -75,15 +76,18 @@ try{
  await page.screenshot({path:'.cache/browser/tv-desktop.png',fullPage:true});
 
  await open('/tai-khoan');
- assert.equal(await page.$eval('#email',e=>e.type),'email');
+ assert.equal(await page.$eval('#account-email',e=>e.type),'email');
  assert.equal(await page.$('input[type="tel"]'),null);
- await page.click('.account-submit');await text('#email-message','hợp lệ');
- assert.equal(await page.$eval('#email',e=>e.getAttribute('aria-invalid')),'true');
- await page.type('#email','khongphaiemail');await page.click('.account-submit');await text('#email-message','hợp lệ');
- await page.$eval('#email',e=>e.select());await page.keyboard.press('Backspace');
- await page.type('#email','ban@example.com');await page.click('.account-submit');
- await text('#email-message','chưa được kết nối');assert.deepEqual(authRequests,[]);
- await page.screenshot({path:'.cache/browser/email.png',fullPage:true});
+ await page.click('.account-submit');await text('#account-message','hợp lệ');
+ assert.equal(await page.$eval('#account-email',e=>e.getAttribute('aria-invalid')),'true');
+ await page.type('#account-email','khongphaiemail');await page.click('.account-submit');await text('#account-message','hợp lệ');
+ await page.click('.auth-tabs button:nth-child(2)');await text('.account-form-panel','Đăng ký');
+ const syntheticPassword=`browser-${globalThis.crypto.randomUUID()}`;
+ await page.type('#account-email','viewer@example.test');await page.type('#account-password',syntheticPassword);await page.type('#account-confirm',syntheticPassword);
+ await page.click('.account-submit');await text('.account-form-panel','Đã đăng nhập');await text('.account-status','Email chưa xác minh');
+ assert.deepEqual(authRequests,[]);await page.screenshot({path:'.cache/browser/email.png',fullPage:true});
+ await page.click('.account-retry');await text('.account-form-panel','Chào mừng');
+ await page.type('#account-email','viewer@example.test');await page.type('#account-password',syntheticPassword);await page.click('.account-submit');await text('.account-form-panel','Đã đăng nhập');
 
  for(const width of [320,375,390,768,1024,1440]){
   await page.setViewport({width,height:844});

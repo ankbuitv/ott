@@ -9,11 +9,12 @@
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
     "worker:dev": "node scripts/worker-local.mjs",
-    "test:browser": "node tests/browser.mjs",
+    "test:browser": "node tests/run-browser-suite.mjs viewer",
     "admin:preview": "node scripts/admin-preview.mjs",
-    "test:admin-browser": "node tests/admin-browser.mjs",
-    "test:vod-browser": "node tests/vod-browser.mjs",
-    "test:version-runtime": "node tests/version-runtime.mjs"
+    "test:admin-browser": "node tests/run-browser-suite.mjs admin",
+    "test:vod-browser": "node tests/run-browser-suite.mjs vod",
+    "test:version-runtime": "node tests/version-runtime.mjs",
+    "test:auth-browser": "node tests/run-browser-suite.mjs auth"
   },
   "dependencies": {
     "@fontsource/be-vietnam-pro": "^5.3.0",

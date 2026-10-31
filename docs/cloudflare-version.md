@@ -7,8 +7,8 @@ Chủ dự án đã cho phép Workers Builds upload **một Worker version chưa
 - `wrangler.jsonc` ở root chỉ vào `worker/version-entry.ts` và static assets `dist/`, tên khớp Worker đang được kết nối với GitHub. Custom build chạy `npm run build` trước khi upload, nên không phụ thuộc vào cache `dist` hoặc cấu hình build command trong dashboard.
 - `scripts/cloudflare-version-build.mjs` từ chối các Wrangler command khác ngoài `versions upload`. Đây chỉ là một biện pháp phòng vệ cho cấu hình mặc định; dashboard hoặc lệnh khác có thể bỏ qua nó. Không merge/deploy nếu chưa review và phê duyệt production riêng.
 - `keep_vars: true` yêu cầu Wrangler giữ biến được cấu hình trên dashboard trong version. Cloudflare có thể kế thừa secrets từ version trước; không sao chép, in, thiết lập hoặc thay đổi giá trị bí mật trong repo. `version-entry.ts` **chỉ đọc `ASSETS`**, bỏ qua tất cả biến, secrets và binding khác; không cấu hình D1, R2, KV, routes hoặc domains trong version này.
-- Endpoint `/api/demo/vod` trong version trả danh mục fixture **chỉ đọc** được đóng gói cùng code; video/poster chỉ từ assets local. Deep link `/vod/:id` hoạt động với fixture. `/admin` và API admin trả 404 ngay cả khi Worker cũ có biến preview trùng tên. Danh mục và chỉnh sửa VOD ở local không đồng bộ vào version.
-- Quyền media, D1 production, đăng nhập email, auth/RBAC, audit, migration và dữ liệu thật chưa có. Không promote version này thành dịch vụ production.
+- Endpoint `/api/demo/vod` trong version trả danh mục fixture **chỉ đọc** được đóng gói cùng code; video/poster chỉ từ assets local. Deep link `/vod/:id` hoạt động với fixture. `/admin` và API admin trả 404 ngay cả khi Worker cũ có biến preview trùng tên; các API tài khoản local trả 503. Danh mục và chỉnh sửa VOD ở local không đồng bộ vào version.
+- Quyền media, D1 production, tài khoản/auth/RBAC production, audit, migration và dữ liệu thật chưa có; auth local không hoạt động trong version này. Không promote version này thành dịch vụ production.
 
 ## Kiểm thử không upload
 

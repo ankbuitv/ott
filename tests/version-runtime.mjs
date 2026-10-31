@@ -15,5 +15,6 @@ try{
   const response=await mf.dispatchFetch(`http://version.test${path}`,{headers:{accept:'text/html'}});assert.equal(response.status,status,path);assert.match(response.headers.get('content-security-policy'),/frame-ancestors 'none'/);
  }
  const mutation=await mf.dispatchFetch('http://version.test/api/demo/admin/vod',{method:'POST'});assert.equal(mutation.status,404);
- console.log('Worker version local runtime: danh mục mẫu, deep link và admin bị khóa: PASS');
+ for(const path of ['/api/demo/auth/session','/api/demo/auth/register','/api/demo/auth/admin-setup']){const r=await mf.dispatchFetch(`http://version.test${path}`,{method:path.endsWith('session')?'GET':'POST'});assert.equal(r.status,503,path);}
+ console.log('Worker version local runtime: danh mục mẫu, deep link, admin và auth bị khóa: PASS');
 }finally{await mf.dispose();}

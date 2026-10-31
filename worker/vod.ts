@@ -1,5 +1,7 @@
 import {parseVodDraft,type Vod} from '../src/data/vod';
 import {versionVod} from '../src/data/version-vod';
+import {allowedPreviewOrigin,limitedJson} from './preview-http';
+import {sessionUser} from './auth';
 export interface D1Statement {bind:(...params:(string|number)[])=>D1Statement;all:<T>()=>Promise<{results:T[]}>;first:<T>()=>Promise<T|null>;run:()=>Promise<{success:boolean}>}
 export interface PreviewDb {prepare:(sql:string)=>D1Statement}
 export type VodEnv={VEO_ENV?:string;ADMIN_PREVIEW?:string;VOD_DB?:PreviewDb};
@@ -9,19 +11,6 @@ const idPattern=/^[a-z0-9-]{1,80}$/;
 function json(body:unknown,status=200,headers?:HeadersInit){return Response.json(body,{status,headers:{'cache-control':'no-store',...headers}});}
 function fail(status:number,code:string,message:string,headers?:HeadersInit){return json({error:{code,message}},status,headers);}
 function methodNotAllowed(allowed:string){return fail(405,'METHOD_NOT_ALLOWED','Phương thức không được hỗ trợ.',{allow:allowed});}
-function allowedOrigin(request:Request){
- const origin=request.headers.get('origin'),site=request.headers.get('sec-fetch-site');if(request.headers.get('x-veo-preview')!=='local'||(site&&site!=='same-origin'&&site!=='none'))return false;
- if(!origin)return site==='same-origin';
- try{const o=new URL(origin),target=new URL(request.url);if(o.host!==target.host||!['http:','https:'].includes(o.protocol))return false;if(o.username||o.password)return false;if(o.protocol==='http:'&&!['127.0.0.1','localhost','[::1]'].includes(o.hostname))return false;return true;}catch{return false;}
-}
-async function limitedBody(request:Request):Promise<unknown>{
- const header=request.headers.get('content-length');if(header&&(!/^\d+$/.test(header)||Number(header)>8192))throw new Error('BODY_TOO_LARGE');
- if(!request.body)throw new Error('INVALID_JSON');
- const reader=request.body.getReader(),chunks:Uint8Array[]=[];let size=0;
- for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>8192){await reader.cancel();throw new Error('BODY_TOO_LARGE');}chunks.push(value);}
- const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}
- try{return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes));}catch{throw new Error('INVALID_JSON');}
-}
 export async function publishedVodExists(db:PreviewDb|undefined,id:string):Promise<boolean>{
  if(!db||!idPattern.test(id))return false;return !!(await db.prepare("SELECT id FROM preview_vod WHERE id = ? AND status = 'published'").bind(id).first<{id:string}>());
 }
@@ -41,6 +30,11 @@ export async function handleVodApi(request:Request,env:VodEnv):Promise<Response|
  if(env.VEO_ENV!=='local'||!env.VOD_DB)return fail(503,'VOD_DISABLED','Kho VOD mẫu chưa được kết nối.');
  const db=env.VOD_DB;
  try{
+  if(adminMatch){
+   if(!['GET','HEAD'].includes(request.method)&&!allowedPreviewOrigin(request))return fail(403,'ORIGIN_NOT_ALLOWED','Yêu cầu không cùng nguồn.');
+   const user=await sessionUser(request,db);if(!user)return fail(401,'AUTH_REQUIRED','Vui lòng đăng nhập quản trị.');
+   if(user.role!=='admin')return fail(403,'ADMIN_REQUIRED','Tài khoản không có quyền quản trị.');
+  }
   if(publicMatch){
    if(request.method!=='GET')return methodNotAllowed('GET');
    if(publicMatch[1]){const row=await db.prepare(`SELECT ${columns} FROM preview_vod WHERE id = ? AND status = 'published'`).bind(publicMatch[1]).first<Vod>();return row?json({item:row}):fail(404,'NOT_FOUND','Không tìm thấy VOD.');}
@@ -50,10 +44,10 @@ export async function handleVodApi(request:Request,env:VodEnv):Promise<Response|
   if(!id&&request.method==='GET'){const rows=await db.prepare(`SELECT ${columns} FROM preview_vod ORDER BY created_at DESC`).all<Vod>();return json({mode:'fixture',items:rows.results});}
   const validMethod=(!id&&request.method==='POST')||(!!id&&(request.method==='PUT'||request.method==='DELETE'));
   if(!validMethod)return methodNotAllowed(id?'PUT, DELETE':'GET, POST');
-  if(!allowedOrigin(request))return fail(403,'ORIGIN_NOT_ALLOWED','Yêu cầu không cùng nguồn.');
+  if(!allowedPreviewOrigin(request))return fail(403,'ORIGIN_NOT_ALLOWED','Yêu cầu không cùng nguồn.');
   if(request.method==='DELETE'){const found=await db.prepare('SELECT id FROM preview_vod WHERE id = ?').bind(id!).first<{id:string}>();if(!found)return fail(404,'NOT_FOUND','Không tìm thấy VOD.');await db.prepare('DELETE FROM preview_vod WHERE id = ?').bind(id!).run();return json({deleted:true});}
   if(request.headers.get('content-type')?.split(';')[0].trim().toLowerCase()!=='application/json')return fail(415,'UNSUPPORTED_MEDIA_TYPE','Chỉ chấp nhận JSON.');
-  let payload:unknown;try{payload=await limitedBody(request);}catch(error){return fail(error instanceof Error&&error.message==='BODY_TOO_LARGE'?413:400,'INVALID_BODY','Nội dung gửi không hợp lệ hoặc quá lớn.');}
+  let payload:unknown;try{payload=await limitedJson(request);}catch(error){return fail(error instanceof Error&&error.message==='BODY_TOO_LARGE'?413:400,'INVALID_BODY','Nội dung gửi không hợp lệ hoặc quá lớn.');}
   const parsed=parseVodDraft(payload);if(!parsed.ok)return fail(400,'INVALID_VOD',parsed.message);const v=parsed.value,now=Date.now();
   if(request.method==='POST'){
    const count=await db.prepare('SELECT COUNT(*) AS count FROM preview_vod').first<{count:number}>();if((count?.count??0)>=100)return fail(409,'LIMIT_REACHED','Bản thử hỗ trợ tối đa 100 VOD.');

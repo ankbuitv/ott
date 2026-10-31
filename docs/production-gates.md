@@ -4,7 +4,7 @@ Tài liệu này là checklist, không phải xác nhận hệ thống đã sẵ
 
 ## Trước khi triển khai lên môi trường được duyệt
 
-1. **An toàn & quyền truy cập:** xác thực email thật bằng provider được duyệt, quản lý phiên/tokens, RBAC phía server cho từng thao tác admin, CSRF, rate limiting, audit không chứa bí mật, hạn chế nguồn media và security review. Không dùng flag preview để thay thế đăng nhập. Rà các mục S01–S15 từ tài liệu rà soát nội bộ trước khi bật thật.
+1. **An toàn & quyền truy cập:** xác thực email thật bằng provider được duyệt, quản lý phiên/tokens, RBAC phía server cho từng thao tác admin, CSRF, rate limiting, audit không chứa bí mật, hạn chế nguồn media và security review. Không đưa auth local, endpoint thiết lập admin đầu tiên hay flag preview lên production. PBKDF2 600.000 vòng đã thử ở workerd local nhưng có thể vượt giới hạn Workers thực tế; phải chọn giải pháp auth được review và kiểm thử trên staging. Rà các mục S01–S15 từ tài liệu rà soát nội bộ trước khi bật thật.
 2. **Dữ liệu & media:** thiết kế schema, phân tách D1/storage staging và production, migration có backup/rollback và kiểm tra quyền phát. Cần quy trình upload/kiểm duyệt video, poster, captions và DRM nếu có; không lấy URL upstream tùy ý. Dữ liệu VOD local không phải dữ liệu production.
 3. **Worker/BFF:** chỉ kết nối upstream được phê duyệt, allowlist rõ ràng, timeout/cancellation, không log token/URL ký/keys, cache server-authoritative, phân tách user/profile. Kiểm tra contract và tránh giả định GET legacy không có side effect.
 4. **Chất lượng:** test contract, bảo mật, truy cập, playback trên thiết bị thực, lỗi mạng, deep link, keyboard, reduced motion, subtitle, isolation và quan sát vận hành. Axe smoke test không chứng minh tuân thủ WCAG.

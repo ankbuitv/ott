@@ -27,7 +27,7 @@ Mở cổng **8788** để vào VEO Studio. Người có quyền truy cập link
 - Trang `/vod` tìm/lọc VOD mẫu; `/vod/:id` phát HLS/DASH/MP4 fixture. Trong `/admin/vod`, có thể thêm, sửa, xóa, để nháp hoặc hiển thị VOD mẫu. Viewer 8787 và admin 8788 dùng cùng kho D1 local. Chỉ chọn ảnh/video có sẵn, **không upload, không nhập nguồn media thật**; thay đổi tồn tại qua reload/khởi động lại Worker nếu `.wrangler` vẫn còn.
 - Sidebar desktop mặc định chỉ biểu tượng, có thể mở/thu; menu và điều hướng riêng cho điện thoại. Có 10 kênh mẫu, chọn/lọc, lịch minh họa, phim, thể thao và Shorts. Giao diện truyền hình lấy cảm hứng cách xem lịch của VTVgo, không dùng tài sản hay tín hiệu VTVgo.
 - Yêu thích lưu trên trình duyệt, không đồng bộ tài khoản. Form email chỉ kiểm tra cú pháp; không gửi/lưu email hay xác thực. Các endpoint email và catalog thực trả 503.
-- Worker dùng URL cùng origin và danh sách API fixture rõ ràng. D1 binding chỉ nằm trong `wrangler.preview.jsonc`; không có cấu hình production được kết nối. `/admin` và API quản trị chỉ bật với `VEO_ENV=local` + `ADMIN_PREVIEW=enabled` khi chạy local; cờ này **không thay thế xác thực/ủy quyền**.
+- Worker dùng URL cùng origin và danh sách API fixture rõ ràng. D1 binding chỉ nằm trong `wrangler.preview.jsonc` và chỉ được wrapper chạy local. `/admin` và API quản trị chỉ bật với `VEO_ENV=local` + `ADMIN_PREVIEW=enabled` khi chạy local; cờ này **không thay thế xác thực/ủy quyền**.
 - Không có dữ liệu, lưu lượng, live, DRM hoặc quyền phát thật. VEO Studio chưa có login/RBAC, audit hay backend production; quản lý kênh chỉ lưu trong phiên tab, khác với kho VOD local.
 
 ## Kiểm tra
@@ -36,6 +36,7 @@ Mở cổng **8788** để vào VEO Studio. Người có quyền truy cập link
 npm run typecheck
 npm test
 npm run build
+npm run test:version-runtime
 # Khi Worker local đã chạy:
 npm run test:browser
 # Khi Worker 8787 và admin preview 8788 đã chạy:
@@ -48,4 +49,4 @@ Browser tests chỉ cho phép loopback; kiểm tra một số route, dialog, CRU
 
 ## Trước khi phát hành
 
-Không chạy `wrangler deploy` hoặc kết nối hệ thống thật từ cấu hình preview. Cần hoàn tất xác thực email, phân quyền admin phía server, storage/media có bản quyền, cơ sở dữ liệu và API staging, bảo mật, quan sát, kiểm thử, migration và kế hoạch rollout/rollback. Xem [các cổng phát hành](docs/production-gates.md). `veotv.bond`, quyền nội dung và hệ thống tích hợp chưa được xác minh.
+Không chạy `wrangler deploy` hoặc kết nối tài nguyên production từ cấu hình preview. Chủ dự án đã chấp thuận một **version chưa nhận traffic** trên Worker hiện có để kiểm tra build; xem [giới hạn Worker version](docs/cloudflare-version.md). Cần hoàn tất xác thực email, phân quyền admin phía server, storage/media có bản quyền, cơ sở dữ liệu và API staging, bảo mật, quan sát, kiểm thử, migration và kế hoạch rollout/rollback. Xem [các cổng phát hành](docs/production-gates.md). `veotv.bond`, quyền nội dung và hệ thống tích hợp chưa được xác minh.

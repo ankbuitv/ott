@@ -1,0 +1,19 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // This PR is approved only for an inactive version on the existing Worker.
+  // Do not merge or deploy without a separate production review and approval.
+  "name": "chrtv-ott",
+  "main": "worker/version-entry.ts",
+  "compatibility_date": "2026-07-01",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "build": {
+    "command": "node scripts/cloudflare-version-build.mjs"
+  },
+  // Retain dashboard vars on the uploaded version; version-entry ignores them.
+  "keep_vars": true,
+  "send_metrics": false
+}

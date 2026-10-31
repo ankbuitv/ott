@@ -6,6 +6,8 @@ dist/
 .env
 .env.*
 !.env.example
+.dev.vars
+.dev.vars.*
 *.log
 *.tsbuildinfo
 # Báo cáo rà soát nội bộ, không đưa vào repository công khai.

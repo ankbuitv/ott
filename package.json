@@ -12,7 +12,8 @@
     "test:browser": "node tests/browser.mjs",
     "admin:preview": "node scripts/admin-preview.mjs",
     "test:admin-browser": "node tests/admin-browser.mjs",
-    "test:vod-browser": "node tests/vod-browser.mjs"
+    "test:vod-browser": "node tests/vod-browser.mjs",
+    "test:version-runtime": "node tests/version-runtime.mjs"
   },
   "dependencies": {
     "@fontsource/be-vietnam-pro": "^5.3.0",

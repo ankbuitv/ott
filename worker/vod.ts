@@ -1,4 +1,5 @@
 import {parseVodDraft,type Vod} from '../src/data/vod';
+import {versionVod} from '../src/data/version-vod';
 export interface D1Statement {bind:(...params:(string|number)[])=>D1Statement;all:<T>()=>Promise<{results:T[]}>;first:<T>()=>Promise<T|null>;run:()=>Promise<{success:boolean}>}
 export interface PreviewDb {prepare:(sql:string)=>D1Statement}
 export type VodEnv={VEO_ENV?:string;ADMIN_PREVIEW?:string;VOD_DB?:PreviewDb};
@@ -31,6 +32,12 @@ export async function handleVodApi(request:Request,env:VodEnv):Promise<Response|
  if(!publicMatch&&!adminMatch)return null;
  if(url.search)return fail(400,'QUERY_NOT_ALLOWED','Tham số không được hỗ trợ.');
  if(adminMatch&&!previewEnabled(env))return fail(404,'NOT_FOUND','Đường dẫn không được hỗ trợ.');
+ // The uploaded Worker version is intentionally read-only and has no D1 access.
+ if(publicMatch&&env.VEO_ENV==='version-fixture'){
+  if(request.method!=='GET')return methodNotAllowed('GET');
+  if(publicMatch[1]){const item=versionVod.find(v=>v.id===publicMatch[1]);return item?json({item}):fail(404,'NOT_FOUND','Không tìm thấy VOD.');}
+  return json({mode:'fixture',items:versionVod});
+ }
  if(env.VEO_ENV!=='local'||!env.VOD_DB)return fail(503,'VOD_DISABLED','Kho VOD mẫu chưa được kết nối.');
  const db=env.VOD_DB;
  try{

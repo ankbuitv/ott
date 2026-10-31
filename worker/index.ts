@@ -1,4 +1,5 @@
 import {channels,movies,shorts} from '../src/data/fixtures';
+import {versionVod} from '../src/data/version-vod';
 import {handleVodApi,previewEnabled,publishedVodExists,type PreviewDb} from './vod';
 type Env={ASSETS:{fetch:(request:Request)=>Promise<Response>};VEO_ENV?:string;FRAME_GUARD?:string;ADMIN_PREVIEW?:string;VOD_DB?:PreviewDb};
 const pages=new Set(['/admin','/admin/kenh','/admin/vod','/admin/noi-dung','/admin/lich-phat-song','/admin/tai-khoan','/admin/cai-dat','/','/truyen-hinh','/lich-phat-song','/phim','/vod','/the-thao','/shorts','/yeu-thich','/thong-bao','/tai-khoan','/cai-dat','/hoi-vien','/tim-kiem']);
@@ -6,7 +7,7 @@ async function known(path:string,env:Env){
  if(pages.has(path))return true;
  const movie=/^\/phim\/([a-z0-9-]+)$/.exec(path);if(movie)return movies.some(x=>x.id===movie[1]);
  const short=/^\/shorts\/([a-z0-9-]+)$/.exec(path);if(short)return shorts.some(x=>x.id===short[1]);
- const vod=/^\/vod\/([a-z0-9-]{1,80})$/.exec(path);return !!vod&&env.VEO_ENV==='local'&&await publishedVodExists(env.VOD_DB,vod[1]);
+ const vod=/^\/vod\/([a-z0-9-]{1,80})$/.exec(path);if(!vod)return false;if(env.VEO_ENV==='version-fixture')return versionVod.some(item=>item.id===vod[1]);return env.VEO_ENV==='local'&&await publishedVodExists(env.VOD_DB,vod[1]);
 }
 function error(status:number,code:string,message:string){return new Response(JSON.stringify({error:{code,message}}),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}});}
 function secured(response:Response,env:Env,html=false){const headers=new Headers(response.headers);headers.set('x-content-type-options','nosniff');headers.set('referrer-policy','no-referrer');headers.set('permissions-policy','camera=(), microphone=(), geolocation=(), payment=()');const frame=env.FRAME_GUARD==='deny'?"; frame-ancestors 'none'":'';headers.set('content-security-policy',`default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; media-src 'self' blob:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'${frame}`);if(html||response.status>=400)headers.set('cache-control','no-store');return new Response(response.body,{status:response.status,statusText:response.statusText,headers});}

@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "veo-preview-local",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-07-01",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "vars": {
+    "VEO_ENV": "local"
+  },
+  "send_metrics": false,
+  "workers_dev": false,
+  "d1_databases": [
+    {
+      "binding": "VOD_DB",
+      "database_name": "veo-vod-local-preview",
+      "database_id": "78015693-3020-409f-a701-8e192f02ba22"
+    }
+  ]
+}

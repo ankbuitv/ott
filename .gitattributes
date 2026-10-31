@@ -1,0 +1,6 @@
+# Suppress textual diffs for legacy files that may contain sensitive values.
+# GitHub or other tools may still show them; this does not secure existing history.
+/.env -diff
+/playlists/** -diff
+/worker/*.js -diff
+/wrangler*.toml -diff
